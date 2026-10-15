@@ -386,6 +386,29 @@ def project_task(task: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
     return {key: value for key, value in task.items() if key != "description"}
 
 
+def project_tasks_by_id(
+    conn: sqlite3.Connection,
+    task_ids: Sequence[str],
+    *,
+    full: bool = False,
+) -> list[dict[str, Any]]:
+    """Project the named tasks, preserving the given order (spec 10.5).
+
+    The board, the dependency graph and the task detail page all describe tasks
+    with one projection; this is the entry point for callers that already know
+    which task IDs they need.
+    """
+    if not task_ids:
+        return []
+    placeholders = ",".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"SELECT * FROM tasks WHERE id IN ({placeholders})", list(task_ids)
+    ).fetchall()
+    by_id: dict[str, sqlite3.Row] = {str(row["id"]): row for row in rows}
+    ordered = [by_id[task_id] for task_id in task_ids if task_id in by_id]
+    return _project_rows(conn, ordered, full=full)
+
+
 # --------------------------------------------------------------------------- #
 # shared mutation helpers
 # --------------------------------------------------------------------------- #
@@ -1235,6 +1258,7 @@ __all__ = [
     "get_task",
     "list_tasks",
     "project_task",
+    "project_tasks_by_id",
     "reopen_task",
     "restore_task",
     "set_status",

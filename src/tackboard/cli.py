@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
 
-from . import __version__, claims, config, dependencies, history, schema, service
+from . import __version__, claims, config, dependencies, history, schema, service, views
 from .errors import InternalError, NotFoundError, TackError, UsageError
 from .models import PRIORITIES, STATUSES, TERMINAL_STATUSES
 
@@ -684,7 +684,7 @@ def _run_listing(ctx: _Context, args: argparse.Namespace, *, grouped: bool) -> i
         raise UsageError("--limit must not be negative.")
 
     with _project(args) as conn:
-        tasks = service.list_tasks(
+        document = views.board_document(
             conn,
             status=args.status,
             assignee=args.assignee,
@@ -697,8 +697,9 @@ def _run_listing(ctx: _Context, args: argparse.Namespace, *, grouped: bool) -> i
             reverse=args.reverse,
             full=args.full,
         )
-        counts = service.counts(conn, tasks)
-        project = schema.database_label(conn)
+    tasks = document["tasks"]
+    counts = document["counts"]
+    project = document["project"]
 
     if args.brief or args.count:
         if ctx.json:
