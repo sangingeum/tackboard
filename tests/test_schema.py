@@ -213,6 +213,30 @@ def test_backup_requires_an_existing_destination_directory(
     assert not destination.parent.exists()
 
 
+def test_two_databases_stay_isolated(tmp_path: Path) -> None:
+    alpha_path = tmp_path / "alpha.sqlite3"
+    beta_path = tmp_path / "beta.sqlite3"
+    schema.init_database(alpha_path, label="alpha")
+    schema.init_database(beta_path, label="beta")
+
+    alpha = schema.open_database(alpha_path)
+    beta = schema.open_database(beta_path)
+    try:
+        alpha_task = service.create_task(alpha, actor="dev", title="Alpha work")["task"]
+        beta_task = service.create_task(beta, actor="dev", title="Beta work")["task"]
+
+        # Each database has its own ID namespace and its own tasks.
+        assert alpha_task["id"] == beta_task["id"] == "T-000001"
+        assert [task["title"] for task in service.list_tasks(alpha)] == ["Alpha work"]
+        assert [task["title"] for task in service.list_tasks(beta)] == ["Beta work"]
+        assert service.get_task(beta, alpha_task["id"])["title"] == "Beta work"
+        assert schema.database_label(alpha) == "alpha"
+        assert schema.database_label(beta) == "beta"
+    finally:
+        alpha.close()
+        beta.close()
+
+
 def test_doctor_is_happy_with_a_healthy_database(db_path: Path) -> None:
     report = schema.doctor(db_path)
     assert report["ok"] is True
