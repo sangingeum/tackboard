@@ -354,3 +354,171 @@ def test_duration_parsing(text: str, expected: int) -> None:
 def test_duration_parsing_rejects_nonsense(text: str) -> None:
     with pytest.raises(ValidationError):
         claims.parse_duration(text)
+
+
+# --------------------------------------------------------------------------- #
+# forced starts (spec 6.2 case 2, spec 8.2 row 1, acceptance criterion 10)
+# --------------------------------------------------------------------------- #
+
+
+def _ready_task_blocked_only_by_a_prerequisite(
+    conn: sqlite3.Connection, make_task: MakeTask, *, cancelled: bool
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A ``ready`` task whose only eligibility failure is one prerequisite.
+
+    With ``cancelled=True`` the prerequisite is cancelled, producing the
+    ``prerequisite_cancelled`` blocker; otherwise it is left unfinished,
+    producing ``prerequisite_unfinished``.
+    """
+    prerequisite = make_task(title="Prerequisite")
+    dependent = make_task(
+        title="Dependent", status="ready", depends_on=[prerequisite["id"]]
+    )
+    if cancelled:
+        service.cancel_task(conn, prerequisite["id"], actor="dev")
+    return prerequisite, dependent
+
+
+def test_forced_claim_starts_a_task_blocked_only_by_a_cancelled_prerequisite(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """Spec 8.2 row 1: a cancelled prerequisite is a forceable eligibility failure."""
+    prerequisite, dependent = _ready_task_blocked_only_by_a_prerequisite(
+        conn, make_task, cancelled=True
+    )
+    shown = service.get_task(conn, dependent["id"])
+    assert shown["blockers"] == [
+        {"code": "prerequisite_cancelled", "task_id": prerequisite["id"]}
+    ]
+    assert shown["eligible"] is False
+
+    reason = "prerequisite is cancelled; proceeding deliberately"
+    result = claims.claim(
+        conn, dependent["id"], actor="dev", force=True, reason=reason
+    )
+    assert result["changed"] is True
+    assert result["task"]["status"] == "in_progress"
+    assert result["task"]["claimed_by"] == "dev"
+
+    claimed_events = [
+        event
+        for event in history.list_events(conn, dependent["id"])["items"]
+        if event["event_type"] == "task.claimed"
+    ]
+    assert len(claimed_events) == 1
+    assert claimed_events[0]["payload"]["forced"] is True
+    assert claimed_events[0]["payload"]["reason"] == reason
+
+
+def test_forced_claim_starts_a_task_blocked_only_by_an_unfinished_prerequisite(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """The unfinished branch the fix must not narrow."""
+    _prerequisite, dependent = _ready_task_blocked_only_by_a_prerequisite(
+        conn, make_task, cancelled=False
+    )
+    result = claims.claim(
+        conn,
+        dependent["id"],
+        actor="dev",
+        force=True,
+        reason="pressing on without the prerequisite",
+    )
+    assert result["changed"] is True
+    assert result["task"]["status"] == "in_progress"
+    assert result["task"]["claimed_by"] == "dev"
+
+
+def test_the_status_and_claim_entry_points_agree_on_a_forced_start(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """Acceptance criterion 10: one policy table, one answer from both paths."""
+    _prerequisite, via_status = _ready_task_blocked_only_by_a_prerequisite(
+        conn, make_task, cancelled=True
+    )
+    _prerequisite, via_claim = _ready_task_blocked_only_by_a_prerequisite(
+        conn, make_task, cancelled=True
+    )
+    reason = "prerequisite is cancelled; proceeding deliberately"
+
+    status_result = service.set_status(
+        conn, via_status["id"], "in_progress", actor="dev", force=True, reason=reason
+    )
+    claim_result = claims.claim(
+        conn, via_claim["id"], actor="dev", force=True, reason=reason
+    )
+
+    assert status_result["changed"] is True
+    assert claim_result["changed"] is True
+    assert status_result["task"]["status"] == "in_progress"
+    assert claim_result["task"]["status"] == "in_progress"
+    assert status_result["task"]["claimed_by"] == "dev"
+    assert claim_result["task"]["claimed_by"] == "dev"
+
+
+def test_forced_claim_is_refused_when_an_explicit_blocker_is_set(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """Force never covers an explicit ``blocked_reason`` (spec 6.2)."""
+    task = make_task(title="Waiting on a vendor", status="ready")
+    service.update_task(conn, task["id"], actor="dev", blocked_reason="vendor is down")
+
+    with pytest.raises(ValidationError) as caught:
+        claims.claim(
+            conn, task["id"], actor="dev", force=True, reason="ignore the block"
+        )
+    assert caught.value.exit_code == 4
+    assert "explicit blocked reason" in str(caught.value)
+    assert service.get_task(conn, task["id"])["status"] == "ready"
+
+
+def test_forced_claim_requires_a_non_empty_reason(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """A forced start still needs a non-empty reason (spec 6.2)."""
+    _prerequisite, dependent = _ready_task_blocked_only_by_a_prerequisite(
+        conn, make_task, cancelled=True
+    )
+    with pytest.raises(ValidationError):
+        claims.claim(conn, dependent["id"], actor="dev", force=True, reason="   ")
+    assert service.get_task(conn, dependent["id"])["status"] == "ready"
+
+
+@pytest.mark.parametrize("target", ["review", "done"])
+def test_a_cancelled_prerequisite_still_blocks_entering_review_and_done(
+    conn: sqlite3.Connection, make_task: MakeTask, target: str
+) -> None:
+    """The forced-start fix touches entering ``in_progress`` only."""
+    _prerequisite, dependent = _ready_task_blocked_only_by_a_prerequisite(
+        conn, make_task, cancelled=True
+    )
+    claims.claim(
+        conn,
+        dependent["id"],
+        actor="dev",
+        force=True,
+        reason="prerequisite is cancelled; proceeding deliberately",
+    )
+    assert service.get_task(conn, dependent["id"])["status"] == "in_progress"
+
+    with pytest.raises(ValidationError) as caught:
+        service.set_status(conn, dependent["id"], target, actor="dev")
+    assert "not done" in str(caught.value)
+    assert service.get_task(conn, dependent["id"])["status"] == "in_progress"
+
+
+def test_starting_a_claimed_review_task_keeps_the_claim_it_already_holds(
+    conn: sqlite3.Connection, make_task: MakeTask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spec 8.2: "if already held by actor, keep the claim" -- as it stands."""
+    task = make_task(title="Awaiting a rework", status="ready")
+    service.set_status(conn, task["id"], "in_progress", actor="dev")
+    service.set_status(conn, task["id"], "review", actor="dev")
+    claims.claim(conn, task["id"], actor="dev")
+    held = service.get_task(conn, task["id"])["claimed_at"]
+    assert held is not None
+
+    monkeypatch.setattr(service, "utcnow_iso", lambda: "2099-01-01T00:00:00Z")
+    service.set_status(conn, task["id"], "in_progress", actor="dev")
+
+    assert service.get_task(conn, task["id"])["claimed_at"] == held

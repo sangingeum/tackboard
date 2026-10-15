@@ -290,6 +290,32 @@ def _blockers(
     return entries
 
 
+#: Blocker codes a forced start into ``in_progress`` is allowed to cover
+#: (spec 6.2 case 2; spec 8.2 row 1): an unfinished or a cancelled
+#: prerequisite. An explicit ``blocked_reason`` yields the ``explicit`` code
+#: and is therefore never covered.
+_FORCEABLE_PREREQUISITE_CODES: frozenset[str] = frozenset(
+    {"prerequisite_unfinished", "prerequisite_cancelled"}
+)
+
+
+def _force_covers_prerequisites(
+    prerequisites: Sequence[tuple[str, str]], blocked_reason: str | None
+) -> bool:
+    """The one force policy for entering ``in_progress`` (spec 6.2, 8.2).
+
+    A forced start may proceed when there is at least one prerequisite
+    blocker and every blocker is an unfinished or cancelled prerequisite.
+    An explicit ``blocked_reason`` always refuses force, because it adds an
+    ``explicit`` blocker. The ``status`` and ``claim`` entry points both
+    consult this predicate, so the policy table lives in exactly one place.
+    """
+    blockers = _blockers(prerequisites, blocked_reason)
+    return bool(blockers) and all(
+        entry["code"] in _FORCEABLE_PREREQUISITE_CODES for entry in blockers
+    )
+
+
 def derived_flags(
     prerequisites: Sequence[tuple[str, str]],
     blocked_reason: str | None,
@@ -420,7 +446,11 @@ def _insert_claim(conn: sqlite3.Connection, task_id: str, actor: str) -> None:
         INSERT INTO claims(task_id, agent_id, claimed_at) VALUES(?, ?, ?)
         ON CONFLICT(task_id) DO UPDATE SET
             agent_id = excluded.agent_id,
-            claimed_at = excluded.claimed_at
+            claimed_at = CASE
+                WHEN claims.agent_id = excluded.agent_id
+                THEN claims.claimed_at
+                ELSE excluded.claimed_at
+            END
         """,
         (task_id, actor, utcnow_iso()),
     )
@@ -602,7 +632,11 @@ def _plan_status(
             if state != _DONE
         ]
         if unfinished:
-            if target == _IN_PROGRESS and force:
+            if (
+                target == _IN_PROGRESS
+                and force
+                and _force_covers_prerequisites(prerequisites, task.blocked_reason)
+            ):
                 plan.force_used = True
             else:
                 raise ValidationError(
@@ -666,14 +700,9 @@ def _plan_claim(
     if task.status == _READY:
         flags = derived_flags(prerequisites, task.blocked_reason, task.status, None)
         if not flags["eligible"]:
-            unfinished = flags["blockers"]
-            only_unfinished = (
-                bool(flags["blockers"])
-                and all(
-                    entry["code"] == "prerequisite_unfinished" for entry in unfinished
-                )
-            )
-            if force and only_unfinished and task.blocked_reason is None:
+            if force and _force_covers_prerequisites(
+                prerequisites, task.blocked_reason
+            ):
                 plan.force_used = True
             elif task.blocked_reason:
                 raise ValidationError(

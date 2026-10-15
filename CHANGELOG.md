@@ -38,3 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI, filters and counts, method rejection, Host validation, escaping, an empty
   database, a 1,000-task graph, the no-JavaScript fallback, and the single
   `serve --json` startup record.
+
+### Fixed
+
+- A forced start into `in_progress` now covers a *cancelled* prerequisite as
+  well as an unfinished one. `tack claim --force --reason` and
+  `tack status … in_progress --force --reason` consult one shared force
+  predicate, so the claim/status policy (spec 8.2 row 1, spec 6.2 case 2) is
+  enforced identically from every entry point.
+- Starting a task for which the actor already holds a claim — for example
+  beginning work on a `review` task the actor claimed — no longer rewrites the
+  claim's `claimed_at`. "If already held by actor, keep the claim" now keeps
+  the claim as it stands (spec 8.2).
