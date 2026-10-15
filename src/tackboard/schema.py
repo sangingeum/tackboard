@@ -181,12 +181,7 @@ def init_database(path: Path, *, label: str | None = None) -> dict[str, Any]:
         conn.row_factory = sqlite3.Row
         try:
             _require_known_application_id(conn, path)
-            version = _read_user_version(conn)
-            if version > SCHEMA_VERSION:
-                raise SchemaError(
-                    f"{path.name} uses schema version {version}, newer than this "
-                    f"build supports ({SCHEMA_VERSION})."
-                )
+            _require_supported_version(conn, path)
             with db.write_transaction(conn):
                 _apply_schema(conn, label=project_label)
         finally:

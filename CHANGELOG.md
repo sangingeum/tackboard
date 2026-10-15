@@ -41,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `depend remove` no longer advertises `--force`/`--reason`. Removing a
+  dependency is not one of the enumerated `--force` cases (spec 6.2), so the
+  flag is now rejected as a usage error (exit 2), exactly as `update` already
+  rejects it. `--agent` and `--if-version` are unchanged.
+- `init` on an existing database now refuses an older schema version with the
+  same error `open_database` uses (`Run 'tack migrate'`, exit 6) instead of
+  silently creating current tables, re-seeding metadata and stamping a new
+  schema version. `init` is strictly idempotent-or-refuse again, and `migrate`
+  remains the only command that changes a schema version (spec 5.4).
 - A forced start into `in_progress` now covers a *cancelled* prerequisite as
   well as an unfinished one. `tack claim --force --reason` and
   `tack status … in_progress --force --reason` consult one shared force

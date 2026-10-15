@@ -851,6 +851,52 @@ def test_depend_add_remove_and_related_reads(run: RunCli, db_file: Path) -> None
     assert "(none)" in out
 
 
+def test_depend_remove_rejects_force_and_reason(run: RunCli, db_file: Path) -> None:
+    """`--force` is an exhaustive list (spec 6.2); removing an edge is not in it."""
+    _create(run, db_file, "alpha", "--status", "ready")
+    _create(run, db_file, "beta")
+    run(
+        "depend", "add", "T-000002", "--on", "T-000001", "--agent", DEFAULT_ACTOR,
+        "--json", "--db", str(db_file),
+    )
+
+    code, out, _ = run(
+        "depend", "remove", "T-000002", "--on", "T-000001", "--agent", DEFAULT_ACTOR,
+        "--force", "--reason", "probe", "--json", "--db", str(db_file),
+    )
+    assert code == 2
+    error = _json_document(out)["error"]
+    assert error["code"] == "usage"
+    assert "--force" in error["message"]
+
+    # The refused call changed nothing: the edge is still there.
+    task = _json_document(run("show", "T-000002", "--json", "--db", str(db_file))[1])["task"]
+    assert task["depends_on"] == ["T-000001"]
+
+
+def test_depend_remove_removes_and_honours_if_version(run: RunCli, db_file: Path) -> None:
+    _create(run, db_file, "alpha", "--status", "ready")
+    _create(run, db_file, "beta")
+    run(
+        "depend", "add", "T-000002", "--on", "T-000001", "--agent", DEFAULT_ACTOR,
+        "--json", "--db", str(db_file),
+    )
+
+    code, out, _ = run(
+        "depend", "remove", "T-000002", "--on", "T-000001", "--agent", DEFAULT_ACTOR,
+        "--if-version", "99", "--json", "--db", str(db_file),
+    )
+    assert code == 5
+    assert _json_document(out)["error"]["code"] == "stale_version"
+
+    code, out, err = run(
+        "depend", "remove", "T-000002", "--on", "T-000001", "--agent", DEFAULT_ACTOR,
+        "--json", "--db", str(db_file),
+    )
+    assert code == 0, err
+    assert _json_document(out)["task"]["depends_on"] == []
+
+
 def test_graph_json_and_dot(run: RunCli, db_file: Path) -> None:
     _create(run, db_file, 'alpha "quoted"')
     _create(run, db_file, "beta", "--depends-on", "T-000001")

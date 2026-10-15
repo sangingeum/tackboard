@@ -122,6 +122,38 @@ def test_newer_schema_is_rejected(tmp_path: Path) -> None:
     assert "newer" in str(caught.value)
 
 
+def test_init_refuses_an_older_schema_database(tmp_path: Path) -> None:
+    """`init` is idempotent-or-refuse; only `migrate` changes a schema version."""
+    path = tmp_path / "board.sqlite3"
+    schema.init_database(path)
+    conn = schema.open_database(path)
+    task = service.create_task(conn, actor="dev", title="Kept")["task"]
+    conn.close()
+
+    raw = _raw(path)
+    raw.execute("PRAGMA user_version=0")
+    raw.close()
+    before = path.read_bytes()
+
+    with pytest.raises(SchemaError) as caught:
+        schema.init_database(path)
+    assert caught.value.exit_code == 6
+    assert "tack migrate" in str(caught.value)
+
+    # No in-place upgrade, no rewrite: the file is byte- and content-unchanged.
+    assert path.read_bytes() == before
+    raw = _raw(path)
+    try:
+        assert raw.execute("PRAGMA user_version").fetchone()[0] == 0
+        assert raw.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+        title = raw.execute(
+            "SELECT title FROM tasks WHERE id = ?", (task["id"],)
+        ).fetchone()[0]
+        assert title == "Kept"
+    finally:
+        raw.close()
+
+
 def test_migrate_preserves_data_and_writes_a_backup(tmp_path: Path) -> None:
     path = tmp_path / "board.sqlite3"
     schema.init_database(path)

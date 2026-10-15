@@ -11,6 +11,7 @@ import sqlite3
 from typing import Any
 
 from .db import read_transaction
+from .errors import ValidationError
 from .models import utcnow_iso
 
 CANONICAL_EVENT_TYPES: tuple[str, ...] = (
@@ -38,6 +39,11 @@ def record_event(
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Append one canonical event for a mutation in the current transaction."""
+    if event_type not in CANONICAL_EVENT_TYPES:
+        raise ValidationError(
+            f"Unknown event type {event_type!r}; canonical event types are: "
+            f"{', '.join(CANONICAL_EVENT_TYPES)}."
+        )
     timestamp = utcnow_iso()
     body = json.dumps(payload or {}, sort_keys=True, separators=(",", ":"))
     cursor = conn.execute(

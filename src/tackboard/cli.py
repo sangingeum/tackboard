@@ -606,7 +606,8 @@ def _build_parser() -> _Parser:
     )
     depend_remove.add_argument("task_id", metavar="TASK_ID")
     depend_remove.add_argument("--on", dest="prerequisite_id", required=True, metavar="TASK_ID")
-    _add_mutation_options(depend_remove)
+    _add_actor(depend_remove)
+    _add_if_version(depend_remove)
     depend_remove.set_defaults(handler="depend.remove")
 
     for name, summary in (

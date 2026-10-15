@@ -1088,7 +1088,7 @@ def update_task(
             if new_blocked_reason != task.blocked_reason:
                 changes["blocked_reason"] = new_blocked_reason
 
-        labels = changes.get("_labels")
+        labels: list[tuple[str, str]] | None = None
         current_labels = _labels_for(conn, [task_id])[task_id]
         if not isinstance(replace_labels, UnsetType):
             pairs = _normalize_labels(replace_labels)

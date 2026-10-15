@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from tackboard import history, service
-from tackboard.errors import InvalidTransitionError
+from tackboard.errors import InvalidTransitionError, ValidationError
 
 
 def test_a_mutation_records_exactly_one_canonical_event(
@@ -81,3 +81,13 @@ def test_note_event_does_not_change_version_or_updated_at(
     after = service.get_task(conn, task["id"])
     assert after["version"] == task["version"]
     assert after["updated_at"] == task["updated_at"]
+
+
+def test_record_event_refuses_an_unknown_event_type(conn: sqlite3.Connection) -> None:
+    """The canonical tuple is enforced, not merely declared (spec 9)."""
+    before = len(history.list_events(conn)["items"])
+    with pytest.raises(ValidationError) as caught:
+        history.record_event(conn, event_type="task.sideways", actor="dev", task_id=None)
+    assert "task.sideways" in str(caught.value)
+    assert len(history.list_events(conn)["items"]) == before
+
