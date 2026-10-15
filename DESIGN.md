@@ -21,9 +21,10 @@ src/tackboard/
   dependencies.py  edges, cycle detection, readiness, graph export
   claims.py        claim/release, the atomic `next --claim` selector
   history.py       append-only events: write and read
+  views.py         read models (board, graph, task detail) for CLI and web
   web.py           read-only HTTP server (board, DAG, task detail, /api/*)
   templates/       server-rendered HTML
-  static/          vendored assets
+  static/          committed CSS and JavaScript (no build step, no CDN)
 tests/             pytest suite, mirrors the module layout
 ```
 

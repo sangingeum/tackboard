@@ -25,3 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test coverage for the CLI contract: filters, counts, JSON documents and the
   error envelope, actor resolution, the exit-code matrix, an end-to-end
   lifecycle, and the packaging (console script and `python -m`) paths.
+- The read-only web view and the `tack serve` command: a Kanban board with
+  filters, counts and a pausable auto-refresh; a dependency graph drawn by
+  hand-written SVG with a server-rendered indented outline for browsers without
+  JavaScript; and a task detail page. `GET` and `HEAD` only, Host-header
+  validation, `Content-Security-Policy` and `nosniff` on every response, and
+  `PRAGMA query_only` connections to the selected database only.
+- `tackboard.views`, the interface-neutral read models (`board_document`,
+  `graph_document`, `task_document`) that the CLI and the web layer both use, so
+  `/api/board`, `/api/graph` and `/api/tasks/<id>` are the CLI's own documents.
+- Test coverage for the web area: two-database isolation, JSON parity with the
+  CLI, filters and counts, method rejection, Host validation, escaping, an empty
+  database, a 1,000-task graph, the no-JavaScript fallback, and the single
+  `serve --json` startup record.

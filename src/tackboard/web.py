@@ -444,6 +444,10 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
     sys_version = ""
     protocol_version = "HTTP/1.1"
 
+    def version_string(self) -> str:
+        """Report only our own version (no Python version, no trailing space)."""
+        return self.server_version
+
     # -- entry points ------------------------------------------------------ #
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming

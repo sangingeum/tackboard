@@ -35,11 +35,18 @@ src/tackboard/
   dependencies.py  dependency edges, cycle detection, readiness, graph export
   claims.py        claim/release, atomic `next --claim`
   history.py       append-only event emission and queries
+  views.py         read models shared by the CLI and the web layer
+  web.py           read-only HTTP server (board, DAG, task detail, /api/*)
+  templates/       server-rendered HTML
+  static/          CSS and JavaScript (no inline scripts, no external hosts)
 tests/             pytest suite, mirrors the module layout
 ```
 
-The read-only web layer (`web.py`, `templates/`, `static/`) is not implemented
-yet; it is the remaining piece of the specification. Do not half-add it.
+`views.py` holds the interface-neutral read models (`board_document`,
+`graph_document`, `task_document`): one read transaction, plain dictionaries,
+no HTTP. The CLI and the web layer both consume them, so the pages, the JSON
+API and the CLI describe one snapshot with the same shapes. `web.py` adds the
+HTTP concerns only — routing, Host validation, headers, escaping.
 
 ## Commands
 
@@ -54,6 +61,7 @@ uv run tack --help                       # the CLI, from the `tack` entry point
 uv run python -m tackboard --help        # same CLI, module form
 uv run tack guide                        # the agent-facing usage summary
 uv run tack board --db PATH --json       # every command takes --db and --json
+uv run tack serve --db PATH --port 0     # the read-only web view
 uv build                                 # sdist + wheel
 ```
 

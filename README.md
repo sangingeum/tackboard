@@ -133,6 +133,7 @@ tack dependents TASK_ID
 tack graph [TASK_ID] [--format json|dot]
 tack history [TASK_ID] [--limit N]
 tack doctor
+tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
 tack guide
 ```
 
@@ -355,12 +356,66 @@ Status and readiness
 
 ## Web view
 
-The read-only browser view — a Kanban board, an interactive dependency graph
-with a no-JavaScript fallback, and a task detail page, all served from the same
-database and the same service layer — arrives with the next release. It exposes
-the same JSON documents at `/api/board`, `/api/graph`, and `/api/tasks/<id>`.
-Nothing in this release serves HTTP; the CLI is complete and is what agents
-should use.
+`tack serve` starts a **read-only** browser view of one board:
+
+```bash
+tack serve                          # 127.0.0.1:8765, the selected database
+tack serve --port 8080
+tack serve --json                   # exactly one startup record on stdout
+```
+
+It serves the same database as every other command (`--db`, then
+`TACKBOARD_DB`, then the nearest `.tackboard.toml`) through the same service
+layer, and shows the project name and database path on every page so the
+operator can confirm which board is on screen.
+
+| Path | What it shows |
+|---|---|
+| `/board` | Kanban columns per stored status, with filters (status, assignee, priority, label, blocked, eligible) and the same counts as `board --count`. `done` and `cancelled` show their 20 most recently updated cards behind a "show all" link, and an optional 5-second auto-refresh can be paused. |
+| `/graph` | The dependency DAG — edge `A -> B` means B depends on A — with zoom, pan, fit-to-screen and a one-task neighbourhood. Nodes show ID, title, status, priority and assignee. Done, eligible, in-progress, review, blocked and cancelled are distinguished by shape and label as well as colour, and a server-rendered indented outline sits underneath the canvas, so the dependency structure is readable with JavaScript disabled or if the drawing fails. |
+| `/task/<id>` | Description, status, priority, assignee, labels, the claim holder and its age, prerequisites and dependents with their statuses, derived blockers and readiness, timestamps, notes and recent history. |
+
+The JSON API publishes the CLI's own documents — same `schema_version`, same
+task projection, same counts object:
+
+| Endpoint | Equivalent CLI document |
+|---|---|
+| `/api/board` | `tack board --json` |
+| `/api/graph` (add `?task=T-000123` for one neighbourhood) | `tack graph --json` |
+| `/api/tasks/<id>` | the `tack show --json` task, plus its claim, prerequisites, dependents, notes and history |
+
+### Read-only, loopback-only, no authentication
+
+- **Read-only.** The server accepts `GET` and `HEAD` and answers **405** to
+  everything else, including any attempt to mutate. Every change goes through
+  the CLI.
+- **Loopback by default.** `--host` defaults to `127.0.0.1`.
+- **Host validation.** The hostname *and* port from the `Host` header are
+  checked against an allowlist — `localhost`, `127.0.0.1`, `::1` and the bind
+  host for a loopback bind; only the explicitly configured values for a remote
+  one. This is the DNS-rebinding guard.
+- **Headers.** Every response carries
+  `Content-Security-Policy: default-src 'self'` and
+  `X-Content-Type-Options: nosniff`. There are no inline scripts or styles, the
+  page never requests another host, and the JavaScript is committed as-is
+  (hand-written SVG for the graph, no vendored library, no build step).
+- **Selected database only.** Connections are opened per request with
+  `PRAGMA query_only=ON`, and every page renders task text escaped.
+
+> **There is no authentication.** Anyone who can reach the port can read the
+> whole board. Keep it on loopback unless you accept that. Exposing it
+> deliberately takes both options:
+
+```bash
+tack serve --host 100.64.0.10 --allow-remote --allowed-host 100.64.0.10
+```
+
+A non-loopback `--host` without `--allow-remote` *and* at least one
+`--allowed-host` is refused with exit 2, and a warning that the board has no
+authentication is printed when remote access is enabled. `--json` writes
+exactly one startup record to stdout (so a supervisor can parse the first
+line) while the banner and every ongoing server log go to stderr; `--quiet`
+silences the banner but never the record.
 
 ## Backup, migration and diagnostics
 
