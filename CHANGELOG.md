@@ -9,3 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Repository scaffold: package layout, packaging metadata, MIT license, CI.
+- Domain core: configuration and project resolution, connection/transaction
+  handling, schema with migrations, backup and diagnostics, task models, the
+  service layer and its single transition function, dependency DAG handling,
+  claims with the atomic `next --claim` selector, and append-only history.
+- The `tack` command-line interface: every command except the browser server,
+  global options accepted before or after the subcommand, versioned JSON
+  documents on stdout, human renderings of the same data, and the documented
+  exit-code contract.
+- `history.list_notes`, so `show` can display a task's latest notes without
+  SQL outside the service layer.
+- Operator documentation in `README.md` (installation, project selection, CLI
+  examples, status/dependency/claim semantics, the agent quickstart snippet,
+  backup and troubleshooting) and contributor documentation in `DESIGN.md`.
+- Test coverage for the CLI contract: filters, counts, JSON documents and the
+  error envelope, actor resolution, the exit-code matrix, an end-to-end
+  lifecycle, and the packaging (console script and `python -m`) paths.

@@ -16,7 +16,9 @@ coordination board, not a project-management suite.
 Governing specification: the tool's behavior is defined by the implementation
 specification the project was built against (sections 1-19: goals, task model,
 dependency DAG, claims, CLI contract, web UI, schema, tests, acceptance
-criteria). `DESIGN.md` restates the architecture for contributors.
+criteria). `DESIGN.md` restates the architecture for contributors, and
+`README.md` is the operator guide (its "Agent quickstart" section is the same
+text `tack guide` prints).
 
 ## Layout
 
@@ -33,11 +35,11 @@ src/tackboard/
   dependencies.py  dependency edges, cycle detection, readiness, graph export
   claims.py        claim/release, atomic `next --claim`
   history.py       append-only event emission and queries
-  web.py           read-only HTTP server (Board, DAG, task detail, /api/*)
-  templates/       server-rendered HTML (no inline scripts)
-  static/          vendored assets (graph library is vendored and pinned)
 tests/             pytest suite, mirrors the module layout
 ```
+
+The read-only web layer (`web.py`, `templates/`, `static/`) is not implemented
+yet; it is the remaining piece of the specification. Do not half-add it.
 
 ## Commands
 
@@ -47,8 +49,11 @@ uv run pytest -q                         # full test suite
 uv run pytest tests/test_claims.py -q    # one module
 uvx ruff check src tests                 # lint (must be clean)
 uv run mypy src                          # type check (must be clean)
+uv run pytest --cov -q                   # suite with coverage
 uv run tack --help                       # the CLI, from the `tack` entry point
 uv run python -m tackboard --help        # same CLI, module form
+uv run tack guide                        # the agent-facing usage summary
+uv run tack board --db PATH --json       # every command takes --db and --json
 uv build                                 # sdist + wheel
 ```
 
