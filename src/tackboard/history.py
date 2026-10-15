@@ -91,4 +91,34 @@ def list_events(
     }
 
 
-__all__ = ["CANONICAL_EVENT_TYPES", "list_events", "record_event"]
+#: The event type appended by ``service.add_note`` (spec 9.1).
+NOTE_EVENT_TYPE = "note"
+
+
+def list_notes(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Return a task's most recent notes, newest first (spec 9.1).
+
+    ``show`` displays the latest notes; the query lives here so neither CLI nor
+    web layer carries SQL.
+    """
+    with read_transaction(conn):
+        rows = conn.execute(
+            "SELECT * FROM events WHERE task_id = ? AND event_type = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (task_id, NOTE_EVENT_TYPE, int(limit)),
+        ).fetchall()
+    return [_event_from_row(row) for row in rows]
+
+
+__all__ = [
+    "CANONICAL_EVENT_TYPES",
+    "NOTE_EVENT_TYPE",
+    "list_events",
+    "list_notes",
+    "record_event",
+]
