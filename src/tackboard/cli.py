@@ -24,7 +24,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
 
-from . import __version__, claims, config, dependencies, history, schema, service, views
+from . import (
+    __version__,
+    claims,
+    config,
+    dependencies,
+    history,
+    schema,
+    service,
+    views,
+    web,
+)
 from .errors import InternalError, NotFoundError, TackError, UsageError
 from .models import PRIORITIES, STATUSES, TERMINAL_STATUSES
 
@@ -629,6 +639,39 @@ def _build_parser() -> _Parser:
     )
     guide.set_defaults(handler="guide")
 
+    serve = subparsers.add_parser(
+        "serve", parents=[shared], help="serve the read-only board over HTTP"
+    )
+    serve.add_argument(
+        "--host",
+        default=web.DEFAULT_HOST,
+        metavar="HOST",
+        help=f"interface to bind (default {web.DEFAULT_HOST})",
+    )
+    serve.add_argument(
+        "--port",
+        type=int,
+        default=web.DEFAULT_PORT,
+        metavar="PORT",
+        help=f"TCP port to bind (default {web.DEFAULT_PORT}; 0 picks a free port)",
+    )
+    serve.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="accept a non-loopback --host (the board has no authentication)",
+    )
+    serve.add_argument(
+        "--allowed-host",
+        action="append",
+        default=[],
+        metavar="HOST",
+        help=(
+            "Host header value to accept (repeatable); required for a "
+            "non-loopback bind"
+        ),
+    )
+    serve.set_defaults(handler="serve")
+
     return parser
 
 
@@ -1055,6 +1098,45 @@ def _run_guide(ctx: _Context, args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_serve(ctx: _Context, args: argparse.Namespace) -> int:
+    """Serve the read-only board (spec 10.3, 11.3).
+
+    The bind policy is decided before the socket opens, and the database is
+    opened once up front so a bad ``--db`` fails here rather than on the first
+    request. With ``--json`` exactly one startup record goes to stdout; the
+    banner and every ongoing server log go to stderr.
+    """
+    path = _resolve_db_path(args)
+    allowed_hosts, remote = web.resolve_allowed_hosts(
+        args.host,
+        allow_remote=args.allow_remote,
+        allowed_hosts=tuple(getattr(args, "allowed_host", ()) or ()),
+    )
+    if not 0 <= args.port <= 65535:
+        raise UsageError("--port must be between 0 and 65535.")
+
+    probe = schema.open_database(path, read_only=True)
+    probe.close()
+
+    config = web.ServerConfig(
+        database_path=path,
+        allowed_hosts=allowed_hosts,
+        remote=remote,
+    )
+
+    def announce(text: str) -> None:
+        if not ctx.quiet:
+            _write_err(text)
+
+    def report(document: dict[str, Any]) -> None:
+        if ctx.json:
+            _write_json(document)
+            sys.stdout.flush()
+
+    web.serve(config, args.host, args.port, on_record=report, announce=announce)
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # dispatch
 # --------------------------------------------------------------------------- #
@@ -1105,6 +1187,8 @@ def _dispatch(ctx: _Context, args: argparse.Namespace) -> int:
         return _run_doctor(ctx, args)
     if handler == "guide":
         return _run_guide(ctx, args)
+    if handler == "serve":
+        return _run_serve(ctx, args)
     raise InternalError(f"Unhandled command {handler!r}.")
 
 

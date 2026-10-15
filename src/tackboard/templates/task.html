@@ -1,0 +1,34 @@
+<section class="panel task-detail">
+  <h1><a class="task-id" href="/task/$id">$id</a> <span class="task-title">$title</span></h1>
+  <dl class="facts">
+    <dt>status</dt><dd class="badge badge-status">$status</dd>
+    <dt>priority</dt><dd class="badge badge-priority priority-$priority">$priority</dd>
+    <dt>assignee</dt><dd>$assignee</dd>
+    <dt>labels</dt><dd>$labels</dd>
+    <dt>claim</dt><dd>$claim</dd>
+    <dt>readiness</dt><dd>dependency_ready=$ready eligible=$eligible reviewable=$reviewable blocked=$blocked</dd>
+    <dt>blocked reason</dt><dd>$blocked_reason</dd>
+    <dt>created</dt><dd>$created</dd>
+    <dt>updated</dt><dd>$updated</dd>
+    <dt>completed</dt><dd>$completed</dd>
+    <dt>version</dt><dd>$version</dd>
+  </dl>
+  <h2>Derived blockers</h2>
+  $blockers
+  <h2>Description</h2>
+  <pre class="description">$description</pre>
+</section>
+
+<section class="panel">
+  <h2>Prerequisites</h2>
+  $prerequisites
+  <h2>Dependents</h2>
+  $dependents
+</section>
+
+<section class="panel">
+  <h2>Notes</h2>
+  $notes
+  <h2>Recent history</h2>
+  $history
+</section>

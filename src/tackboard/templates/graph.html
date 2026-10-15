@@ -1,0 +1,29 @@
+<section class="panel graph-controls">
+  <form method="get" action="/graph">
+    <label for="graph-task">task</label>
+    <input id="graph-task" type="text" name="task" value="$task" placeholder="T-000001">
+    <button type="submit">Neighbourhood</button>
+    <a class="reset" href="/graph">whole graph</a>
+  </form>
+  <div class="graph-buttons">
+    <button type="button" class="graph-action" data-graph-action="zoom-in">zoom in</button>
+    <button type="button" class="graph-action" data-graph-action="zoom-out">zoom out</button>
+    <button type="button" class="graph-action" data-graph-action="fit">fit to screen</button>
+  </div>
+  <p class="graph-counts">nodes=$node_count edges=$edge_count</p>
+  $legend
+</section>
+<div class="graph" id="graph" data-task="$task">
+  <div class="graph-canvas is-hidden" id="graph-canvas"></div>
+  <div class="graph-fallback" id="graph-fallback">
+    <h2>Dependency outline</h2>
+    <p class="hint">
+      Server-rendered fallback: this outline is what you see with JavaScript
+      disabled or if the graph cannot be drawn. Each line names a task, its
+      status, and the tasks it depends on.
+    </p>
+    <ul class="dep-list">
+$fallback
+    </ul>
+  </div>
+</div>

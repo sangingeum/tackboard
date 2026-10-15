@@ -1,0 +1,19 @@
+static assets for the read-only web view
+=========================================
+
+Everything here is committed as-is and served from this package; the page
+never requests an external host, and there is no build step.
+
+- app.css     the whole stylesheet (no external fonts, no inline styles)
+- graph.js    hand-written SVG dependency-graph renderer (no vendored library)
+- refresh.js  the board's pausable auto-refresh
+
+graph.js is written for this project and carries no third-party code, so there
+is no vendor blob to audit and no license to track. It draws plain SVG shapes:
+done/backlog/blocked are squares (solid, dashed, thick-bordered), eligible is a
+circle, in progress a diamond, review a hexagon, cancelled a dotted square — so
+the server's status is readable without relying on colour. If it cannot fetch or
+render, the server-rendered indented dependency outline stays on the page.
+
+Full inline scripts and inline styles are impossible here on purpose: the server
+sends Content-Security-Policy: default-src 'self'.

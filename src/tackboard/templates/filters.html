@@ -1,0 +1,33 @@
+<section class="panel filters" aria-label="Filters">
+  <form method="get" action="/board">
+    <label for="filter-status">status</label>
+    <select id="filter-status" name="status">
+      <option value="">any</option>
+      $status_options
+    </select>
+
+    <label for="filter-priority">priority</label>
+    <select id="filter-priority" name="priority">
+      <option value="">any</option>
+      $priority_options
+    </select>
+
+    <label for="filter-assignee">assignee</label>
+    <input id="filter-assignee" type="text" name="assignee" value="$assignee">
+
+    <label for="filter-label">label</label>
+    <input id="filter-label" type="text" name="label" value="$label">
+
+    <label class="inline" for="filter-blocked">
+      <input id="filter-blocked" type="checkbox" name="blocked" value="1"$blocked_checked>
+      blocked
+    </label>
+    <label class="inline" for="filter-eligible">
+      <input id="filter-eligible" type="checkbox" name="eligible" value="1"$eligible_checked>
+      eligible
+    </label>
+
+    <button type="submit">Filter</button>
+    <a class="reset" href="/board">reset</a>
+  </form>
+</section>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$title &#8212; tackboard</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">tackboard</div>
+  <nav class="nav">
+    <a href="/board">Board</a>
+    <a href="/graph">Graph</a>
+  </nav>
+  <p class="identity">
+    <span class="identity-label">project</span>
+    <strong>$project</strong>
+    <span class="identity-label">database</span>
+    <code>$database</code>
+  </p>
+</header>
+<main id="content">
+$content
+</main>
+<footer class="footer">
+  <p>Read-only view. Every change goes through the <code>tack</code> CLI.</p>
+</footer>
+$scripts
+</body>
+</html>
