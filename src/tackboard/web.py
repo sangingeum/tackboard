@@ -448,6 +448,18 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
         """Report only our own version (no Python version, no trailing space)."""
         return self.server_version
 
+    def __getattr__(self, name: str) -> Any:
+        """Answer 405 for *any* method without a handler of its own.
+
+        The standard verbs are defined explicitly below; this catches the rest
+        (a made-up verb, ``OPTIONS`` from a scanner, anything else) instead of
+        letting the standard library answer 501. Only ``do_*`` names are
+        intercepted, so ordinary attribute lookups still raise ``AttributeError``.
+        """
+        if name.startswith("do_"):
+            return self._reject_method
+        raise AttributeError(name)
+
     # -- entry points ------------------------------------------------------ #
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming

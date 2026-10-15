@@ -369,6 +369,11 @@ def test_only_get_and_head_are_accepted(
     response = server.request("/api/board", method="POST")
     assert response.headers.get("Allow") == "GET, HEAD"
 
+    # Every other verb, including one the standard library has no handler for.
+    for method in ("OPTIONS", "TRACE", "BREW"):
+        assert server.request("/board", method=method).status == 405
+        assert server.request("/api/tasks/T-000001", method=method).status == 405
+
     head = server.request("/board", method="HEAD")
     assert head.status == 200
     assert head.body == b""
