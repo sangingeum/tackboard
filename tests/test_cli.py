@@ -104,6 +104,21 @@ def test_global_options_work_before_and_after_the_subcommand(
     assert before[1] == after[1]
     assert len(_json_document(before[1])["tasks"]) == 1
 
+    quiet_before = run("--quiet", "board", "--db", str(db_file))
+    quiet_after = run("board", "--quiet", "--db", str(db_file))
+    assert quiet_before == quiet_after
+    assert not quiet_before[1].startswith("# ")
+
+    database_last = run("--json", "--db", str(db_file), "board")
+    assert database_last[1] == after[1]
+
+    version_after = run("board", "--version")
+    assert version_after[0] == 0
+    assert version_after[1].startswith("tack ")
+
+    assert run("--help")[0] == 0
+    assert run("board", "--help")[0] == 0
+
 
 def test_quiet_suppresses_the_header_but_not_the_rows(run: RunCli, db_file: Path) -> None:
     _create(run, db_file, "alpha", "--status", "ready")
