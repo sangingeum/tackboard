@@ -140,11 +140,14 @@ Status and readiness
 
 @dataclass(slots=True, frozen=True)
 class _Context:
-    """Resolved global options."""
+    """Resolved global options that affect rendering.
+
+    ``--verbose`` is handled where errors are reported, because a failure
+    during parsing happens before any context exists.
+    """
 
     json: bool
     quiet: bool
-    verbose: bool
 
 
 # --------------------------------------------------------------------------- #
@@ -1131,7 +1134,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         ctx = _Context(
             json=json_mode,
             quiet=bool(getattr(args, "quiet", False)),
-            verbose=verbose,
         )
         return _dispatch(ctx, args)
     except TackError as exc:
