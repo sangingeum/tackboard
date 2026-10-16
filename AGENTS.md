@@ -1,4 +1,4 @@
-# AGENT.md — tackboard
+# AGENTS.md — tackboard
 
 Static orientation brief for agents working in this repository. Read this
 first, before any other exploration step. Keep it current: a structural change
@@ -95,7 +95,7 @@ Never install with global `pip` (PEP 668 blocks it); this project uses `uv`.
 
 ## Conventions
 
-- Python 3.11+, type hints throughout, standard-library `sqlite3`.
+- Python 3.12, type hints throughout, standard-library `sqlite3`.
 - Minimal dependencies; anything added must be justified in the change.
 - Parameterized SQL only.
 - Timestamps: UTC, fixed-width ISO-8601 with a `Z` suffix.
