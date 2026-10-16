@@ -1278,6 +1278,17 @@ def test_claim_release_and_conflict_codes(run: RunCli, db_file: Path) -> None:
     assert code == 0
     assert _json_document(out)["task"]["claimed_by"] == "other"
 
+    # A forced claim with no applicable force case: the card is assigned to
+    # another agent but nobody holds a claim, so the retired assignment-transfer
+    # case no longer justifies --force.
+    _create(run, db_file, "beta", "--status", "ready", "--assignee", "qa")
+    code, out, _ = run(
+        "claim", "T-000002", "--agent", "dev", "--force", "--reason", "habit",
+        "--json", "--db", str(db_file),
+    )
+    assert code == 4
+    assert _json_document(out)["error"]["code"] == "validation"
+
 
 def test_claims_older_than_filter(run: RunCli, db_file: Path) -> None:
     _create(run, db_file, "alpha", "--status", "ready")

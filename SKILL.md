@@ -390,6 +390,7 @@ same filtered set.
     requires `--reason`, it is recorded as an event, and it is allowed only for
     the enumerated cases (taking over or releasing another agent's claim,
     starting work whose only blocker is a cancelled/unfinished prerequisite,
+    adding an unfinished prerequisite to a task already in progress or review,
     recovering an `in_progress` task with no claim).
     If you reach for `--force` and your case is not on that list, the answer is
     a different command, not a bigger hammer.

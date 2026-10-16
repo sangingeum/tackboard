@@ -59,10 +59,9 @@ _SORT_FIELDS: frozenset[str] = frozenset(
 
 _FORCE_REQUIRES_REASON = "--force requires --reason with a non-empty explanation."
 _FORCE_NOT_APPLICABLE = (
-    "--force is not allowed here: it applies only to the enumerated cases in "
-    "the specification (takeover, unfinished prerequisites, adding an "
-    "unfinished prerequisite to active work, recovery of an unclaimed "
-    "in_progress task)."
+    "--force is not allowed here: it applies only to the enumerated cases "
+    "(takeover, unfinished prerequisites, adding an unfinished prerequisite "
+    "to active work, recovery of an unclaimed in_progress task)."
 )
 
 

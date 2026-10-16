@@ -81,6 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to another agent therefore succeeds and records that routing in the claim
   event instead of being refused, the assignment-transfer `--force` case is
   retired, and `update --assignee` records the previous assignee in its event.
+  The retired assignment-transfer force case also introduces one new refusal:
+  `claim --force --reason` on a task assigned to another agent used to transfer
+  the assignment and now exits 4 as force-not-applicable, because no force case
+  applies. A plain `claim` on the same task succeeds and leaves the assignment
+  in place.
 
 ## [0.1.0] - 2026-10-16
 

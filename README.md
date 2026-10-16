@@ -442,7 +442,8 @@ Status and readiness
   Readiness is derived, never stored: a task is eligible when its status is
   ready, every prerequisite is done, it has no explicit blocked reason, and
   nobody holds a claim. --force --reason TEXT is allowed only for the audited
-  cases listed in the specification — exhaustive, not a general bypass.
+  cases — taking over a claim, an unfinished prerequisite, adding one to active
+  work, recovering a lost claim — exhaustive, not a general bypass.
 ```
 
 ## Web view
