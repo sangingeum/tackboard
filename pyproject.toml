@@ -14,7 +14,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Project Management",
+    "Topic :: Office/Business :: Groupware",
 ]
 dependencies = []
 
