@@ -508,17 +508,16 @@ def _update_task_row(
     task: Task,
     *,
     status: str,
-    assignee: str | None,
     completed_at: str | None,
 ) -> None:
     now = utcnow_iso()
     cursor = conn.execute(
         """
         UPDATE tasks
-        SET status = ?, assignee = ?, completed_at = ?, updated_at = ?, version = ?
+        SET status = ?, completed_at = ?, updated_at = ?, version = ?
         WHERE id = ? AND version = ?
         """,
-        (status, assignee, completed_at, now, task.version + 1, task.id, task.version),
+        (status, completed_at, now, task.version + 1, task.id, task.version),
     )
     if cursor.rowcount != 1:
         raise StaleVersionError(
@@ -533,14 +532,12 @@ class _Transition:
         "acquire_claim",
         "clear_claim",
         "force_used",
-        "new_assignee",
         "new_status",
         "payload",
     )
 
-    def __init__(self, status: str, assignee: str | None) -> None:
+    def __init__(self, status: str) -> None:
         self.new_status = status
-        self.new_assignee = assignee
         self.acquire_claim = False
         self.clear_claim = False
         self.force_used = False
@@ -585,7 +582,7 @@ def apply_transition(
             )
         claim = _active_claim(conn, task_id)
         prerequisites = _prerequisites_for(conn, [task_id])[task_id]
-        plan = _Transition(task.status, task.assignee)
+        plan = _Transition(task.status)
 
         if mode == "status":
             assert status is not None
@@ -618,7 +615,6 @@ def apply_transition(
             conn,
             task,
             status=plan.new_status,
-            assignee=plan.new_assignee,
             completed_at=completed_at,
         )
         if plan.acquire_claim:
