@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI, filters and counts, method rejection, Host validation, escaping, an empty
   database, a 1,000-task graph, the no-JavaScript fallback, and the single
   `serve --json` startup record.
+- `SKILL.md`: the agent-facing usage guide — a flat command reference, the
+  versioned JSON and exit-code contracts, the claim/work/complete loop, and the
+  best practices for claiming, depending on, and completing work from a CLI.
 
 ### Fixed
 
