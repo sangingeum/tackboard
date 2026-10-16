@@ -396,6 +396,31 @@ def test_error_envelope_matches_the_contract(run: RunCli, db_file: Path) -> None
     assert "T-999999" in error["message"]
 
 
+def test_length_limit_errors_carry_machine_readable_details(
+    run: RunCli, db_file: Path
+) -> None:
+    code, out, err = run(
+        "create",
+        "x" * 201,
+        "--agent",
+        DEFAULT_ACTOR,
+        "--db",
+        str(db_file),
+        "--json",
+    )
+
+    assert code == 4
+    assert err == ""
+    error = _json_document(out)["error"]
+    assert error["code"] == "validation"
+    assert error["details"] == {
+        "field": "title",
+        "max": 200,
+        "unit": "characters",
+        "actual": 201,
+    }
+
+
 def test_errors_go_to_stderr_without_json(run: RunCli, db_file: Path) -> None:
     code, out, err = run("show", "T-999999", "--db", str(db_file))
 

@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SKILL.md`: the agent-facing usage guide — a flat command reference, the
   versioned JSON and exit-code contracts, the claim/work/complete loop, and the
   best practices for claiming, depending on, and completing work from a CLI.
+- Field limits documented in `SKILL.md` and `README.md`: every write-time limit
+  in one table (`title` 200 characters, `description` 64 KiB, a label 50
+  characters and 20 labels per task, `blocked_reason` and note text 2 KiB,
+  `--reason` 1024 characters, agent-id shape), so a caller can size a value
+  before writing it instead of discovering the limit on exit 4.
 
 ### Fixed
 
@@ -62,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   beginning work on a `review` task the actor claimed — no longer rewrites the
   claim's `claimed_at`. "If already held by actor, keep the claim" now keeps
   the claim as it stands (spec 8.2).
+- Length-limit validation errors now carry machine-readable `details` —
+  `field`, `max`, `unit` and `actual` — instead of an empty object, so an agent
+  can recover programmatically rather than parsing the message prose. Filed as
+  issue #2, where a 200-character title limit was discoverable only by hitting
+  exit 4 mid-round; the same details cover `description`, `label`, `labels`,
+  `blocked_reason`, `note` and `--reason`.
 
 ## [0.1.0] - 2026-10-16
 

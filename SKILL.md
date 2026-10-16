@@ -143,6 +143,28 @@ Be aware that `claim` only works on a **`ready`** task. A task created in
 `backlog` (the default) must be moved to `ready` before anyone can claim it —
 this is deliberate: `ready` is the decision that work may start.
 
+## Field limits
+
+Limits are enforced on write; a violation is exit 4 (`validation`).
+
+| Field | Limit |
+|---|---|
+| `title` | 200 characters, after trimming (whitespace-only is rejected) |
+| `description` | 64 KiB (65536 UTF-8 bytes) |
+| `label` | 50 characters per label, at most 20 labels per task |
+| `blocked_reason` | 2 KiB (2048 UTF-8 bytes) |
+| note text (`note`) | 2 KiB (2048 UTF-8 bytes) |
+| `--reason` (with `--force`) | 1024 characters |
+| agent id (`--agent`, `--assignee`) | 1-64 characters from `[A-Za-z0-9._:-]` |
+
+Read the limit before writing: a rejected `create` costs a round trip, and the
+fix is usually to shorten the title and move the full text into
+`--description`. A length violation's `details` names the field:
+
+```json
+{"schema_version": 1, "error": {"code": "validation", "message": "Title is too long: 228 characters, maximum is 200.", "exit_code": 4, "retryable": false, "details": {"field": "title", "max": 200, "unit": "characters", "actual": 228}}}
+```
+
 ## The JSON contract
 
 - Every document carries `"schema_version": 1`; fields are only ever added.
@@ -154,6 +176,9 @@ this is deliberate: `ready` is the decision that work may start.
 - `board`, `list` and `next` **omit `description`** unless `--full` is passed —
   that is the token-economy default. `show` and mutation results always include
   it.
+- Error `details` carry machine-readable keys where they exist (a length
+  violation gives `field` / `max` / `unit` / `actual`; a claim conflict gives
+  `claimed_by`) — read them instead of parsing the message text.
 - Mutations return `{"schema_version":1,"changed":<bool>,"task":{...}}`.
   `changed:false` means the call was an idempotent no-op: nothing was written
   and no event was recorded.

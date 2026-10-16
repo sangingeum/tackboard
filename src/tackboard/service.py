@@ -84,7 +84,13 @@ def _check_title(title: str) -> str:
     if len(stripped) > MAX_TITLE_LENGTH:
         raise ValidationError(
             f"Title is too long: {len(stripped)} characters, maximum is "
-            f"{MAX_TITLE_LENGTH}."
+            f"{MAX_TITLE_LENGTH}.",
+            details={
+                "field": "title",
+                "max": MAX_TITLE_LENGTH,
+                "unit": "characters",
+                "actual": len(stripped),
+            },
         )
     return stripped
 
@@ -94,7 +100,13 @@ def _check_description(description: str) -> str:
         raise ValidationError("Description must be a string.")
     if len(description.encode("utf-8")) > MAX_DESCRIPTION_BYTES:
         raise ValidationError(
-            f"Description is too long: maximum is {MAX_DESCRIPTION_BYTES} bytes."
+            f"Description is too long: maximum is {MAX_DESCRIPTION_BYTES} bytes.",
+            details={
+                "field": "description",
+                "max": MAX_DESCRIPTION_BYTES,
+                "unit": "bytes",
+                "actual": len(description.encode("utf-8")),
+            },
         )
     return description
 
@@ -131,7 +143,13 @@ def _check_blocked_reason(reason: str | None) -> str | None:
         return None
     if len(stripped.encode("utf-8")) > MAX_BLOCKED_REASON_BYTES:
         raise ValidationError(
-            f"Blocked reason is too long: maximum is {MAX_BLOCKED_REASON_BYTES} bytes."
+            f"Blocked reason is too long: maximum is {MAX_BLOCKED_REASON_BYTES} bytes.",
+            details={
+                "field": "blocked_reason",
+                "max": MAX_BLOCKED_REASON_BYTES,
+                "unit": "bytes",
+                "actual": len(stripped.encode("utf-8")),
+            },
         )
     return stripped
 
@@ -140,7 +158,15 @@ def _check_note(text: str) -> str:
     if not isinstance(text, str) or not text.strip():
         raise ValidationError("Note text must not be empty.")
     if len(text.encode("utf-8")) > MAX_NOTE_BYTES:
-        raise ValidationError(f"Note is too long: maximum is {MAX_NOTE_BYTES} bytes.")
+        raise ValidationError(
+            f"Note is too long: maximum is {MAX_NOTE_BYTES} bytes.",
+            details={
+                "field": "note",
+                "max": MAX_NOTE_BYTES,
+                "unit": "bytes",
+                "actual": len(text.encode("utf-8")),
+            },
+        )
     return text
 
 
@@ -152,7 +178,13 @@ def _check_force_reason(force: bool, reason: str | None) -> str | None:
     trimmed = reason.strip()
     if len(trimmed) > MAX_REASON_LENGTH:
         raise ValidationError(
-            f"--reason is too long: maximum is {MAX_REASON_LENGTH} characters."
+            f"--reason is too long: maximum is {MAX_REASON_LENGTH} characters.",
+            details={
+                "field": "reason",
+                "max": MAX_REASON_LENGTH,
+                "unit": "characters",
+                "actual": len(trimmed),
+            },
         )
     return trimmed
 
@@ -169,7 +201,13 @@ def _normalize_labels(labels: Iterable[str]) -> list[tuple[str, str]]:
             continue
         if len(label) > MAX_LABEL_LENGTH:
             raise ValidationError(
-                f"Label {label!r} is too long: maximum is {MAX_LABEL_LENGTH} characters."
+                f"Label {label!r} is too long: maximum is {MAX_LABEL_LENGTH} characters.",
+                details={
+                    "field": "label",
+                    "max": MAX_LABEL_LENGTH,
+                    "unit": "characters",
+                    "actual": len(label),
+                },
             )
         key = label.casefold()
         if key in seen:
@@ -178,7 +216,13 @@ def _normalize_labels(labels: Iterable[str]) -> list[tuple[str, str]]:
         pairs.append((label, key))
     if len(pairs) > MAX_LABELS:
         raise ValidationError(
-            f"Too many labels: {len(pairs)}, maximum is {MAX_LABELS} per task."
+            f"Too many labels: {len(pairs)}, maximum is {MAX_LABELS} per task.",
+            details={
+                "field": "labels",
+                "max": MAX_LABELS,
+                "unit": "labels",
+                "actual": len(pairs),
+            },
         )
     return pairs
 

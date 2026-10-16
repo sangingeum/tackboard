@@ -16,7 +16,14 @@ from tackboard.errors import (
     UsageError,
     ValidationError,
 )
-from tackboard.models import MAX_DESCRIPTION_BYTES, MAX_LABELS, MAX_TITLE_LENGTH
+from tackboard.models import (
+    MAX_BLOCKED_REASON_BYTES,
+    MAX_DESCRIPTION_BYTES,
+    MAX_LABELS,
+    MAX_NOTE_BYTES,
+    MAX_REASON_LENGTH,
+    MAX_TITLE_LENGTH,
+)
 
 MakeTask = Callable[..., dict[str, Any]]
 
@@ -106,15 +113,63 @@ def test_create_rejects_an_empty_title(
 
 
 def test_create_rejects_an_overlong_title(conn: sqlite3.Connection) -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as caught:
         service.create_task(conn, actor="dev", title="x" * (MAX_TITLE_LENGTH + 1))
+    assert caught.value.details == {
+        "field": "title",
+        "max": MAX_TITLE_LENGTH,
+        "unit": "characters",
+        "actual": MAX_TITLE_LENGTH + 1,
+    }
 
 
 def test_create_rejects_an_overlong_description(conn: sqlite3.Connection) -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as caught:
         service.create_task(
             conn, actor="dev", title="Big", description="x" * (MAX_DESCRIPTION_BYTES + 1)
         )
+    assert caught.value.details == {
+        "field": "description",
+        "max": MAX_DESCRIPTION_BYTES,
+        "unit": "bytes",
+        "actual": MAX_DESCRIPTION_BYTES + 1,
+    }
+
+
+def test_length_limits_name_the_field_in_details(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """A length violation is recoverable programmatically, not only by prose."""
+    task = make_task(title="Limited")
+
+    with pytest.raises(ValidationError) as caught:
+        service.update_task(
+            conn,
+            task["id"],
+            actor="dev",
+            blocked_reason="x" * (MAX_BLOCKED_REASON_BYTES + 1),
+        )
+    assert caught.value.details["field"] == "blocked_reason"
+    assert caught.value.details["max"] == MAX_BLOCKED_REASON_BYTES
+    assert caught.value.details["unit"] == "bytes"
+
+    with pytest.raises(ValidationError) as caught:
+        service.add_note(conn, task["id"], "x" * (MAX_NOTE_BYTES + 1), actor="dev")
+    assert caught.value.details["field"] == "note"
+    assert caught.value.details["max"] == MAX_NOTE_BYTES
+
+    with pytest.raises(ValidationError) as caught:
+        service.set_status(
+            conn,
+            task["id"],
+            "ready",
+            actor="dev",
+            force=True,
+            reason="x" * (MAX_REASON_LENGTH + 1),
+        )
+    assert caught.value.details["field"] == "reason"
+    assert caught.value.details["max"] == MAX_REASON_LENGTH
+    assert caught.value.details["unit"] == "characters"
 
 
 @pytest.mark.parametrize(
@@ -146,15 +201,24 @@ def test_create_rejects_invalid_agent_identifiers(conn: sqlite3.Connection) -> N
 
 
 def test_create_rejects_too_many_or_overlong_labels(conn: sqlite3.Connection) -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as caught:
         service.create_task(
             conn,
             actor="dev",
             title="Many labels",
             labels=[f"l{i}" for i in range(MAX_LABELS + 1)],
         )
-    with pytest.raises(ValidationError):
+    assert caught.value.details["field"] == "labels"
+    assert caught.value.details["max"] == MAX_LABELS
+
+    with pytest.raises(ValidationError) as caught:
         service.create_task(conn, actor="dev", title="Long label", labels=["x" * 51])
+    assert caught.value.details == {
+        "field": "label",
+        "max": 50,
+        "unit": "characters",
+        "actual": 51,
+    }
 
 
 def test_labels_are_trimmed_and_deduplicated_case_insensitively(

@@ -232,6 +232,28 @@ Mutation results are uniform:
 An operation that would change nothing reports `"changed": false` and writes no
 history event and no version increment.
 
+### Field limits
+
+Limits are enforced on write; a violation is exit 4 (`validation`) and the
+message names the field and the limit.
+
+| Field | Limit |
+|---|---|
+| `title` | 200 characters, after trimming (whitespace-only is rejected) |
+| `description` | 64 KiB (65536 UTF-8 bytes) |
+| `label` | 50 characters per label, at most 20 labels per task |
+| `blocked_reason` | 2 KiB (2048 UTF-8 bytes) |
+| note text (`note`) | 2 KiB (2048 UTF-8 bytes) |
+| `--reason` (with `--force`) | 1024 characters |
+| agent id (`--agent`, `--assignee`) | 1-64 characters from `[A-Za-z0-9._:-]` |
+
+A length violation also carries machine-readable details, so a caller can
+recover without parsing the message:
+
+```json
+{"schema_version": 1, "error": {"code": "validation", "message": "Title is too long: 228 characters, maximum is 200.", "exit_code": 4, "retryable": false, "details": {"field": "title", "max": 200, "unit": "characters", "actual": 228}}}
+```
+
 ## Status, readiness and claims
 
 Status is stored; readiness is derived. Nothing about readiness is ever
@@ -304,6 +326,9 @@ are also JSON — on **stdout**, matching:
 
 Error codes are `usage`, `not_found`, `validation`, `invalid_transition`,
 `cycle`, `claim_conflict`, `stale_version`, `locked`, `schema`, `internal`.
+A length-limit violation fills `details` with `field`, `max`, `unit` and
+`actual` (see [Field limits](#field-limits)); other errors document their own
+keys.
 Without `--json`, errors go to stderr as `error: <message>`. Tracebacks appear
 only with `--verbose`, and output is UTF-8 with no color codes.
 
