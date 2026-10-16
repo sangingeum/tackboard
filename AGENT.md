@@ -1,4 +1,4 @@
-# AGENTS.md — tackboard
+# AGENT.md — tackboard
 
 Static orientation brief for agents working in this repository. Read this
 first, before any other exploration step. Keep it current: a structural change
