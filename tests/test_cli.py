@@ -1279,8 +1279,8 @@ def test_claim_release_and_conflict_codes(run: RunCli, db_file: Path) -> None:
     assert _json_document(out)["task"]["claimed_by"] == "other"
 
     # A forced claim with no applicable force case: the card is assigned to
-    # another agent but nobody holds a claim, so the retired assignment-transfer
-    # case no longer justifies --force.
+    # another agent but nobody holds a claim, so no force case applies and the
+    # command is refused.
     _create(run, db_file, "beta", "--status", "ready", "--assignee", "qa")
     code, out, _ = run(
         "claim", "T-000002", "--agent", "dev", "--force", "--reason", "habit",

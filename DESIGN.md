@@ -116,7 +116,7 @@ The function has one shape whatever the caller:
 7. Commit; on any exception the whole transaction rolls back, so a mutation and
    its event can never disagree.
 
-The claim/status policy table of the specification is therefore implemented
+The claim/status policy is therefore implemented
 once. `claim`, the shortcuts, and the CLI are all thin wrappers that choose a
 mode and pass options through; there is no second place where a transition can
 be approved or a claim can be taken.
@@ -241,8 +241,8 @@ Human output may be re-worded.
 ## 9. Testing strategy
 
 The suite is pytest, with `filterwarnings = ["error"]` so a deprecation cannot
-be ignored into the next release. Areas map one-to-one onto the specification's
-test section: task lifecycle, project selection and database safety,
+be ignored into the next release. Areas map one-to-one onto the tool's own
+surface: task lifecycle, project selection and database safety,
 dependencies, claims and real multi-process concurrency (racing OS processes
 against one task), the CLI contract, and integrity checks including seeded
 corruption. Every test owns a temporary database and never touches a

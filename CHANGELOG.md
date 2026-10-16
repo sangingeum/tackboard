@@ -6,6 +6,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-17
+
+### Changed
+
+- A claim never writes the assignment. The explicit `claim` command and the
+  implicit claim taken by `status … in_progress` now agree: any agent may claim
+  a task, the claim names the agent that takes it, and the assignment
+  (`assignee`) is left alone — it is written only by an explicit routing
+  command (`create --assignee` / `update --assignee`). A claim on a task routed
+  to another agent therefore succeeds and records that routing in the claim
+  event instead of being refused, the assignment-transfer `--force` case is
+  retired, and `update --assignee` records the previous assignee in its event.
+  The retired assignment-transfer force case also introduces one new refusal:
+  `claim --force --reason` on a task assigned to another agent used to transfer
+  the assignment and now exits 4 as force-not-applicable, because no force case
+  applies. A plain `claim` on the same task succeeds and leaves the assignment
+  in place.
+- `task.status_changed` now records `routed_to` (the card's current assignee)
+  when a `status … in_progress` move takes a claim on a card routed to another
+  agent, exactly as the claim event does, and omits the key when the actor is
+  the assignee or the card is unrouted.
+
+### Fixed
+
+- The reported version is single-sourced. `pyproject.toml` is now the only
+  place the release number is written by hand: `tackboard.__version__` is read
+  from the installed distribution metadata, with a clearly-marked fallback for
+  a source tree whose metadata is absent, so `tack --version` can no longer
+  drift from the packaged version. At 0.1.1 the number was bumped in
+  `pyproject.toml` and `SKILL.md` but missed in `src/tackboard/__init__.py`, so
+  the release reported itself as 0.1.0.
+
+## [0.1.1] - 2026-10-16
+
+### Added
+
+- Distributions on PyPI as `tackboard` (`uv tool install tackboard`,
+  `uvx tackboard --help`, or `pip install tackboard`). The wheel and the sdist
+  both carry the web templates and static assets and the MIT license; the sdist
+  also carries the README and the project metadata.
+- An `agent-report` GitHub issue template, so a tool defect found while using
+  `tack` has one place to be filed.
+
+### Fixed
+
+- Length-limit validation errors now carry machine-readable `details` —
+  `field`, `max`, `unit` and `actual` — instead of an empty object, so an agent
+  can recover programmatically rather than parsing the message prose. Filed as
+  issue #2, where a 200-character title limit was discoverable only by hitting
+  exit 4 mid-round; the same details cover `description`, `label`, `labels`,
+  `blocked_reason`, `note` and `--reason`.
+- Declared Python support is consistent: the package requires Python 3.12 and
+  the `Programming Language :: Python` classifier no longer advertises 3.11.
+- Packaging metadata was bumped to 0.1.1 in `pyproject.toml` and `SKILL.md`.
+  `src/tackboard/__init__.py` was missed and still reported 0.1.0; the 0.2.0
+  entry above corrects that.
+
+## [0.1.0] - 2026-10-16
+
+First release. `tackboard` is a project-scoped task board for coordinating
+several agents on one codebase: a stable `tack` CLI over a single SQLite
+database per project, a versioned JSON contract, readiness derived from a
+dependency DAG, single-holder claims with an atomic "claim the next ready
+task" selector, and a read-only board and dependency-graph web view for the
+operator. The sections below describe this first-release surface in full and
+the packaging work that makes the distributions installable.
+
 ### Added
 
 - Repository scaffold: package layout, packaging metadata, MIT license, CI.
@@ -67,53 +134,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   beginning work on a `review` task the actor claimed — no longer rewrites the
   claim's `claimed_at`. "If already held by actor, keep the claim" now keeps
   the claim as it stands (spec 8.2).
-- Length-limit validation errors now carry machine-readable `details` —
-  `field`, `max`, `unit` and `actual` — instead of an empty object, so an agent
-  can recover programmatically rather than parsing the message prose. Filed as
-  issue #2, where a 200-character title limit was discoverable only by hitting
-  exit 4 mid-round; the same details cover `description`, `label`, `labels`,
-  `blocked_reason`, `note` and `--reason`.
-- A claim never writes the assignment. The explicit `claim` command and the
-  implicit claim taken by `status … in_progress` now agree: any agent may claim
-  a task, the claim names the agent that takes it, and the assignment
-  (`assignee`) is left alone — it is written only by an explicit routing
-  command (`create --assignee` / `update --assignee`). A claim on a task routed
-  to another agent therefore succeeds and records that routing in the claim
-  event instead of being refused, the assignment-transfer `--force` case is
-  retired, and `update --assignee` records the previous assignee in its event.
-  The retired assignment-transfer force case also introduces one new refusal:
-  `claim --force --reason` on a task assigned to another agent used to transfer
-  the assignment and now exits 4 as force-not-applicable, because no force case
-  applies. A plain `claim` on the same task succeeds and leaves the assignment
-  in place.
-- `task.status_changed` now records `routed_to` (the card's current assignee)
-  when a `status … in_progress` move takes a claim on a card routed to another
-  agent, exactly as the claim event does, and omits the key when the actor is
-  the assignee or the card is unrouted.
-
-## [0.1.0] - 2026-10-16
-
-First release. `tackboard` is a project-scoped task board for coordinating
-several agents on one codebase: a stable `tack` CLI over a single SQLite
-database per project, a versioned JSON contract, readiness derived from a
-dependency DAG, single-holder claims with an atomic "claim the next ready
-task" selector, and a read-only board and dependency-graph web view for the
-operator. The Unreleased section above describes this first-release surface in
-full; this entry records the release and the packaging work that makes the
-distributions installable.
-
-## [0.1.1] - 2026-10-16
-Fixed issues#2
-
-
-### Added
-
-- Distributions on PyPI as `tackboard` (`uv tool install tackboard`,
-  `uvx tackboard --help`, or `pip install tackboard`). The wheel and the sdist
-  both carry the web templates and static assets and the MIT license; the sdist
-  also carries the README and the project metadata.
-
-### Fixed
-
-- Declared Python support is consistent: the package requires Python 3.12 and
-  the `Programming Language :: Python` classifier no longer advertises 3.11.

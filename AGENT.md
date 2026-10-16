@@ -13,12 +13,13 @@ One SQLite database per project; a stable CLI (`tack`) is the primary interface
 for agents; a read-only web view serves the human operator. It is a
 coordination board, not a project-management suite.
 
-Governing specification: the tool's behavior is defined by the implementation
-specification the project was built against (sections 1-19: goals, task model,
-dependency DAG, claims, CLI contract, web UI, schema, tests, acceptance
-criteria). `DESIGN.md` restates the architecture for contributors, and
-`README.md` is the operator guide (its "Agent quickstart" section is the same
-text `tack guide` prints).
+Provenance: the project was built against an implementation specification that
+is not part of this repository (its sections 1-19 covered goals, the task
+model, the dependency DAG, claims, the CLI contract, the web UI, the schema,
+the tests and the acceptance criteria). That is lineage only — everything a
+reader needs to interpret the tool lives in this repository: `DESIGN.md`
+restates the architecture for contributors, and `README.md` is the operator
+guide (its "Agent quickstart" section is the same text `tack guide` prints).
 
 ## Layout
 
@@ -90,8 +91,7 @@ Never install with global `pip` (PEP 668 blocks it); this project uses `uv`.
 7. **Untrusted text.** Titles, descriptions, labels, notes, and agent IDs are
    plain text: never executed, never interpreted as HTML, escaped on output.
 8. **Small and understandable** beats broad: a narrow, reliable surface over a
-   feature-rich one. Deferred features are listed in the specification's
-   appendix and must not be half-implemented.
+   feature-rich one. Deferred features must not be half-implemented.
 
 ## Conventions
 
