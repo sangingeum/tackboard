@@ -72,9 +72,12 @@ This is the whole discipline; the command reference below exists to support it.
 
 1. **Select work atomically.** `tack next --claim --json` picks the top
    *eligible* task and claims it in a single transaction. Two agents running it
-   concurrently get two different tasks, or one gets an **empty `tasks` array**
-   (the `next` document is `{"schema_version":1,"tasks":[...]}` — never a bare
-   task and never `null`; see *The JSON contract*).
+   concurrently get two different tasks, or one gets `{"schema_version":1,
+   "task":null}` — `--claim` emits a **single-task document**, not the plain
+   `next` container, so with nothing eligible its `task` is `null`. Plain
+   `tack next --json` is the other form: `{"schema_version":1,"tasks":[...]}`,
+   where the empty result is an **empty `tasks` array** — never a bare task and
+   never `null`. See *The JSON contract*.
 2. **Read before you act.** `tack show <id> --json` — confirm the status,
    prerequisites, description and any prior notes.
 3. **Record intent while working.** `tack note <id> "..."` for handoff context,
@@ -128,6 +131,8 @@ Every mutating command takes `--agent` or falls back to `TACKBOARD_AGENT`
 (the explicit option wins). Read-only commands (`board`, `list`, `show`,
 `deps`, `dependents`, `graph`, `history`, `claims`, `doctor`) need no actor.
 `next` needs one even without `--claim`, because selection is agent-specific.
+`next --claim` prints a single-task document where plain `next` prints the
+`tasks` container — see *The JSON contract*.
 
 ### Statuses and transitions
 
@@ -184,10 +189,13 @@ fix is usually to shorten the title and move the full text into
   `{"schema_version":1,"error":{"code","message","exit_code","retryable","details"}}`
   and stderr stays empty unless `--verbose`. Without `--json`, errors go to
   stderr and humans get prose.
-- `board`, `list` and `next` **omit `description`** unless `--full` is passed —
-  that is the token-economy default. `show` and mutation results always include
-  it on the `task` object; the `active_dependents` entries a `reopen` adds are
-  the projection *without* a description (see below).
+- `board`, `list`, `next` (both forms), `deps`/`dependents` and `claims` emit
+  the **task projection without `description`** — the token-economy default.
+  `board`, `list` and `next` take `--full` to include it; `deps`/`dependents`
+  and `claims` have **no `--full` opt-in** and never carry a description. `show`
+  and mutation results always include it on the `task` object; the
+  `active_dependents` entries a `reopen` adds are likewise the projection
+  *without* a description (see below).
 - Error `details` carry machine-readable keys where they exist (a length
   violation gives `field` / `max` / `unit` / `actual`; a claim conflict gives
   `claimed_by`) — read them instead of parsing the message text.
@@ -201,6 +209,7 @@ array; `{...}` is an object whose inner keys are described below the table.
 |---|---|
 | `show <id>` | `{schema_version, task:{...}, notes:[...]}` |
 | `next` | `{schema_version, tasks:[...]}` (0 or 1 tasks) |
+| `next --claim` | `{schema_version, task:{...}}` (`task` is `null` when nothing is eligible) |
 | `board` / `list` | `{schema_version, project, counts:{...}, tasks:[...]}` |
 | `board` / `list` with `--brief` or `--count` | `{schema_version, project, counts:{...}}` (no `tasks`) |
 | `deps <id>` / `dependents <id>` | `{schema_version, task_id, tasks:[...]}` |
@@ -212,6 +221,9 @@ array; `{...}` is an object whose inner keys are described below the table.
 | a mutation except `note` and `reopen` (`create`, `update`, `status`, `complete`, `cancel`, `restore`, `claim`, `release`, `depend add/remove`) | `{schema_version, changed, task:{...}}` |
 | `reopen <id>` | `{schema_version, changed, task:{...}}`, plus `active_dependents:[...]` when it changes anything |
 | `note <id> TEXT` | `{schema_version, changed, event:{...}}` |
+| `init` | `{schema_version, ok, database, operation, created, project_label, database_schema_version}` |
+| `migrate` | `{schema_version, ok, database, operation, migrated, from_version, to_version, database_schema_version}` |
+| `backup` | `{schema_version, ok, database, operation, backup, source_application_id, database_schema_version}` |
 | any error under `--json` | `{schema_version, error:{code,message,exit_code,retryable,details}}` |
 
 `guide` prints text and ignores `--json`. `--brief` and `--count` print human
@@ -228,10 +240,19 @@ The **task projection** (the `task` object, and each entry of `tasks`) carries
 - **`show` is a container, not the task.** The task object is under `task`;
   `notes` holds the task's notes (newest first, at most five). Read
   `document["task"]`, not `document`.
-- **`next` is a container too.** It is `{"schema_version":1,"tasks":[...]}` with
-  zero or one tasks. When nothing is eligible it is
-  `{"schema_version":1,"tasks":[]}` and the exit code is `0` — never `null` and
-  never a scalar task.
+- **`next` has two forms; `--claim` is the second.** Plain `next` is a
+  container — `{"schema_version":1,"tasks":[...]}` with zero or one tasks. When
+  nothing is eligible it is `{"schema_version":1,"tasks":[]}` and the exit code
+  is `0` — never `null` and never a scalar task. `next --claim` returns a
+  **single-task document instead**: `{"schema_version":1,"task":{...}}`, the
+  same `task` object a mutation returns, with `task` equal to `null` when
+  nothing is eligible. It has no `tasks` key; read `document["task"]`.
+- **`init`, `migrate` and `backup` carry the operation's own `ok`, not
+  `doctor`'s.** Each emits `{schema_version, ok, database, operation, ...}`.
+  Here `ok: true` means *the operation succeeded* — the board was created,
+  migrated or copied — which is a different thing from `doctor`'s `ok` (no
+  errors found). Read the operation-specific key (`created`, `migrated`,
+  `backup`) for what actually happened.
 - **`deps` / `dependents`** name the queried task in `task_id` and hold its
   direct prerequisites / dependents in `tasks` (an empty `tasks` is normal).
 - **`history`** sets `task_id` to the task you queried (`null` for the
@@ -247,10 +268,12 @@ The **task projection** (the `task` object, and each entry of `tasks`) carries
   is a fourth top-level field beside `schema_version`, `changed` and `task`, and
   it is absent from every other mutation and from a no-op `reopen`. The array
   lists the reopened task's direct dependents whose status is `in_progress` or
-  `review` — the dependents that had already started — ordered by the task's
-  sequence. Each entry is the task projection as `board`/`list` produce it
-  without `--full`: the same keys as the `task` object, except that
-  `description` is omitted. Its meaning: reopening a prerequisite leaves those
+  `review` — the dependents that had already started — ordered by each
+  dependent's own sequence (its creation order on the board). Each entry is the
+  task projection as `board`/`list` produce it without `--full`: the same keys
+  as the `task` object, except that `description` is omitted. A changed reopen
+  may report an **empty array**: the key is present with `[]` when no dependent
+  has started. Its meaning: reopening a prerequisite leaves those
   started dependents where they are, so they stay `in_progress`/`review` while
   now being displayed as blocked — the array is exactly the set a human or agent
   must decide about. See the matching pitfall, *Reopening a prerequisite does
@@ -296,6 +319,13 @@ same filtered set.
   means no errors were found, and it is emitted alongside a non-empty
   `warnings` array. The health signal is the `warnings` array (and `errors`) —
   not `ok`, and not the exit code. Read `warnings` on every run.
+- Every entry of `errors` and `warnings` carries `code` (the machine-readable
+  kind) and `message` (the human-readable text). An entry about a task adds
+  `task_id`, and one about a specific edge adds `prerequisite_id` too (the
+  started-dependent warning `inconsistent_blocked_state` carries both). Other
+  checks add their own keys — `path` for a `dependency_cycle`, `found` /
+  `supported` for a schema-version error, `table` / `rowid` for a foreign-key
+  violation.
 
 ### Exit codes
 

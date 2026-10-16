@@ -154,6 +154,9 @@ tack guide
 Global options work before or after the subcommand: `--db PATH`, `--json`,
 `--quiet`, `--verbose`, `--version`, `--help`. `--quiet` suppresses
 informational headers only — never a command's result, never an error.
+`tack next --claim` prints the single-task document
+`{"schema_version": 1, "task": ...}`; plain `tack next` prints the `tasks`
+container instead.
 
 Examples:
 
@@ -210,9 +213,10 @@ therefore reports `blocked: 0` even when the board holds blocked tasks. Use an
 unfiltered `board --json` for the board size, or `list --blocked --json` for the
 blocked count.
 
-JSON omits descriptions to save agent tokens; pass `--full` to include them.
-`show` and the `task` object of a mutation result always include the
-description.
+JSON omits descriptions to save agent tokens; pass `--full` to include them on
+`board`, `list` and `next`. `deps`/`dependents` and `claims` never carry a
+description and have no `--full` opt-in. `show` and the `task` object of a
+mutation result always include the description.
 
 ## Tasks
 
@@ -238,17 +242,19 @@ Mutation results share one envelope:
 ```
 
 An operation that would change nothing reports `"changed": false` and writes no
-history event and no version increment.
+history event and no version increment. If this summary and `SKILL.md`'s *The
+JSON contract* differ, the skill is authoritative.
 
 `reopen` reports more than the task it changed. Every other mutation returns
 that same three-key envelope; when `reopen` actually reopens a task, its
 document carries a fourth key, `active_dependents`: the task's direct dependents
 whose status is `in_progress` or `review` (work already started), ordered by
-task sequence, each one the task projection without `description`. Reopening a
-prerequisite does not move those dependents — they stay `in_progress`/`review`
-and become displayed as blocked — so the array is exactly the set to decide
-about. A no-op `reopen` (`"changed": false`) and every other mutation omit the
-key.
+each dependent's own creation order on the board, each one the task projection
+without `description`. A changed `reopen` may report an empty array — the key is
+present with `[]` when no dependent has started. Reopening a prerequisite does
+not move those dependents — they stay `in_progress`/`review` and become
+displayed as blocked — so the array is exactly the set to decide about. A no-op
+`reopen` (`"changed": false`) and every other mutation omit the key.
 
 ### Field limits
 
@@ -359,15 +365,18 @@ Without `--json`, errors go to stderr as `error: <message>`. Tracebacks appear
 only with `--verbose`, and output is UTF-8 with no color codes.
 
 The read-only and mutation documents are containers, not bare tasks: `show`
-puts the task under `task` (alongside `notes`), `next` returns
+puts the task under `task` (alongside `notes`), plain `next` returns
 `{"schema_version": 1, "tasks": [...]}` — an empty `tasks` array, never `null`,
-when nothing is eligible — and a mutation returns
+when nothing is eligible — while `next --claim` returns the single-task document
+`{"schema_version": 1, "task": ...}` (or `"task": null` when nothing is
+eligible), and a mutation returns
 `{"schema_version": 1, "changed": <bool>, "task": {...}}` (`note` returns an
 `event` instead, and `reopen` adds `active_dependents` when it changes
 anything). `doctor` returns `ok`, `errors` and `warnings`, where
 `ok: true` means no errors were found and does **not** imply an empty
 `warnings` array. The full table of document shapes is in the skill's *The JSON
-contract* section (`SKILL.md`).
+contract* section (`SKILL.md`); if this summary and `SKILL.md`'s *The JSON
+contract* differ, the skill is authoritative.
 
 ## Agent quickstart
 
