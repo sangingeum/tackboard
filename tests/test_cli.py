@@ -695,6 +695,31 @@ def test_next_stage_review_claims_a_reviewable_task(run: RunCli, db_file: Path) 
     assert task["claimed_by"] == DEFAULT_ACTOR
 
 
+def test_status_moves_take_and_release_the_claim(run: RunCli, db_file: Path) -> None:
+    """Entering `in_progress` claims for the actor; leaving it releases."""
+    task = _create(run, db_file, "Managed lifecycle", "--status", "ready")
+
+    def mutate(*argv: str) -> dict[str, Any]:
+        code, out, err = run(*argv, "--db", str(db_file), "--json")
+        assert code == 0, err
+        return _json_document(out)["task"]
+
+    started = mutate("status", task["id"], "in_progress", "--agent", DEFAULT_ACTOR)
+    assert started["claimed_by"] == DEFAULT_ACTOR
+    assert started["claimed_at"] is not None
+
+    reviewed = mutate("status", task["id"], "review", "--agent", DEFAULT_ACTOR)
+    assert reviewed["claimed_by"] is None
+    assert reviewed["claimed_at"] is None
+
+    restarted = mutate("status", task["id"], "in_progress", "--agent", "other")
+    assert restarted["claimed_by"] == "other"
+
+    done = mutate("complete", task["id"], "--agent", "other")
+    assert done["status"] == "done"
+    assert done["claimed_by"] is None
+
+
 # --------------------------------------------------------------------------- #
 # lifecycle
 # --------------------------------------------------------------------------- #

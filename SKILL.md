@@ -145,6 +145,15 @@ Be aware that `claim` only works on a **`ready`** task. A task created in
 `backlog` (the default) must be moved to `ready` before anyone can claim it —
 this is deliberate: `ready` is the decision that work may start.
 
+**Entering `in_progress` claims the task; leaving it releases the claim.** A
+transition to `in_progress` sets `claimed_by`/`claimed_at` to the acting agent —
+the same state `claim` produces — however you got there: `status <id>
+in_progress`, `claim`, `next --claim`, or the `--force` path that overrides an
+unfinished prerequisite. Leaving `in_progress` — to `review`, `done`, or back
+to `ready`, and likewise `complete` from `in_progress` — clears them
+(`claimed_by: null`). So a task moved to `in_progress` by `status` is held, not
+free, and a claim is not always an explicit `claim` call.
+
 ## Field limits
 
 Limits are enforced on write; a violation is exit 4 (`validation`).
@@ -289,7 +298,10 @@ same filtered set.
 
 1. **Claim before you work; never work a task you do not hold.** The claim is
    what tells every other agent the task is taken. A task you are editing
-   without holding is a task two agents are about to collide on.
+   without holding is a task two agents are about to collide on. Holding need
+   not come from a `claim` call: moving a task to `in_progress` (by `status`,
+   `claim`, or `next --claim`) claims it for you, and leaving `in_progress`
+   releases it — see *Statuses and transitions*.
 2. **Use `next --claim`, not `list` + `claim`.** Selection and claiming in one
    transaction is the whole point; the two-call version has a race window that
    the tool is explicitly designed to remove.

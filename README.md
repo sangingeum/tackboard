@@ -283,6 +283,14 @@ the holder and moves a `ready` task to `in_progress` in the same transaction.
 eligible task and claims it in **one** transaction, so concurrent agents never
 receive the same task; without `--claim` it only reports what is available.
 
+Entering `in_progress` is what takes the claim, however you got there —
+`claim`, `next --claim`, or `status T-000123 in_progress` (including the
+`--force` path that starts work over an unfinished prerequisite) all record the
+acting agent as `claimed_by`. Leaving `in_progress` — to `review`, `done`, or
+`ready`, and likewise `complete` from `in_progress` — releases it
+(`claimed_by: null`). A task moved to `in_progress` by `status` is therefore
+held, not free.
+
 An agent's identity is `--agent AGENT_ID`, falling back to `TACKBOARD_AGENT`.
 Every mutating command needs one; without either, it exits 2. Identifiers are
 advisory labels and are not authenticated — the board prevents accidents, not
