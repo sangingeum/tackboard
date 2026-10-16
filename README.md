@@ -1,5 +1,8 @@
 # tackboard
 
+
+![tackboard banner image](images/tackboard-banner.svg)
+
 A small, reliable, project-scoped task board for coordinating multiple AI
 agents — one SQLite database per project, a predictable CLI (`tack`) as the
 primary interface, and a read-only web view for the human operator.
