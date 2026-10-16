@@ -12,9 +12,9 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Project Management",
+    "Topic :: Office/Business :: Groupware",
 ]
 dependencies = []
 

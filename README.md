@@ -4,7 +4,7 @@ A small, reliable, project-scoped task board for coordinating multiple AI
 agents — one SQLite database per project, a predictable CLI (`tack`) as the
 primary interface, and a read-only web view for the human operator.
 
-A household (or a codebase) with several agents working at once needs three
+A codebase with several agents working at once needs three
 things that a chat transcript cannot give it: a durable record of what is
 still open, a way for one agent to hand work to another without stepping on
 it, and a machine-readable answer to "what should I do next?". `tackboard`
@@ -28,18 +28,32 @@ below; `DESIGN.md` describes the architecture for contributors.
 
 ## Install
 
-```bash
-uv sync                  # development install into .venv (includes test tools)
-uv run tack --help       # the CLI, from the checkout
+Install the `tack` command from PyPI:
 
-uv tool install .        # or install the `tack` command for your user
+```bash
+uv tool install tackboard    # install `tack` for your user
 tack --help
+
+uvx tackboard --help         # or run it once without installing
+pip install tackboard        # or with pip
 ```
 
 `tack` is the console entry point (`tackboard.cli:main`). `python -m tackboard`
 runs the same CLI, so an environment that cannot install scripts can still be
-driven by a module invocation. Python 3.11 or later; the only runtime
-dependency is the standard library.
+driven by a module invocation. Python 3.12; the only runtime dependency is the
+standard library.
+
+### Install from source
+
+For development, work from a checkout:
+
+```bash
+uv sync                  # development install into .venv (includes test tools)
+uv run tack --help       # the CLI, from the checkout
+
+uv tool install .        # or install the `tack` command from the checkout
+tack --help
+```
 
 ## Create a board
 
