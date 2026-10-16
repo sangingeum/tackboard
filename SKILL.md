@@ -208,7 +208,7 @@ array; `{...}` is an object whose inner keys are described below the table.
 | Command | Top-level shape |
 |---|---|
 | `show <id>` | `{schema_version, task:{...}, notes:[...]}` |
-| `next` | `{schema_version, tasks:[...]}` (0 or 1 tasks) |
+| `next` | `{schema_version, tasks:[...]}` (the actor's ranked eligible candidates, in selection order; `[]` when none) |
 | `next --claim` | `{schema_version, task:{...}}` (`task` is `null` when nothing is eligible) |
 | `board` / `list` | `{schema_version, project, counts:{...}, tasks:[...]}` |
 | `board` / `list` with `--brief` or `--count` | `{schema_version, project, counts:{...}}` (no `tasks`) |
@@ -241,11 +241,15 @@ The **task projection** (the `task` object, and each entry of `tasks`) carries
   `notes` holds the task's notes (newest first, at most five). Read
   `document["task"]`, not `document`.
 - **`next` has two forms; `--claim` is the second.** Plain `next` is a
-  container — `{"schema_version":1,"tasks":[...]}` with zero or one tasks. When
-  nothing is eligible it is `{"schema_version":1,"tasks":[]}` and the exit code
-  is `0` — never `null` and never a scalar task. `next --claim` returns a
-  **single-task document instead**: `{"schema_version":1,"task":{...}}`, the
-  same `task` object a mutation returns, with `task` equal to `null` when
+  container — `{"schema_version":1,"tasks":[...]}` holding the actor's whole
+  ranked candidate list: every task that passes the stage, label, priority and
+  assignee filters, not just one. When nothing is eligible it is
+  `{"schema_version":1,"tasks":[]}` and the exit code is `0` — never `null`
+  and never a scalar task. The candidates are in selection order, the order
+  `next --claim` would take them in: priority high to low, then `created_at`,
+  then the task's sequence (its creation order on the board). `next --claim`
+  returns a **single-task document instead**: `{"schema_version":1,"task":{...}}`,
+  the same `task` object a mutation returns, with `task` equal to `null` when
   nothing is eligible. It has no `tasks` key; read `document["task"]`.
 - **`init`, `migrate` and `backup` carry the operation's own `ok`, not
   `doctor`'s.** Each emits `{schema_version, ok, database, operation, ...}`.
@@ -320,12 +324,14 @@ same filtered set.
   `warnings` array. The health signal is the `warnings` array (and `errors`) —
   not `ok`, and not the exit code. Read `warnings` on every run.
 - Every entry of `errors` and `warnings` carries `code` (the machine-readable
-  kind) and `message` (the human-readable text). An entry about a task adds
-  `task_id`, and one about a specific edge adds `prerequisite_id` too (the
-  started-dependent warning `inconsistent_blocked_state` carries both). Other
-  checks add their own keys — `path` for a `dependency_cycle`, `found` /
-  `supported` for a schema-version error, `table` / `rowid` for a foreign-key
-  violation.
+  kind) and `message` (the human-readable text); beyond those two an entry
+  carries only the keys its own kind needs. The claim and started-dependent
+  checks name the task in `task_id` (`claim_on_inactive_task`,
+  `in_progress_without_claim`), and `inconsistent_blocked_state` adds
+  `prerequisite_id` for the unfinished prerequisite. A `schema_version` error
+  adds `found` / `supported`; a `dependency_cycle` adds `path`; a foreign-key
+  violation adds `table` / `rowid` — including `dangling_dependency`, whose
+  entry concerns a task row but names it by `table` / `rowid`, not `task_id`.
 
 ### Exit codes
 
