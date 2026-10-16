@@ -194,8 +194,9 @@ def test_claiming_another_agents_assignment_succeeds_and_records_the_routing(
 def test_the_claim_and_status_entry_points_agree_on_a_card_assigned_elsewhere(
     conn: sqlite3.Connection, make_task: MakeTask
 ) -> None:
-    """Issue #8: `claim` and `status … in_progress` produce the same state for a
-    card assigned elsewhere, and neither changes the assignment."""
+    """Issue #8 and #10: `claim` and `status … in_progress` produce the same
+    state for a card assigned elsewhere, neither changes the assignment, and
+    both record the routing in their event."""
     via_claim = make_task(title="Routed away", status="ready", assignee="qa")
     via_status = make_task(title="Routed away", status="ready", assignee="qa")
 
@@ -210,6 +211,39 @@ def test_the_claim_and_status_entry_points_agree_on_a_card_assigned_elsewhere(
     assert status_result["task"]["claimed_by"] == "dev"
     assert claim_result["task"]["assignee"] == "qa"
     assert status_result["task"]["assignee"] == "qa"
+
+    claim_payload = history.list_events(conn, via_claim["id"])["items"][0]["payload"]
+    status_payload = history.list_events(conn, via_status["id"])["items"][0]["payload"]
+    assert claim_payload["routed_to"] == "qa"
+    assert status_payload["routed_to"] == claim_payload["routed_to"]
+
+
+@pytest.mark.parametrize(
+    ("assignee", "actor", "recorded"),
+    [
+        ("qa", "dev", "qa"),
+        ("qa", "qa", None),
+        (None, "dev", None),
+    ],
+)
+def test_status_in_progress_records_the_routing_only_on_a_mismatch(
+    conn: sqlite3.Connection,
+    make_task: MakeTask,
+    assignee: str | None,
+    actor: str,
+    recorded: str | None,
+) -> None:
+    """A status move into `in_progress` records `routed_to` on the event exactly
+    when the card is routed to another agent, and omits the key otherwise."""
+    task = make_task(title="Routed away", status="ready", assignee=assignee)
+
+    service.set_status(conn, task["id"], "in_progress", actor=actor)
+
+    payload = history.list_events(conn, task["id"])["items"][0]["payload"]
+    if recorded is None:
+        assert "routed_to" not in payload
+    else:
+        assert payload["routed_to"] == recorded
 
 
 @pytest.mark.parametrize("entry", ["claim", "status", "next"])

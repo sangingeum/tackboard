@@ -703,6 +703,12 @@ def _plan_status(
         plan.force_used = True
     if target == _IN_PROGRESS:
         plan.acquire_claim = True
+        # The assignment is a routing note: entering in_progress takes a claim
+        # but never writes it. When the card is routed to a different agent,
+        # record that routing in the event exactly as the claim path does, so
+        # the mismatch is visible in history rather than silently normalised.
+        if task.assignee is not None and task.assignee != actor:
+            plan.payload["routed_to"] = task.assignee
     if task.status in {_IN_PROGRESS, _REVIEW} and target != _IN_PROGRESS:
         plan.clear_claim = claim is not None
 

@@ -86,6 +86,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the assignment and now exits 4 as force-not-applicable, because no force case
   applies. A plain `claim` on the same task succeeds and leaves the assignment
   in place.
+- `task.status_changed` now records `routed_to` (the card's current assignee)
+  when a `status … in_progress` move takes a claim on a card routed to another
+  agent, exactly as the claim event does, and omits the key when the actor is
+  the assignee or the card is unrouted.
 
 ## [0.1.0] - 2026-10-16
 
