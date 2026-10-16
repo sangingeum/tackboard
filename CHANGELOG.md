@@ -73,6 +73,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issue #2, where a 200-character title limit was discoverable only by hitting
   exit 4 mid-round; the same details cover `description`, `label`, `labels`,
   `blocked_reason`, `note` and `--reason`.
+- A claim never writes the assignment. The explicit `claim` command and the
+  implicit claim taken by `status … in_progress` now agree: any agent may claim
+  a task, the claim names the agent that takes it, and the assignment
+  (`assignee`) is left alone — it is written only by an explicit routing
+  command (`create --assignee` / `update --assignee`). A claim on a task routed
+  to another agent therefore succeeds and records that routing in the claim
+  event instead of being refused, the assignment-transfer `--force` case is
+  retired, and `update --assignee` records the previous assignee in its event.
 
 ## [0.1.0] - 2026-10-16
 

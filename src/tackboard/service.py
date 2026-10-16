@@ -61,8 +61,8 @@ _FORCE_REQUIRES_REASON = "--force requires --reason with a non-empty explanation
 _FORCE_NOT_APPLICABLE = (
     "--force is not allowed here: it applies only to the enumerated cases in "
     "the specification (takeover, unfinished prerequisites, adding an "
-    "unfinished prerequisite to active work, assignment transfer, recovery of "
-    "an unclaimed in_progress task)."
+    "unfinished prerequisite to active work, recovery of an unclaimed "
+    "in_progress task)."
 )
 
 
@@ -775,18 +775,11 @@ def _plan_claim(
         plan.new_status = _IN_PROGRESS
 
     plan.acquire_claim = True
-    if task.assignee is None:
-        plan.new_assignee = actor
-    elif task.assignee != actor:
-        if not force:
-            raise ValidationError(
-                f"Cannot claim {task.id}: assigned to agent {task.assignee} "
-                "(use --force --reason to transfer assignment)."
-            )
-        plan.force_used = True
-        plan.new_assignee = actor
-        plan.payload["previous_assignee"] = task.assignee
-        plan.payload["assignee"] = actor
+    # The assignment is a routing note: a claim never writes it. When the card
+    # is routed to a different agent, record that routing in the claim event so
+    # the mismatch is visible in history rather than silently repaired.
+    if task.assignee is not None and task.assignee != actor:
+        plan.payload["routed_to"] = task.assignee
     return True
 
 
@@ -1180,6 +1173,8 @@ def update_task(
             )
 
         payload: dict[str, Any] = {"fields": sorted(changes)}
+        if "assignee" in changes:
+            payload["previous_assignee"] = task.assignee
         if labels is not None:
             payload["labels"] = [label for label, _ in labels]
         history.record_event(

@@ -105,9 +105,10 @@ The function has one shape whatever the caller:
 2. Load the task, check `--if-version` against the stored version.
 3. Load the active claim and the direct prerequisite states.
 4. Run the policy for the mode (`status`, `claim`, `release`). The policy checks
-   the transition table, prerequisite gating, claim ownership, assignment
-   transfer, and the audited `--force` cases, and returns a *plan* — a set of
-   intended row changes — or reports "no change".
+   the transition table, prerequisite gating, claim ownership, and the audited
+   `--force` cases, and returns a *plan* — a set of intended row changes — or
+   reports "no change". A claim never plans an assignment write: the assignment
+   is a routing note, written only by `update_task`.
 5. Apply the plan: update the task row with a compare-and-set on `version`,
    insert or delete the claim row, set or clear `completed_at`.
 6. Append exactly one canonical history event, with the reason attached when
@@ -227,7 +228,7 @@ Human output may be re-worded.
 |---|---|---|
 | Status transition table | `models.ALLOWED_TRANSITIONS` | `service._plan_status` |
 | Prerequisite gating | `models.PREREQUISITE_GATED_STATUSES` | `service._plan_status` |
-| Claim policy, takeover, assignment transfer | `service._plan_claim`, `_plan_release` | `apply_transition` |
+| Claim policy and takeover | `service._plan_claim`, `_plan_release` | `apply_transition` |
 | `--force` scope and auditing | `_check_force_reason`, plan flags | `apply_transition`, `dependencies.add_dependency` |
 | Derived readiness | `service.derived_flags` | every projection and filter |
 | Cycle detection | `dependencies.find_cycle`, `_prerequisite_path` | `add_dependency` |

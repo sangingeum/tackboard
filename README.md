@@ -19,7 +19,10 @@ provides exactly those, and nothing more:
   who can start what.
 - **Claims prevent collisions.** A claim is a short-lived lock held by one
   agent on one task; taking the next task and locking it happen in one
-  transaction, so two agents racing for work never get the same task.
+  transaction, so two agents racing for work never get the same task. A claim
+  never writes the assignment: `assignee` is a long-lived routing note, written
+  only by an explicit routing command (`create --assignee` / `update
+  --assignee`).
 - **A human can watch.** A read-only board and dependency-graph view serves the
   operator while agents work.
 
@@ -299,6 +302,11 @@ the holder and moves a `ready` task to `in_progress` in the same transaction.
 `tack release` gives it back. `tack next --claim` selects the highest-priority
 eligible task and claims it in **one** transaction, so concurrent agents never
 receive the same task; without `--claim` it only reports what is available.
+The assignment (`assignee`) is a separate, long-lived routing note — "who is it
+for" — and no claim path writes it: a claim on an unassigned task leaves it
+unassigned, and any agent may claim a task routed to another agent, the claim
+recording the caller while the routing stands. Only `create --assignee` and
+`update --assignee` write it.
 
 Entering `in_progress` is what takes the claim, however you got there —
 `claim`, `next --claim`, or `status T-000123 in_progress` (including the
@@ -306,7 +314,7 @@ Entering `in_progress` is what takes the claim, however you got there —
 acting agent as `claimed_by`. Leaving `in_progress` — to `review`, `done`, or
 `ready`, and likewise `complete` from `in_progress` — releases it
 (`claimed_by: null`). A task moved to `in_progress` by `status` is therefore
-held, not free.
+held, not free. None of these paths writes the assignment.
 
 An agent's identity is `--agent AGENT_ID`, falling back to `TACKBOARD_AGENT`.
 Every mutating command needs one; without either, it exits 2. Identifiers are
@@ -322,9 +330,7 @@ recorded as a history event carrying the reason:
 2. starting a `ready` task whose only eligibility failure is an unfinished or
    cancelled prerequisite;
 3. adding an unfinished prerequisite to a task already in progress or review;
-4. claiming a task assigned to another agent (the assignment transfers, and the
-   previous and new assignee are both recorded);
-5. recovering an `in_progress` task that has lost its claim.
+4. recovering an `in_progress` task that has lost its claim.
 
 It is not a general bypass. Modifying a task claimed by another agent still
 fails with exit 5 — take the claim over with `claim --force --reason` or clear
@@ -529,7 +535,6 @@ silences the banner but never the record.
 | `Task T-000123 not found in project.sqlite3.` | 3 | Check the ID, or list the board |
 | `No actor. Pass --agent or set TACKBOARD_AGENT.` | 2 | Identify the agent making the change |
 | `Cannot claim T-000123: already claimed by agent qa.` | 5 | Wait, or take over with `claim --force --reason` |
-| `Cannot claim T-000123: assigned to agent qa (use --force --reason to transfer assignment).` | 4 | Transfer deliberately, or leave it alone |
 | `Cannot start T-000123: prerequisite T-000100 is not done.` | 4 | Finish the prerequisite, or start with `--force --reason` |
 | `Cannot add dependency: this would create a cycle (T-000123 -> T-000145 -> T-000123).` | 4 | Break the other edge first |
 | `Stale version for T-000123: expected 4, current 5.` | 5 | Re-read the task, then retry with the current `--if-version` |

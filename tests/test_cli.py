@@ -869,6 +869,43 @@ def test_next_stage_review_claims_a_reviewable_task(run: RunCli, db_file: Path) 
     assert task["claimed_by"] == DEFAULT_ACTOR
 
 
+def test_claim_takes_a_card_assigned_to_another_agent(run: RunCli, db_file: Path) -> None:
+    """Issue #9: the claim names the caller and leaves the assignment alone."""
+    task = _create(
+        run, db_file, "routed away", "--status", "ready", "--assignee", "other"
+    )
+
+    code, out, err = run(
+        "claim", task["id"], "--agent", DEFAULT_ACTOR, "--json", "--db", str(db_file)
+    )
+
+    assert code == 0, err
+    claimed = _json_document(out)["task"]
+    assert claimed["status"] == "in_progress"
+    assert claimed["claimed_by"] == DEFAULT_ACTOR
+    assert claimed["assignee"] == "other"
+
+
+def test_next_all_assignees_claim_takes_a_card_assigned_to_another_agent(
+    run: RunCli, db_file: Path
+) -> None:
+    """The exit-4 case the routing-note design retires now exits 0."""
+    task = _create(
+        run, db_file, "routed away", "--status", "ready", "--assignee", "other"
+    )
+
+    code, out, err = run(
+        "next", "--agent", DEFAULT_ACTOR, "--all-assignees", "--claim", "--json",
+        "--db", str(db_file),
+    )
+
+    assert code == 0, err
+    claimed = _json_document(out)["task"]
+    assert claimed["id"] == task["id"]
+    assert claimed["claimed_by"] == DEFAULT_ACTOR
+    assert claimed["assignee"] == "other"
+
+
 def test_status_moves_take_and_release_the_claim(run: RunCli, db_file: Path) -> None:
     """Entering `in_progress` claims for the actor; leaving it releases."""
     task = _create(run, db_file, "Managed lifecycle", "--status", "ready")
@@ -1226,6 +1263,13 @@ def test_claim_release_and_conflict_codes(run: RunCli, db_file: Path) -> None:
     code, out, _ = run("release", "T-000001", "--agent", "dev", "--json", "--db", str(db_file))
     assert code == 0
     assert _json_document(out)["task"]["status"] == "ready"
+
+    # A forced claim is a takeover: another agent must be holding the card.
+    code, out, _ = run(
+        "claim", "T-000001", "--agent", "dev", "--json", "--db", str(db_file)
+    )
+    assert code == 0
+    assert _json_document(out)["task"]["claimed_by"] == "dev"
 
     code, out, _ = run(
         "claim", "T-000001", "--agent", "other", "--force", "--reason", "takeover",

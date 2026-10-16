@@ -27,7 +27,7 @@ def test_claiming_a_ready_task_starts_it(
     assert result["changed"] is True
     assert result["task"]["status"] == "in_progress"
     assert result["task"]["claimed_by"] == "dev"
-    assert result["task"]["assignee"] == "dev"
+    assert result["task"]["assignee"] is None
     assert result["task"]["version"] == task["version"] + 1
     assert history.list_events(conn, task["id"])["items"][0]["event_type"] == "task.claimed"
 
@@ -66,11 +66,13 @@ def test_forced_takeover_replaces_the_claim_and_audits_it(
     assert result["changed"] is True
     assert result["task"]["status"] == "in_progress"
     assert result["task"]["claimed_by"] == "qa"
-    assert result["task"]["assignee"] == "qa"
+    assert result["task"]["assignee"] is None
     payload = history.list_events(conn, task["id"])["items"][0]["payload"]
     assert payload["forced"] is True
     assert payload["takeover_from"] == "dev"
-    assert payload["previous_assignee"] == "dev"
+    assert "previous_assignee" not in payload
+    assert "assignee" not in payload
+    assert "routed_to" not in payload
 
 
 def test_forced_takeover_of_a_review_claim_keeps_the_status(
@@ -79,6 +81,7 @@ def test_forced_takeover_of_a_review_claim_keeps_the_status(
     task = make_task(title="Awaiting review", status="ready")
     claims.claim(conn, task["id"], actor="dev")
     service.set_status(conn, task["id"], "review", actor="dev")
+    claims.claim(conn, task["id"], actor="dev")
 
     result = claims.claim(
         conn, task["id"], actor="qa", force=True, reason="reviewer takes over"
@@ -170,21 +173,85 @@ def test_releasing_an_unclaimed_task_is_a_no_op(
     assert result["changed"] is False
 
 
-def test_claiming_another_agents_assignment_needs_force(
+def test_claiming_another_agents_assignment_succeeds_and_records_the_routing(
     conn: sqlite3.Connection, make_task: MakeTask
 ) -> None:
+    """The assignment is a routing note: a non-assignee's claim succeeds and
+    leaves the assignment alone, recording the routing mismatch in the event."""
     task = make_task(title="Assigned elsewhere", status="ready", assignee="qa")
-    with pytest.raises(ValidationError) as caught:
-        claims.claim(conn, task["id"], actor="dev")
-    assert "assigned to agent qa" in str(caught.value)
 
-    transferred = claims.claim(
-        conn, task["id"], actor="dev", force=True, reason="rebalancing"
-    )
-    assert transferred["task"]["assignee"] == "dev"
+    result = claims.claim(conn, task["id"], actor="dev")
+
+    assert result["changed"] is True
+    assert result["task"]["status"] == "in_progress"
+    assert result["task"]["claimed_by"] == "dev"
+    assert result["task"]["assignee"] == "qa"
     payload = history.list_events(conn, task["id"])["items"][0]["payload"]
-    assert payload["previous_assignee"] == "qa"
-    assert payload["assignee"] == "dev"
+    assert payload["routed_to"] == "qa"
+    assert "forced" not in payload
+
+
+def test_the_claim_and_status_entry_points_agree_on_a_card_assigned_elsewhere(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """Issue #8: `claim` and `status … in_progress` produce the same state for a
+    card assigned elsewhere, and neither changes the assignment."""
+    via_claim = make_task(title="Routed away", status="ready", assignee="qa")
+    via_status = make_task(title="Routed away", status="ready", assignee="qa")
+
+    claim_result = claims.claim(conn, via_claim["id"], actor="dev")
+    status_result = service.set_status(
+        conn, via_status["id"], "in_progress", actor="dev"
+    )
+
+    assert claim_result["task"]["status"] == "in_progress"
+    assert status_result["task"]["status"] == "in_progress"
+    assert claim_result["task"]["claimed_by"] == "dev"
+    assert status_result["task"]["claimed_by"] == "dev"
+    assert claim_result["task"]["assignee"] == "qa"
+    assert status_result["task"]["assignee"] == "qa"
+
+
+@pytest.mark.parametrize("entry", ["claim", "status", "next"])
+@pytest.mark.parametrize("assignee", [None, "qa"])
+def test_a_claim_never_writes_the_assignment(
+    conn: sqlite3.Connection,
+    make_task: MakeTask,
+    entry: str,
+    assignee: str | None,
+) -> None:
+    """No claim path writes `assignee`, on an assigned or an unassigned card."""
+    task = make_task(title="Somewhere", status="ready", assignee=assignee)
+    if entry == "claim":
+        result = claims.claim(conn, task["id"], actor="dev")
+    elif entry == "status":
+        result = service.set_status(conn, task["id"], "in_progress", actor="dev")
+    else:
+        result = claims.next_task(conn, actor="dev", claim=True, all_assignees=True)
+
+    assert result["task"]["claimed_by"] == "dev"
+    assert result["task"]["assignee"] == assignee
+
+
+def test_forcing_a_claim_on_a_card_assigned_elsewhere_is_not_a_transfer(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """The assignment-transfer force case is retired: forcing a claim on a card
+    assigned elsewhere has no applicable force case and is refused."""
+    task = make_task(title="Routed away", status="ready", assignee="qa")
+
+    with pytest.raises(ValidationError) as caught:
+        claims.claim(
+            conn, task["id"], actor="dev", force=True, reason="rebalancing"
+        )
+    assert "force is not allowed here" in str(caught.value)
+
+    shown = service.get_task(conn, task["id"])
+    assert shown["status"] == "ready"
+    assert shown["assignee"] == "qa"
+    assert shown["claimed_by"] is None
+    events = history.list_events(conn, task["id"])["items"]
+    assert all("previous_assignee" not in event["payload"] for event in events)
 
 
 def test_status_in_progress_acquires_the_claim(

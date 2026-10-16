@@ -24,7 +24,11 @@ Three properties shape every command:
   `blocked` are computed from the dependency graph, claims and explicit
   blockers. Never infer them from stored status alone.
 - **Claims are a short-lived execution lock; assignees are long-lived.** They
-  are different things and are stored separately.
+  are different things and are stored separately: a claim never writes the
+  assignment. The assignment is a routing note — "who is it for" — written only
+  by an explicit routing command (`create --assignee` / `update --assignee`);
+  the claim — "who is working this now" — is written only by the agent that
+  takes it.
 - **CLI output is a contract.** Every command has a stable JSON document and
   stable exit codes. Agents must never scrape the human-formatted output.
 
@@ -148,7 +152,9 @@ version bump); the shortcuts behave the same way (`complete` on `done`,
 
 Be aware that `claim` only works on a **`ready`** task. A task created in
 `backlog` (the default) must be moved to `ready` before anyone can claim it —
-this is deliberate: `ready` is the decision that work may start.
+this is deliberate: `ready` is the decision that work may start. Claiming does
+not require being the assignee: the assignment is a routing note, so any agent
+may claim a `ready` task, and the claim names whoever takes it.
 
 **Entering `in_progress` claims the task; leaving it releases the claim.** A
 transition to `in_progress` sets `claimed_by`/`claimed_at` to the acting agent —
@@ -157,7 +163,8 @@ in_progress`, `claim`, `next --claim`, or the `--force` path that overrides an
 unfinished prerequisite. Leaving `in_progress` — to `review`, `done`, or back
 to `ready`, and likewise `complete` from `in_progress` — clears them
 (`claimed_by: null`). So a task moved to `in_progress` by `status` is held, not
-free, and a claim is not always an explicit `claim` call.
+free, and a claim is not always an explicit `claim` call. None of those paths
+touches the assignment: `assignee` is written only by a routing command.
 
 ## Field limits
 
@@ -383,7 +390,7 @@ same filtered set.
     requires `--reason`, it is recorded as an event, and it is allowed only for
     the enumerated cases (taking over or releasing another agent's claim,
     starting work whose only blocker is a cancelled/unfinished prerequisite,
-    recovering an `in_progress` task with no claim, transferring an assignee).
+    recovering an `in_progress` task with no claim).
     If you reach for `--force` and your case is not on that list, the answer is
     a different command, not a bigger hammer.
 12. **Use `blocked_reason` for blockers that are not tasks** (waiting on a

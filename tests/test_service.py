@@ -291,6 +291,9 @@ def test_update_changes_fields_and_increments_the_version_once(
     assert updated["assignee"] == "qa"
     assert updated["version"] == task["version"] + 1
     assert updated["updated_at"] >= task["updated_at"]
+    payload = history.list_events(conn, task["id"])["items"][0]["payload"]
+    assert payload["fields"] == ["assignee", "description", "priority", "title"]
+    assert payload["previous_assignee"] is None
 
 
 def test_update_can_clear_assignee_and_blocked_reason(

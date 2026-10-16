@@ -152,7 +152,11 @@ def server(db_file: Path, start_server: Callable[..., WebClient]) -> WebClient:
 def seed_board(conn: Any) -> dict[str, str]:
     """A small board covering done, claimed, eligible, blocked and backlog."""
     done = service.create_task(
-        conn, actor=DEFAULT_ACTOR, title="Done prerequisite", status="ready"
+        conn,
+        actor=DEFAULT_ACTOR,
+        title="Done prerequisite",
+        status="ready",
+        assignee=DEFAULT_ACTOR,
     )["task"]
     claims.claim(conn, done["id"], actor=DEFAULT_ACTOR)
     service.complete_task(conn, done["id"], actor=DEFAULT_ACTOR)
@@ -162,6 +166,7 @@ def seed_board(conn: Any) -> dict[str, str]:
         title="Claimed work",
         status="ready",
         depends_on=[done["id"]],
+        assignee=DEFAULT_ACTOR,
     )["task"]
     claims.claim(conn, claimed["id"], actor=DEFAULT_ACTOR)
     service.add_note(conn, claimed["id"], "handoff note", actor=DEFAULT_ACTOR)
@@ -312,7 +317,7 @@ def test_board_filters_and_counts_match_board_count(
     ready = server.request("/api/board?status=ready").json()
     assert ready["counts"]["tasks"] == 2
 
-    # The claim set the assignee on the done and claimed tasks.
+    # The done and claimed tasks are routed to dev by an explicit assignment.
     labelled = server.request("/api/board?assignee=dev").json()
     assert labelled["counts"]["tasks"] == 2
     unassigned = server.request("/api/board?assignee=nobody").json()
