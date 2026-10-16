@@ -208,7 +208,8 @@ array; `{...}` is an object whose inner keys are described below the table.
 | `history [<id>]` | `{schema_version, task_id, items:[{id,timestamp,actor,event_type,task_id,payload}]}` |
 | `claims` | `{schema_version, items:[{task_id,agent_id,claimed_at,age_seconds,task:{...}}]}` |
 | `doctor` | `{schema_version, ok, errors:[...], warnings:[...]}` |
-| a mutation except `note` (`create`, `update`, `status`, `complete`, `reopen`, `cancel`, `restore`, `claim`, `release`, `depend add/remove`) | `{schema_version, changed, task:{...}}` |
+| a mutation except `note` and `reopen` (`create`, `update`, `status`, `complete`, `cancel`, `restore`, `claim`, `release`, `depend add/remove`) | `{schema_version, changed, task:{...}}` |
+| `reopen <id>` | `{schema_version, changed, task:{...}}`, plus `active_dependents:[...]` when it changes anything |
 | `note <id> TEXT` | `{schema_version, changed, event:{...}}` |
 | any error under `--json` | `{schema_version, error:{code,message,exit_code,retryable,details}}` |
 
@@ -236,10 +237,23 @@ The **task projection** (the `task` object, and each entry of `tasks`) carries
   board-wide call) and holds the events in `items`. **`claims`** holds one row
   per held claim in `items`, each row carrying the claim (`task_id`,
   `agent_id`, `claimed_at`, `age_seconds`) and the full `task`.
-- **Mutations return `{"schema_version":1,"changed":<bool>,"task":{...}}`.** The
-  one exception is `note`, which returns `{changed, event}` (a note is an event,
-  not a task change). `changed:false` means the call was an idempotent no-op:
-  nothing was written and no event was recorded.
+- **Mutations return `{"schema_version":1,"changed":<bool>,"task":{...}}`**, with
+  two exceptions. `note` returns `{changed, event}` (a note is an event, not a
+  task change). `reopen` adds a fourth top-level key, `active_dependents`, when
+  it actually reopens something — see the next bullet. `changed:false` means the
+  call was an idempotent no-op: nothing was written and no event was recorded.
+- **`reopen` carries `active_dependents` only when `changed` is true.** The key
+  is a fourth top-level field beside `schema_version`, `changed` and `task`, and
+  it is absent from every other mutation and from a no-op `reopen`. The array
+  lists the reopened task's direct dependents whose status is `in_progress` or
+  `review` — the dependents that had already started — ordered by the task's
+  sequence. Each entry is the task projection as `board`/`list` produce it
+  without `--full`: the same keys as the `task` object, except that
+  `description` is omitted. Its meaning: reopening a prerequisite leaves those
+  started dependents where they are, so they stay `in_progress`/`review` while
+  now being displayed as blocked — the array is exactly the set a human or agent
+  must decide about. See the matching pitfall, *Reopening a prerequisite does
+  not rewrite anyone's status*.
 
 ### The `counts` object
 
@@ -371,8 +385,9 @@ same filtered set.
   readiness is evaluated over direct prerequisites only, by design.
 - **Reopening a prerequisite does not rewrite anyone's status.** Dependents
   that were already `in_progress`/`review` stay there and are *displayed* as
-  blocked; `doctor` reports that as a warning, not an error. Decide, then act —
-  the tool will not silently make that call for you.
+  blocked; the `reopen --json` document lists exactly those dependents in
+  `active_dependents`, and `doctor` reports the situation as a warning, not an
+  error. Decide, then act — the tool will not silently make that call for you.
 - **A cancelled prerequisite is not "complete".** Dependents stay blocked until
   the edge is removed or the prerequisite is restored and completed.
 - **`--force` is refused when `blocked_reason` is set**, and it never permits

@@ -551,6 +551,56 @@ def test_schema_errors_are_exit_six(run: RunCli, tmp_path: Path) -> None:
     assert document["errors"]
 
 
+def test_mutation_documents_pin_their_top_level_keys(run: RunCli, db_file: Path) -> None:
+    """A mutation returns {schema_version, changed, task}; `reopen` alone adds a key.
+
+    `reopen` is the one mutation whose document carries a fourth top-level key,
+    `active_dependents`, and only when it actually reopens a task.
+    """
+    base = {"schema_version", "changed", "task"}
+    prerequisite = _create(run, db_file, "Prerequisite", "--status", "ready")
+    dependent = _create(
+        run,
+        db_file,
+        "Dependent",
+        "--status",
+        "ready",
+        "--depends-on",
+        prerequisite["id"],
+    )
+
+    def mutate(*argv: str) -> dict[str, Any]:
+        code, out, err = run(*argv, "--agent", DEFAULT_ACTOR, "--db", str(db_file), "--json")
+        assert code == 0, err
+        return _json_document(out)
+
+    # A non-`reopen` mutation carries exactly the three-key envelope.
+    assert set(mutate("claim", prerequisite["id"])) == base
+    completed = mutate("complete", prerequisite["id"])
+    assert set(completed) == base
+    assert completed["changed"] is True
+
+    # Start the dependent so reopening the prerequisite has something to report.
+    started = mutate("status", dependent["id"], "in_progress")
+    assert started["task"]["status"] == "in_progress"
+
+    reopened = mutate("reopen", prerequisite["id"])
+    assert reopened["changed"] is True
+    assert set(reopened) == base | {"active_dependents"}
+    entries = reopened["active_dependents"]
+    assert [entry["id"] for entry in entries] == [dependent["id"]]
+    assert entries[0]["status"] == "in_progress"
+    assert entries[0]["blocked"] is True
+    # The entries use the board/list projection: no `description`, unlike `task`.
+    assert "description" in reopened["task"]
+    assert "description" not in entries[0]
+
+    # A no-op `reopen` omits the key entirely.
+    noop = mutate("reopen", prerequisite["id"])
+    assert noop["changed"] is False
+    assert set(noop) == base
+
+
 # --------------------------------------------------------------------------- #
 # exit codes
 # --------------------------------------------------------------------------- #

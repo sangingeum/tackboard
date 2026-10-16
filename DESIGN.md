@@ -85,8 +85,9 @@ own prerequisites is later reopened. This is intentional — transitive
 re-blocking would make a completed task's status depend on distant history.
 
 Because readiness is derived, a dependency change takes effect immediately
-without rewriting any task's status. A reopened prerequisite also reports its
-active (`in_progress`/`review`) dependents so a human or agent can act on them.
+without rewriting any task's status. A `reopen` that changes anything also
+reports its active (`in_progress`/`review`) dependents in the document's
+`active_dependents` key, so a human or agent can act on them.
 
 The derived flags are computed in one function (`service.derived_flags`) and
 used by the task projection, the listing filters, the count contract, the

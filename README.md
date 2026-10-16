@@ -230,7 +230,7 @@ or `--add-label` / `--remove-label`.
 Notes appear in `show` (the latest five) and in `history`; they never change a
 task's fields, version, or `updated_at`.
 
-Mutation results are uniform:
+Mutation results share one envelope:
 
 ```json
 {"schema_version": 1, "changed": true, "task": {"id": "T-000123", ...}}
@@ -238,6 +238,16 @@ Mutation results are uniform:
 
 An operation that would change nothing reports `"changed": false` and writes no
 history event and no version increment.
+
+`reopen` reports more than the task it changed. Every other mutation returns
+that same three-key envelope; when `reopen` actually reopens a task, its
+document carries a fourth key, `active_dependents`: the task's direct dependents
+whose status is `in_progress` or `review` (work already started), ordered by
+task sequence, each one the task projection without `description`. Reopening a
+prerequisite does not move those dependents — they stay `in_progress`/`review`
+and become displayed as blocked — so the array is exactly the set to decide
+about. A no-op `reopen` (`"changed": false`) and every other mutation omit the
+key.
 
 ### Field limits
 
@@ -352,7 +362,8 @@ puts the task under `task` (alongside `notes`), `next` returns
 `{"schema_version": 1, "tasks": [...]}` — an empty `tasks` array, never `null`,
 when nothing is eligible — and a mutation returns
 `{"schema_version": 1, "changed": <bool>, "task": {...}}` (`note` returns an
-`event` instead). `doctor` returns `ok`, `errors` and `warnings`, where
+`event` instead, and `reopen` adds `active_dependents` when it changes
+anything). `doctor` returns `ok`, `errors` and `warnings`, where
 `ok: true` means no errors were found and does **not** imply an empty
 `warnings` array. The full table of document shapes is in the skill's *The JSON
 contract* section (`SKILL.md`).
