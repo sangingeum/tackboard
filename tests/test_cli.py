@@ -755,6 +755,38 @@ def test_next_claim_pins_its_single_task_document_key_set(
     assert populated["task"]["claimed_by"] == "dev"
 
 
+def test_next_reports_every_eligible_task_in_selection_order(
+    run: RunCli, db_file: Path
+) -> None:
+    """Plain `next` returns the whole ranked candidate list, never a single task.
+
+    No other test drives the plain `next` document past one eligible task — the
+    other `next` tests either leave a single candidate on the board or exercise
+    only `--claim` — so none of them can tell the full candidate list from a
+    one-task document. That is how the "0 or 1 tasks" wording slipped past the
+    suite. Three eligible tasks with distinct priorities pin both the count and
+    the selection order: priority high to low, then `created_at`, then sequence.
+    """
+    _create(run, db_file, "low", "--status", "ready", "--priority", "low")
+    _create(run, db_file, "urgent", "--status", "ready", "--priority", "urgent")
+    _create(run, db_file, "high", "--status", "ready", "--priority", "high")
+
+    code, out, err = run("next", "--json", "--agent", "dev", "--db", str(db_file))
+
+    assert code == 0, err
+    document = _json_document(out)
+    assert [task["title"] for task in document["tasks"]] == ["urgent", "high", "low"]
+
+    code, out, err = run(
+        "next", "--claim", "--json", "--agent", "dev", "--db", str(db_file)
+    )
+
+    assert code == 0, err
+    claimed = _json_document(out)
+    assert set(claimed) == {"schema_version", "task"}
+    assert claimed["task"]["title"] == "urgent"
+
+
 def test_next_claim_selects_and_claims(run: RunCli, db_file: Path) -> None:
     _create(run, db_file, "low", "--status", "ready", "--priority", "low")
     _create(run, db_file, "urgent", "--status", "ready", "--priority", "urgent")
