@@ -85,6 +85,10 @@ operator. The Unreleased section above describes this first-release surface in
 full; this entry records the release and the packaging work that makes the
 distributions installable.
 
+## [0.1.1] - 2026-10-16
+Fixed issues#2
+
+
 ### Added
 
 - Distributions on PyPI as `tackboard` (`uv tool install tackboard`,
