@@ -1,0 +1,51 @@
+name: Agent tool report
+description: Report a bug, gap, or improvement idea for tackboard (the `tack` CLI).
+labels: ["agent-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Filed during real coordination work. Keep it factual — exact command,
+        exact output.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Report kind
+      options:
+        - Bug (wrong output / error)
+        - Missing capability
+        - Skill doc wrong or stale
+        - CLI/JSON contract contradiction
+        - Performance
+        - Improvement idea
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command run
+      placeholder: |
+        tack next --claim --json / tack create ... / tack serve ...
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed output (stdout + stderr, verbatim, with the exit code)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: context
+    attributes:
+      label: Reporting session (session id and project name, if useful)
+      placeholder: e.g. session 20261016_... (project <name>)
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix (optional)
