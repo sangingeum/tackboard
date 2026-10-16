@@ -62,3 +62,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   beginning work on a `review` task the actor claimed — no longer rewrites the
   claim's `claimed_at`. "If already held by actor, keep the claim" now keeps
   the claim as it stands (spec 8.2).
+
+## [0.1.0] - 2026-10-16
+
+First release. `tackboard` is a project-scoped task board for coordinating
+several agents on one codebase: a stable `tack` CLI over a single SQLite
+database per project, a versioned JSON contract, readiness derived from a
+dependency DAG, single-holder claims with an atomic "claim the next ready
+task" selector, and a read-only board and dependency-graph web view for the
+operator. The Unreleased section above describes this first-release surface in
+full; this entry records the release and the packaging work that makes the
+distributions installable.
+
+### Added
+
+- Distributions on PyPI as `tackboard` (`uv tool install tackboard`,
+  `uvx tackboard --help`, or `pip install tackboard`). The wheel and the sdist
+  both carry the web templates and static assets and the MIT license; the sdist
+  also carries the README and the project metadata.
+
+### Fixed
+
+- Declared Python support is consistent: the package requires Python 3.12 and
+  the `Programming Language :: Python` classifier no longer advertises 3.11.
