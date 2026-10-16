@@ -7,7 +7,7 @@ license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [TaskBoard, Agent Coordination, CLI, SQLite, Dependencies]
+    tags: [Task Board, Agent Coordination, CLI, SQLite, Dependencies]
     related_skills: []
 ---
 
