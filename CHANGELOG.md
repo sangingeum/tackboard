@@ -42,10 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Distributions on PyPI as `tackboard` (`uv tool install tackboard`,
-  `uvx tackboard --help`, or `pip install tackboard`). The wheel and the sdist
-  both carry the web templates and static assets and the MIT license; the sdist
-  also carries the README and the project metadata.
 - An `agent-report` GitHub issue template, so a tool defect found while using
   `tack` has one place to be filed.
 
@@ -57,8 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issue #2, where a 200-character title limit was discoverable only by hitting
   exit 4 mid-round; the same details cover `description`, `label`, `labels`,
   `blocked_reason`, `note` and `--reason`.
-- Declared Python support is consistent: the package requires Python 3.12 and
-  the `Programming Language :: Python` classifier no longer advertises 3.11.
 - Packaging metadata was bumped to 0.1.1 in `pyproject.toml` and `SKILL.md`.
   `src/tackboard/__init__.py` was missed and still reported 0.1.0; the 0.2.0
   entry above corrects that.
@@ -113,6 +107,10 @@ the packaging work that makes the distributions installable.
   characters and 20 labels per task, `blocked_reason` and note text 2 KiB,
   `--reason` 1024 characters, agent-id shape), so a caller can size a value
   before writing it instead of discovering the limit on exit 4.
+- Distributions on PyPI as `tackboard` (`uv tool install tackboard`,
+  `uvx tackboard --help`, or `pip install tackboard`). The wheel and the sdist
+  both carry the web templates and static assets and the MIT license; the sdist
+  also carries the README and the project metadata.
 
 ### Fixed
 
@@ -134,3 +132,5 @@ the packaging work that makes the distributions installable.
   beginning work on a `review` task the actor claimed — no longer rewrites the
   claim's `claimed_at`. "If already held by actor, keep the claim" now keeps
   the claim as it stands (spec 8.2).
+- Declared Python support is consistent: the package requires Python 3.12 and
+  the `Programming Language :: Python` classifier no longer advertises 3.11.
