@@ -474,5 +474,5 @@ uv run mypy src             # types
 uv run pytest --cov         # coverage (the configured floor is in pyproject.toml)
 ```
 
-`AGENTS.md` is the short orientation brief for agents working in this
+`AGENT.md` is the short orientation brief for agents working in this
 repository; `DESIGN.md` is the architecture document for contributors.
