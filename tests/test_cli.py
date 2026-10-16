@@ -555,18 +555,28 @@ def test_mutation_documents_pin_their_top_level_keys(run: RunCli, db_file: Path)
     """A mutation returns {schema_version, changed, task}; `reopen` alone adds a key.
 
     `reopen` is the one mutation whose document carries a fourth top-level key,
-    `active_dependents`, and only when it actually reopens a task.
+    `active_dependents`, and only when it actually reopens a task. Both halves of
+    the `in_progress`/`review` predicate are pinned, the array order is pinned to
+    each dependent's own creation order, and an unstarted dependent is pinned as
+    excluded.
     """
     base = {"schema_version", "changed", "task"}
     prerequisite = _create(run, db_file, "Prerequisite", "--status", "ready")
-    dependent = _create(
-        run,
-        db_file,
-        "Dependent",
-        "--status",
-        "ready",
-        "--depends-on",
-        prerequisite["id"],
+
+    # Two dependents start in a known creation order (pins the ordering), one
+    # moves through `review` (pins the second half of the predicate), and one is
+    # left unstarted (pins its exclusion).
+    first = _create(
+        run, db_file, "First", "--status", "ready", "--depends-on", prerequisite["id"]
+    )
+    second = _create(
+        run, db_file, "Second", "--status", "ready", "--depends-on", prerequisite["id"]
+    )
+    reviewer = _create(
+        run, db_file, "Reviewer", "--status", "ready", "--depends-on", prerequisite["id"]
+    )
+    unstarted = _create(
+        run, db_file, "Unstarted", "--status", "ready", "--depends-on", prerequisite["id"]
     )
 
     def mutate(*argv: str) -> dict[str, Any]:
@@ -580,25 +590,83 @@ def test_mutation_documents_pin_their_top_level_keys(run: RunCli, db_file: Path)
     assert set(completed) == base
     assert completed["changed"] is True
 
-    # Start the dependent so reopening the prerequisite has something to report.
-    started = mutate("status", dependent["id"], "in_progress")
-    assert started["task"]["status"] == "in_progress"
+    # Start the dependents so reopening the prerequisite has something to report.
+    assert mutate("status", first["id"], "in_progress")["task"]["status"] == "in_progress"
+    assert mutate("status", second["id"], "in_progress")["task"]["status"] == "in_progress"
+    assert mutate("status", reviewer["id"], "in_progress")["task"]["status"] == "in_progress"
+    assert mutate("status", reviewer["id"], "review")["task"]["status"] == "review"
 
     reopened = mutate("reopen", prerequisite["id"])
     assert reopened["changed"] is True
     assert set(reopened) == base | {"active_dependents"}
     entries = reopened["active_dependents"]
-    assert [entry["id"] for entry in entries] == [dependent["id"]]
-    assert entries[0]["status"] == "in_progress"
-    assert entries[0]["blocked"] is True
+    # Ordered by each dependent's own creation order, never by the reopened task.
+    assert [entry["id"] for entry in entries] == [first["id"], second["id"], reviewer["id"]]
+    # Both an `in_progress` and a `review` dependent are included...
+    assert [entry["status"] for entry in entries] == ["in_progress", "in_progress", "review"]
+    # ...and the unstarted dependent is not.
+    assert unstarted["id"] not in {entry["id"] for entry in entries}
+    assert all(entry["blocked"] is True for entry in entries)
     # The entries use the board/list projection: no `description`, unlike `task`.
     assert "description" in reopened["task"]
-    assert "description" not in entries[0]
+    assert all("description" not in entry for entry in entries)
 
     # A no-op `reopen` omits the key entirely.
     noop = mutate("reopen", prerequisite["id"])
     assert noop["changed"] is False
     assert set(noop) == base
+
+
+def test_reopen_reports_an_empty_active_dependents_array_when_none_has_started(
+    run: RunCli, db_file: Path
+) -> None:
+    """A changed `reopen` keeps the key and reports `[]` when no dependent started."""
+    prerequisite = _create(run, db_file, "Prerequisite", "--status", "ready")
+    _create(run, db_file, "Unstarted", "--status", "ready", "--depends-on", prerequisite["id"])
+
+    sequence = (
+        ("status", prerequisite["id"], "in_progress"),
+        ("complete", prerequisite["id"]),
+        ("reopen", prerequisite["id"]),
+    )
+    document: dict[str, Any] = {}
+    for argv in sequence:
+        code, out, err = run(*argv, "--agent", DEFAULT_ACTOR, "--db", str(db_file), "--json")
+        assert code == 0, err
+        document = _json_document(out)
+
+    assert document["changed"] is True
+    assert document["active_dependents"] == []
+
+
+def test_force_into_in_progress_takes_the_claim(run: RunCli, db_file: Path) -> None:
+    """The `--force` path over an unfinished prerequisite still records the claim."""
+    blocker = _create(run, db_file, "Blocker", "--status", "ready")
+    blocked = _create(
+        run, db_file, "Blocked", "--status", "ready", "--depends-on", blocker["id"]
+    )
+
+    code, out, err = run(
+        "status",
+        blocked["id"],
+        "in_progress",
+        "--force",
+        "--reason",
+        "starting over an unfinished prerequisite",
+        "--agent",
+        DEFAULT_ACTOR,
+        "--db",
+        str(db_file),
+        "--json",
+    )
+    assert code == 0, err
+    document = _json_document(out)
+    assert document["changed"] is True
+    assert document["task"]["status"] == "in_progress"
+    assert document["task"]["claimed_by"] == DEFAULT_ACTOR
+
+    claims_document = _json_document(run("claims", "--json", "--db", str(db_file))[1])
+    assert [item["task_id"] for item in claims_document["items"]] == [blocked["id"]]
 
 
 # --------------------------------------------------------------------------- #
@@ -661,6 +729,30 @@ def test_next_reports_an_empty_result_with_exit_zero(run: RunCli, db_file: Path)
     code, out, _ = run("next", "--db", str(db_file), "--agent", "dev")
     assert code == 0
     assert out.splitlines()[-1] == "No eligible tasks."
+
+
+def test_next_claim_pins_its_single_task_document_key_set(
+    run: RunCli, db_file: Path
+) -> None:
+    """`next --claim` is `{schema_version, task}`, not the plain `next` container.
+
+    Pinned for both the empty and the populated case: plain `next` carries
+    `tasks`, and `next --claim` never does.
+    """
+    code, out, _ = run("next", "--claim", "--json", "--agent", "dev", "--db", str(db_file))
+    assert code == 0
+    empty = _json_document(out)
+    assert set(empty) == {"schema_version", "task"}
+    assert empty["task"] is None
+
+    _create(run, db_file, "ready work", "--status", "ready")
+
+    code, out, err = run("next", "--claim", "--json", "--agent", "dev", "--db", str(db_file))
+    assert code == 0, err
+    populated = _json_document(out)
+    assert set(populated) == {"schema_version", "task"}
+    assert populated["task"]["status"] == "in_progress"
+    assert populated["task"]["claimed_by"] == "dev"
 
 
 def test_next_claim_selects_and_claims(run: RunCli, db_file: Path) -> None:
