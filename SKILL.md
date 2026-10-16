@@ -72,7 +72,9 @@ This is the whole discipline; the command reference below exists to support it.
 
 1. **Select work atomically.** `tack next --claim --json` picks the top
    *eligible* task and claims it in a single transaction. Two agents running it
-   concurrently get two different tasks, or one gets `null`.
+   concurrently get two different tasks, or one gets an **empty `tasks` array**
+   (the `next` document is `{"schema_version":1,"tasks":[...]}` — never a bare
+   task and never `null`; see *The JSON contract*).
 2. **Read before you act.** `tack show <id> --json` — confirm the status,
    prerequisites, description and any prior notes.
 3. **Record intent while working.** `tack note <id> "..."` for handoff context,
@@ -179,13 +181,97 @@ fix is usually to shorten the title and move the full text into
 - Error `details` carry machine-readable keys where they exist (a length
   violation gives `field` / `max` / `unit` / `actual`; a claim conflict gives
   `claimed_by`) — read them instead of parsing the message text.
-- Mutations return `{"schema_version":1,"changed":<bool>,"task":{...}}`.
-  `changed:false` means the call was an idempotent no-op: nothing was written
-  and no event was recorded.
-- `--brief` (one line of counts) and `--count` (`key=value` per line) are the
-  cheapest way to ask "what does this board look like?"; combining them is a
-  usage error. Both accept the same filters as `board`, and all counts are
-  computed over the **filtered** set.
+
+### Document shapes
+
+The top-level keys of every `--json` document a consumer meets. `[...]` is an
+array; `{...}` is an object whose inner keys are described below the table.
+
+| Command | Top-level shape |
+|---|---|
+| `show <id>` | `{schema_version, task:{...}, notes:[...]}` |
+| `next` | `{schema_version, tasks:[...]}` (0 or 1 tasks) |
+| `board` / `list` | `{schema_version, project, counts:{...}, tasks:[...]}` |
+| `board` / `list` with `--brief` or `--count` | `{schema_version, project, counts:{...}}` (no `tasks`) |
+| `deps <id>` / `dependents <id>` | `{schema_version, task_id, tasks:[...]}` |
+| `graph --format json` | `{schema_version, nodes:[{id,title,status,priority,assignee}], edges:[{source,target}]}` |
+| `graph --format dot` | Graphviz text, not JSON |
+| `history [<id>]` | `{schema_version, task_id, items:[{id,timestamp,actor,event_type,task_id,payload}]}` |
+| `claims` | `{schema_version, items:[{task_id,agent_id,claimed_at,age_seconds,task:{...}}]}` |
+| `doctor` | `{schema_version, ok, errors:[...], warnings:[...]}` |
+| a mutation except `note` (`create`, `update`, `status`, `complete`, `reopen`, `cancel`, `restore`, `claim`, `release`, `depend add/remove`) | `{schema_version, changed, task:{...}}` |
+| `note <id> TEXT` | `{schema_version, changed, event:{...}}` |
+| any error under `--json` | `{schema_version, error:{code,message,exit_code,retryable,details}}` |
+
+`guide` prints text and ignores `--json`. `--brief` and `--count` print human
+text without `--json` and the `counts`-only document with it.
+
+The **task projection** (the `task` object, and each entry of `tasks`) carries
+`id`, `title`, `description` (omitted on `board`/`list`/`next` unless `--full`),
+`status`, `priority`, `assignee`, `labels`, `depends_on`, `dependency_ready`,
+`eligible`, `reviewable`, `blocked`, `blocked_reason`, `blockers`,
+`claimed_by`, `claimed_at`, `created_at`, `updated_at`, `completed_at`,
+`version`. A `graph --format json` node is a reduced subset of it
+(`id`, `title`, `status`, `priority`, `assignee`).
+
+- **`show` is a container, not the task.** The task object is under `task`;
+  `notes` holds the task's notes (newest first, at most five). Read
+  `document["task"]`, not `document`.
+- **`next` is a container too.** It is `{"schema_version":1,"tasks":[...]}` with
+  zero or one tasks. When nothing is eligible it is
+  `{"schema_version":1,"tasks":[]}` and the exit code is `0` — never `null` and
+  never a scalar task.
+- **`deps` / `dependents`** name the queried task in `task_id` and hold its
+  direct prerequisites / dependents in `tasks` (an empty `tasks` is normal).
+- **`history`** sets `task_id` to the task you queried (`null` for the
+  board-wide call) and holds the events in `items`. **`claims`** holds one row
+  per held claim in `items`, each row carrying the claim (`task_id`,
+  `agent_id`, `claimed_at`, `age_seconds`) and the full `task`.
+- **Mutations return `{"schema_version":1,"changed":<bool>,"task":{...}}`.** The
+  one exception is `note`, which returns `{changed, event}` (a note is an event,
+  not a task change). `changed:false` means the call was an idempotent no-op:
+  nothing was written and no event was recorded.
+
+### The `counts` object
+
+`board --json` and `list --json` carry a `counts` object: `tasks`, one key per
+status (`backlog`, `ready`, `in_progress`, `review`, `done`, `cancelled`), and
+the derived `eligible`, `reviewable`, `blocked`, `claimed`.
+
+**Every count describes the FILTERED result set, not the whole board.** The
+counts are computed over exactly the `tasks` array in the same document, so
+with any filter applied they are not board totals:
+
+- `counts.tasks` is the size of the **filtered result**, not the board size.
+  `board --json` (unfiltered) reports the board size; `list --eligible --json`
+  reports the number of eligible tasks.
+- `counts.blocked` counts blocked tasks **within the filtered set**.
+  `list --eligible --json` therefore reports `blocked: 0` even when the board
+  holds blocked tasks — an eligible task is never blocked by definition. To
+  count the board's blocked tasks, query `list --blocked --json` (or read
+  `board --count`).
+
+`--brief` (one line of counts) and `--count` (`key=value` per line) are the
+cheapest way to ask "what does this board look like?"; combining them is a
+usage error. Both accept the same filters as `board`, and their counts are the
+same filtered set.
+
+### The `doctor` document
+
+`doctor --json` returns
+`{"schema_version":1,"ok":<bool>,"errors":[...],"warnings":[...]}`:
+
+- `errors` lists problems that make the board unusable — a missing database, a
+  wrong application id, an unsupported schema version, broken foreign keys, a
+  dangling dependency, a cycle, corrupt metadata. A non-empty `errors` exits
+  **6**.
+- `warnings` lists inconsistencies that are real but not fatal — an
+  `in_progress` task whose prerequisite is unfinished, an `in_progress` task
+  with no claim. Warnings still exit **0**.
+- `ok` is `not errors`. **`ok:true` does NOT mean the board is clean**: it only
+  means no errors were found, and it is emitted alongside a non-empty
+  `warnings` array. The health signal is the `warnings` array (and `errors`) —
+  not `ok`, and not the exit code. Read `warnings` on every run.
 
 ### Exit codes
 
@@ -197,7 +283,7 @@ fix is usually to shorten the title and move the full text into
 | 3 | task, project, or database not found / not configured |
 | 4 | validation error, invalid transition, or dependency cycle |
 | 5 | concurrency conflict: claim held, stale version, lock timeout (`retryable: true`) |
-| 6 | database, schema, or migration error |
+| 6 | database, schema, or migration error, or a `doctor` run that found errors |
 
 ## Best practices
 

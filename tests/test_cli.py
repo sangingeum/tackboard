@@ -315,6 +315,72 @@ def test_show_displays_the_latest_notes(run: RunCli, db_file: Path) -> None:
     assert "note 1" not in out
 
 
+def test_document_shapes_for_next_doctor_and_show(run: RunCli, db_file: Path) -> None:
+    """Pin the three containers the JSON contract documents for the work loop."""
+    _create(run, db_file, "prerequisite", "--status", "ready")
+    _create(run, db_file, "dependent", "--status", "ready", "--depends-on", "T-000001")
+
+    # next: an array container, empty when nothing is eligible (never null).
+    code, out, err = run("next", "--json", "--agent", DEFAULT_ACTOR, "--db", str(db_file))
+    assert code == 0, err
+    picked = _json_document(out)
+    assert set(picked) == {"schema_version", "tasks"}
+    assert [task["id"] for task in picked["tasks"]] == ["T-000001"]
+
+    code, out, err = run(
+        "next",
+        "--json",
+        "--agent",
+        DEFAULT_ACTOR,
+        "--stage",
+        "review",
+        "--db",
+        str(db_file),
+    )
+    assert code == 0, err
+    assert _json_document(out)["tasks"] == []
+
+    # show: a task/notes container, not a bare task.
+    code, out, err = run("show", "T-000001", "--json", "--db", str(db_file))
+    assert code == 0, err
+    shown = _json_document(out)
+    assert set(shown) == {"schema_version", "task", "notes"}
+    assert shown["task"]["id"] == "T-000001"
+    assert isinstance(shown["notes"], list)
+
+    # doctor: ok/errors/warnings, where ok:true coexists with a warning.
+    code, out, err = run("doctor", "--json", "--db", str(db_file))
+    assert code == 0, err
+    clean = _json_document(out)
+    assert set(clean) == {"schema_version", "ok", "errors", "warnings"}
+    assert clean["ok"] is True
+    assert clean["errors"] == []
+    assert clean["warnings"] == []
+
+    assert (
+        run(
+            "status",
+            "T-000002",
+            "in_progress",
+            "--agent",
+            DEFAULT_ACTOR,
+            "--force",
+            "--reason",
+            "pin the doctor warning shape",
+            "--db",
+            str(db_file),
+            "--json",
+        )[0]
+        == 0
+    )
+    code, out, err = run("doctor", "--json", "--db", str(db_file))
+    assert code == 0, err
+    warned = _json_document(out)
+    assert warned["ok"] is True
+    assert warned["errors"] == []
+    assert [finding["task_id"] for finding in warned["warnings"]] == ["T-000002"]
+
+
 # --------------------------------------------------------------------------- #
 # actors
 # --------------------------------------------------------------------------- #

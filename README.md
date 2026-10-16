@@ -203,6 +203,13 @@ Filters apply to both, and every count is computed over the filtered set.
 Combining `--brief` with `--count` is a usage error (exit 2). Under `--json`
 both return the same document — only the human formatting differs.
 
+The `counts` object in that document describes the same filtered set, not
+whole-board totals: `counts.tasks` is the size of the filtered result, and
+`counts.blocked` counts blocked tasks within it. `list --eligible --json`
+therefore reports `blocked: 0` even when the board holds blocked tasks. Use an
+unfiltered `board --json` for the board size, or `list --blocked --json` for the
+blocked count.
+
 JSON omits descriptions to save agent tokens; pass `--full` to include them.
 `show` and mutation results always include the description.
 
@@ -332,6 +339,16 @@ keys.
 Without `--json`, errors go to stderr as `error: <message>`. Tracebacks appear
 only with `--verbose`, and output is UTF-8 with no color codes.
 
+The read-only and mutation documents are containers, not bare tasks: `show`
+puts the task under `task` (alongside `notes`), `next` returns
+`{"schema_version": 1, "tasks": [...]}` — an empty `tasks` array, never `null`,
+when nothing is eligible — and a mutation returns
+`{"schema_version": 1, "changed": <bool>, "task": {...}}` (`note` returns an
+`event` instead). `doctor` returns `ok`, `errors` and `warnings`, where
+`ok: true` means no errors were found and does **not** imply an empty
+`warnings` array. The full table of document shapes is in the skill's *The JSON
+contract* section (`SKILL.md`).
+
 ## Agent quickstart
 
 The text below is the output of `tack guide`. Paste it into an agent's
@@ -410,7 +427,7 @@ operator can confirm which board is on screen.
 
 | Path | What it shows |
 |---|---|
-| `/board` | Kanban columns per stored status, with filters (status, assignee, priority, label, blocked, eligible) and the same counts as `board --count`. `done` and `cancelled` show their 20 most recently updated cards behind a "show all" link, and an optional 5-second auto-refresh can be paused. |
+| `/board` | Kanban columns per stored status, with filters (status, assignee, priority, label, blocked, eligible) and the same counts as `board --count`, computed over those filters. `done` and `cancelled` show their 20 most recently updated cards behind a "show all" link, and an optional 5-second auto-refresh can be paused. |
 | `/graph` | The dependency DAG — edge `A -> B` means B depends on A — with zoom, pan, fit-to-screen and a one-task neighbourhood. Nodes show ID, title, status, priority and assignee. Done, eligible, in-progress, review, blocked and cancelled are distinguished by shape and label as well as colour, and a server-rendered indented outline sits underneath the canvas, so the dependency structure is readable with JavaScript disabled or if the drawing fails. |
 | `/task/<id>` | Description, status, priority, assignee, labels, the claim holder and its age, prerequisites and dependents with their statuses, derived blockers and readiness, timestamps, notes and recent history. |
 
@@ -421,7 +438,7 @@ task projection, same counts object:
 |---|---|
 | `/api/board` | `tack board --json` |
 | `/api/graph` (add `?task=T-000123` for one neighbourhood) | `tack graph --json` |
-| `/api/tasks/<id>` | the `tack show --json` task, plus its claim, prerequisites, dependents, notes and history |
+| `/api/tasks/<id>` | the `task` from `tack show --json`, plus its claim, prerequisites, dependents, notes and history |
 
 ### Read-only, loopback-only, no authentication
 
@@ -470,7 +487,9 @@ silences the banner but never the record.
 - `tack doctor` checks readability, the application id, the schema version,
   foreign-key consistency, dangling dependencies, cycles, claims on inactive
   tasks, `in_progress` tasks without a claim, and metadata integrity. Errors
-  exit 6; warnings are listed and exit 0.
+  exit 6; warnings are listed and exit 0. `ok: true` therefore means only that
+  no errors were found — it does not mean the board is clean, so read the
+  `warnings` array rather than `ok`.
 
 ## Troubleshooting
 
