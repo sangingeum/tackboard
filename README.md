@@ -211,7 +211,8 @@ unfiltered `board --json` for the board size, or `list --blocked --json` for the
 blocked count.
 
 JSON omits descriptions to save agent tokens; pass `--full` to include them.
-`show` and mutation results always include the description.
+`show` and the `task` object of a mutation result always include the
+description.
 
 ## Tasks
 

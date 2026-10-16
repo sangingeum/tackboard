@@ -186,7 +186,8 @@ fix is usually to shorten the title and move the full text into
   stderr and humans get prose.
 - `board`, `list` and `next` **omit `description`** unless `--full` is passed —
   that is the token-economy default. `show` and mutation results always include
-  it.
+  it on the `task` object; the `active_dependents` entries a `reopen` adds are
+  the projection *without* a description (see below).
 - Error `details` carry machine-readable keys where they exist (a length
   violation gives `field` / `max` / `unit` / `actual`; a claim conflict gives
   `claimed_by`) — read them instead of parsing the message text.
