@@ -296,7 +296,7 @@ never appears in `board`, `list`, `next` or `counts`.
 **Storage.** `memo_revisions(rev, text, author, created_at, reason)`, created by
 the 1 -> 2 migration (`PRAGMA user_version` becomes 2; `application_id` is
 unchanged because it identifies the file family, not the schema version). `rev`
-is a `INTEGER PRIMARY KEY` assigned as `MAX(rev) + 1` inside the write
+is an `INTEGER PRIMARY KEY` assigned as `MAX(rev) + 1` inside the write
 transaction, so it is gapless and monotonic; **rev 0 means "no memo yet"** and
 the first write creates rev 1. A revision is immutable, which is why its stamp
 is `created_at` and why the table is append-only (the same triggers `events`

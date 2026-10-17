@@ -508,6 +508,7 @@ same filtered set.
     line when the premise genuinely changes, and say why in `--reason`.
     Attribution is per revision: to see who added which line, run
     `tack memo --diff` or `tack memo --history`.
+
 ## Pitfalls (things that look broken but are not)
 
 - **`--edit` refuses without a terminal** (exit 2, naming `--file` and `-`).

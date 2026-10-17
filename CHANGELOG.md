@@ -37,7 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-
 - The Host-header refusal now explains itself. A refused request still gets a
   single `403`, but the body names the received `Host` value (or says plainly
   that the header was absent or unparseable), lists the accepted host names,
