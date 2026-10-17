@@ -24,7 +24,16 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from tackboard import claims, cli, db, models, schema, service, web  # noqa: E402
+from tackboard import (  # noqa: E402
+    claims,
+    cli,
+    db,
+    memo,
+    models,
+    schema,
+    service,
+    web,
+)
 from tackboard.errors import UsageError  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -754,3 +763,118 @@ def test_serve_json_prints_exactly_one_startup_record(db_file: Path) -> None:
         process.stderr.close()
 
     assert rest == "", f"serve wrote more than one record: {rest!r}"
+
+
+# --------------------------------------------------------------------------- #
+# the board-level memo
+# --------------------------------------------------------------------------- #
+
+
+def _write_memo(
+    database: Path, text: str, *, author: str = DEFAULT_ACTOR, **kwargs: Any
+) -> None:
+    connection = schema.open_database(database)
+    try:
+        memo.replace_memo(connection, actor=author, text=text, **kwargs)
+    finally:
+        connection.close()
+
+
+def test_api_memo_is_the_cli_document(server: WebClient, db_file: Path) -> None:
+    _write_memo(db_file, "standing note", reason="first")
+    response = server.request("/api/memo")
+    assert response.status == 200
+    assert response.headers["Content-Type"] == "application/json; charset=utf-8"
+
+    written = schema.open_database(db_file)
+    try:
+        expected = {"schema_version": 1, **memo.read_memo(written)}
+    finally:
+        written.close()
+    assert response.json() == expected
+
+
+def test_api_memo_of_an_empty_board_is_the_empty_document(server: WebClient) -> None:
+    assert server.request("/api/memo").json() == {
+        "schema_version": 1,
+        "rev": 0,
+        "text": "",
+        "author": None,
+        "created_at": None,
+        "bytes": 0,
+    }
+
+
+def test_the_board_page_shows_the_memo_escaped(
+    server: WebClient, db_file: Path
+) -> None:
+    hostile = "<script>alert('memo')</script> & <b>bold</b>"
+    _write_memo(db_file, hostile, reason="first")
+
+    page = server.request("/board").text
+    assert "memo-text" in page
+    assert "rev 1" in page
+    assert DEFAULT_ACTOR in page
+    assert hostile not in page
+    assert "&lt;script&gt;" in page
+    assert "&amp;" in page
+
+
+def test_a_small_memo_is_open_and_a_large_one_is_collapsed(
+    server: WebClient, db_file: Path
+) -> None:
+    _write_memo(db_file, "short", reason="first")
+    small = server.request("/board").text
+    assert '<details class="memo-details" open>' in small
+
+    connection = schema.open_database(db_file)
+    try:
+        memo.replace_memo(
+            connection,
+            actor=DEFAULT_ACTOR,
+            text="x" * (memo.COLLAPSE_BYTES + 1),
+            reason="grow",
+            if_rev=1,
+        )
+    finally:
+        connection.close()
+    large = server.request("/board").text
+    assert '<details class="memo-details" open>' not in large
+    assert "memo-details" in large
+    # The whole memo is present; it is collapsed, never truncated.
+    assert "x" * (memo.COLLAPSE_BYTES + 1) in large
+
+
+def test_an_empty_board_says_there_is_no_memo(server: WebClient) -> None:
+    page = server.request("/board").text
+    assert "no memo yet" in page
+    assert "memo-details" in page
+
+
+def test_the_task_page_does_not_repeat_the_memo(
+    server: WebClient, db_file: Path
+) -> None:
+    connection = schema.open_database(db_file)
+    try:
+        task = service.create_task(
+            connection, actor=DEFAULT_ACTOR, title="Task", status="ready"
+        )["task"]
+    finally:
+        connection.close()
+    _write_memo(db_file, "only on the board", reason="first")
+
+    page = server.request(f"/task/{task['id']}").text
+    assert "only on the board" not in page
+    assert "memo-details" not in page
+
+
+def test_the_web_has_no_memo_write_path(server: WebClient, db_file: Path) -> None:
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
+        response = server.request("/api/memo", method=method)
+        assert response.status == 405, method
+        assert response.headers["Allow"] == "GET, HEAD"
+
+    _write_memo(db_file, "unchanged", reason="first")
+    before = server.request("/api/memo").body
+    server.request("/api/memo", method="POST")
+    assert server.request("/api/memo").body == before

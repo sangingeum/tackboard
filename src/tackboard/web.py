@@ -33,7 +33,7 @@ from string import Template
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
-from . import schema, views
+from . import memo, schema, views
 from .errors import NotFoundError, TackError, UsageError, ValidationError
 from .models import PRIORITIES, STATUSES, TERMINAL_STATUSES
 
@@ -408,6 +408,39 @@ def _history_list(events: Sequence[Mapping[str, Any]]) -> str:
     return f'<ul class="history">{rows}</ul>'
 
 
+def _memo_panel(conn: sqlite3.Connection) -> str:
+    """The board-level memo, escaped inside a collapsible ``<pre>``.
+
+    A long memo is collapsed rather than truncated: the whole text is always in
+    the document, and a reader opens it deliberately. The rev and author are
+    shown so an operator can see which revision is on screen.
+    """
+    document = views.memo_document(conn)
+    rev = int(document["rev"])
+    if rev == 0:
+        return _render(
+            "memo.html",
+            heading="Project memo",
+            meta="no memo yet",
+            open_attr=" open",
+            empty=" empty",
+            text="No memo yet. Write one with 'tack memo TEXT --reason ...'.",
+        )
+    meta = (
+        f"rev {rev} &#183; {_esc(document['author'])} &#183; "
+        f"{_esc(document['created_at'])} &#183; {document['bytes']} bytes"
+    )
+    open_attr = "" if int(document["bytes"]) > memo.COLLAPSE_BYTES else " open"
+    return _render(
+        "memo.html",
+        heading="Project memo",
+        meta=meta,
+        open_attr=open_attr,
+        empty="",
+        text=_esc(document["text"]),
+    )
+
+
 def _legend() -> str:
     shapes = (
         ("shape-square", "done"),
@@ -622,6 +655,8 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
             return self._page(lambda conn: self._graph_page(conn, query))
         if path.startswith("/task/"):
             return self._page(lambda conn: self._task_page(conn, path[len("/task/") :]))
+        if path == "/api/memo":
+            return self._api(lambda conn: views.memo_document(conn))
         if path == "/api/board":
             return self._api(
                 lambda conn: views.board_document(conn, **_board_filters(query))
@@ -701,6 +736,7 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
         document = views.board_document(conn, **filters)
         content = _render(
             "board.html",
+            memo=_memo_panel(conn),
             filters=_filter_form(query),
             counts_line=_esc(_counts_line(document["counts"])),
             project=_esc(document["project"]),
