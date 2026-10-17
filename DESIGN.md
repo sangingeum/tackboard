@@ -353,8 +353,9 @@ runs, which writes its usual pre-migrate backup. The memo is therefore
 unavailable on an unmigrated board — the intended uniform behaviour, not a gap
 to smooth over.
 
-`doctor` validates the memo only when `user_version` is 2: a missing table
-(`memo_table_missing`), a revision run that is not a gapless `1..N`
+`doctor` validates the memo only when `user_version` is 2: a memo revision table
+that is missing or unusable (`memo_table_invalid`), a revision run that is not a
+gapless `1..N`
 (`memo_revision_gap`, details `{expected, found}`), a stored revision over the
 cap (`memo_revision_oversize`, details `{rev, bytes, max}`), and a blank author
 (`memo_revision_author`). The memo has no foreign keys, so the existing

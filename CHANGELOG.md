@@ -27,9 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   auto-migrates: a board created by the previous release is refused with exit 6
   until `tack migrate` runs, which writes its usual pre-migrate backup.
   `tack backup` needs no change and preserves every revision.
-- `doctor` validates the memo when the schema version claims it: a missing
-  table, an oversize revision, a blank author, and a revision run that is not a
-  gapless `1..N` are errors.
+- `doctor` validates the memo when the schema version claims it: a memo
+  revision table that is missing or unusable (`memo_table_invalid`), an
+  oversize revision, a blank author, and a revision run that is not a gapless
+  `1..N` are errors.
 - The web view shows the memo as a panel at the top of `/board` (escaped
   inside a `<pre>`, collapsed by default when it is large, never truncated)
   and publishes it at `/api/memo`, which is exactly the `tack memo --json`
