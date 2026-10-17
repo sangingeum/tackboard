@@ -1,7 +1,7 @@
 ---
 name: tackboard
 description: Use for agent task coordination on a per-project board via the `tack` CLI — create, claim, note and complete tasks, model dependency DAGs, read derived readiness, and select work atomically with `next --claim`. Use when several agents share one project's work and need a stable machine-readable contract; do NOT use for note-taking, file search (use rg) or git history.
-version: 0.2.0
+version: 0.3.0
 author: sangingeum
 license: MIT
 platforms: [linux, macos, windows]
@@ -74,6 +74,10 @@ If `tack` is not on `PATH`, use `uv run tack ...` from a checkout, or
 
 This is the whole discipline; the command reference below exists to support it.
 
+0. **Read the project memo.** `tack memo --json` prints the board's standing
+   note — the project's operating premise and rules of engagement, one document
+   at board scope. It is not a task and nothing claims or completes it. See
+   *The project memo*.
 1. **Select work atomically.** `tack next --claim --json` picks the top
    *eligible* task and claims it in a single transaction. Two agents running it
    concurrently get two different tasks, or one gets `{"schema_version":1,
@@ -117,6 +121,9 @@ tack update TASK_ID [--title T] [--description TEXT] [--priority P]
 tack status TASK_ID STATUS [--force --reason TEXT] [--if-version N]
 tack complete|reopen|cancel|restore TASK_ID [--force --reason TEXT] [--if-version N]
 tack note TASK_ID TEXT
+tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
+           | --history | --diff [N [N]] | --restore N | --clear]
+          [--if-rev N] [--reason TEXT] [--force] [--dry-run] [--limit N]
 tack claim TASK_ID [--force --reason TEXT] [--if-version N]
 tack release TASK_ID [--force --reason TEXT] [--if-version N]
 tack claims [--agent A] [--older-than 2h]
@@ -133,7 +140,9 @@ tack guide
 
 Every mutating command takes `--agent` or falls back to `TACKBOARD_AGENT`
 (the explicit option wins). Read-only commands (`board`, `list`, `show`,
-`deps`, `dependents`, `graph`, `history`, `claims`, `doctor`) need no actor.
+`deps`, `dependents`, `graph`, `history`, `claims`, `doctor`) need no actor, and
+so do the memo's reads (`memo`, `memo --rev`, `memo --history`, `memo --diff`)
+and `memo --dry-run`; every memo write needs one.
 `next` needs one even without `--claim`, because selection is agent-specific.
 `next --claim` prints a single-task document where plain `next` prints the
 `tasks` container — see *The JSON contract*.
@@ -166,6 +175,73 @@ to `ready`, and likewise `complete` from `in_progress` — clears them
 free, and a claim is not always an explicit `claim` call. None of those paths
 touches the assignment: `assignee` is written only by a routing command.
 
+## The project memo
+
+`tack memo` is the board's own **standing note** — the project's operating
+premise and rules of engagement, one document at board scope. Read it first;
+it is what the board is for, not what one session did.
+
+- It is **not a task.** Nothing claims it, completes it or blocks it, and it
+  never appears in `board`, `list`, `next`, `counts`, `deps` or `graph`.
+- It is **not the session handoff record.** It is a standing note, read first
+  and edited as a whole; the per-session narrative keeps its own home.
+- Reads need no actor; a write needs `--agent`/`TACKBOARD_AGENT`; `--dry-run`
+  needs none.
+
+```bash
+tack memo --json                          # the head revision (cheap: open a session with it)
+tack memo --rev 3 --json                  # one revision
+tack memo --history --limit 5 --json      # the revisions, newest first
+tack memo --diff 6 7 --json               # line diff, three lines of context
+tack memo "new text" --reason "why"       # replace (first creation needs no guard)
+tack memo --append "one more line"        # append a line (never needs a guard)
+tack memo --file notes.md --reason "why"   # replace from a file ('-' reads stdin)
+tack memo --restore 2 --reason "rollback" --if-rev 5
+tack memo --clear --reason "starting over"
+```
+
+**Revisions.** Each write creates the next revision, and every revision is kept:
+`--restore` and `--clear` add a revision rather than editing or deleting one.
+Revision `0` means "no memo yet". `--history` reports `current_rev`, each
+entry's `author`, `created_at`, `bytes` and `reason`.
+
+**The guard.** A replace, restore or clear rewrites the whole document, so on a
+non-empty memo it requires **either** `--if-rev N` **or** `--force --reason`; a
+bare `tack memo "text"` is exit 2. `--force` is one enumerated case: it records
+`{"forced": true, "reason": ..., "rev": N, "previous_rev": M}` in the event, and
+is refused on an append (an append is never guarded, so there is nothing to
+force). A stale `--if-rev` is exit 5 with code `stale_rev` and
+`retryable: false` — re-read the memo and re-decide, or force.
+
+**The append rule.** If the current memo is non-empty and does not end with a
+newline, one `\n` is inserted before the appended text; nothing else about
+either part is transformed (no trimming, no stripping). Two concurrent appends
+both survive: the current text is read inside the write transaction.
+
+**`--reason`** is the same concept as a task's: the recorded explanation for the
+write. It is required on replace, restore and clear and optional on append.
+
+**Size.** The cap is 64 KiB (65536 UTF-8 bytes), measured in bytes on the
+stored text. `--dry-run` runs the real validation and exits with the real code
+without writing anything, which is how to probe the cap:
+
+```bash
+tack memo --file big.md --reason "draft" --dry-run --json
+# -> {"schema_version":1,"dry_run":true,"changed":true,"memo":{...},"max":65536,"bytes":...,"remaining":...}
+```
+
+**Attribution is per revision** — the author and timestamp live on the revision,
+never inline in the text. To see who added which line, run `tack memo --diff`
+or `--history`.
+
+**`--edit`** needs a terminal: without one it exits 2 immediately, naming
+`--file` and `-`, rather than blocking on an editor prompt. An editor that
+exits non-zero writes nothing (`changed: false`, exit 0).
+
+**Availability.** A board created by an earlier release has no memo table and is
+refused with exit 6 until `tack migrate` runs, which writes its usual
+pre-migrate backup. Nothing auto-migrates.
+
 ## Field limits
 
 Limits are enforced on write; a violation is exit 4 (`validation`).
@@ -174,6 +250,7 @@ Limits are enforced on write; a violation is exit 4 (`validation`).
 |---|---|
 | `title` | 200 characters, after trimming (whitespace-only is rejected) |
 | `description` | 64 KiB (65536 UTF-8 bytes) |
+| memo text (`memo`) | 64 KiB (65536 UTF-8 bytes) |
 | `label` | 50 characters per label, at most 20 labels per task |
 | `blocked_reason` | 2 KiB (2048 UTF-8 bytes) |
 | note text (`note`) | 2 KiB (2048 UTF-8 bytes) |
@@ -224,6 +301,10 @@ array; `{...}` is an object whose inner keys are described below the table.
 | `graph --format dot` | Graphviz text, not JSON |
 | `history [<id>]` | `{schema_version, task_id, items:[{id,timestamp,actor,event_type,task_id,payload}]}` |
 | `claims` | `{schema_version, items:[{task_id,agent_id,claimed_at,age_seconds,task:{...}}]}` |
+| `memo` / `memo --rev N` | `{schema_version, rev, text, author, created_at, bytes}` (rev 0 with no memo: `rev:0`, `text:""`, `author:null`, `created_at:null`, `bytes:0`) |
+| `memo --history` | `{schema_version, current_rev, items:[{rev, author, created_at, bytes, reason}]}` (newest first) |
+| `memo --diff [A [B]]` | `{schema_version, from, to, added, removed, unified}` (`unified` is the text a human sees) |
+| a memo write | `{schema_version, changed, memo:{rev, text, author, created_at, bytes}}`; `--dry-run` adds `dry_run:true`, `max`, `bytes`, `remaining` |
 | `doctor` | `{schema_version, ok, errors:[...], warnings:[...]}` |
 | a mutation except `note` and `reopen` (`create`, `update`, `status`, `complete`, `cancel`, `restore`, `claim`, `release`, `depend add/remove`) | `{schema_version, changed, task:{...}}` |
 | `reopen <id>` | `{schema_version, changed, task:{...}}`, plus `active_dependents:[...]` when it changes anything |
@@ -344,13 +425,13 @@ same filtered set.
 
 | Code | Meaning |
 |---|---|
-| 0 | success, including idempotent no-ops and an empty `next` |
+| 0 | success, including idempotent no-ops, an empty `next`, an empty memo and an empty diff |
 | 1 | unexpected internal error |
-| 2 | usage error: bad option combination, or no actor |
-| 3 | task, project, or database not found / not configured |
-| 4 | validation error, invalid transition, or dependency cycle |
-| 5 | concurrency conflict: claim held, stale version, lock timeout (`retryable: true`) |
-| 6 | database, schema, or migration error, or a `doctor` run that found errors |
+| 2 | usage error: bad option combination, no actor, a memo replace without a guard, `--edit` without a terminal |
+| 3 | task, project, database or memo revision not found / not configured |
+| 4 | validation error, invalid transition, or dependency cycle; over the memo cap, a missing or too long `--reason`, invalid UTF-8 |
+| 5 | concurrency conflict: claim held, stale version, stale memo revision (`stale_rev`), lock timeout (`locked` is the only `retryable: true`) |
+| 6 | database, schema, or migration error (including an unmigrated board), or a `doctor` run that found errors |
 
 ## Best practices
 
@@ -419,7 +500,28 @@ same filtered set.
     `tack list --blocked` for "what is stuck and why". These are far cheaper
     than listing every task into your context.
 
+18. **Read the memo, and keep it a standing note.** `tack memo --json` is the
+    board's operating premise, not a log of what a session did; a project's
+    history belongs in its commits, its issues and its handoff record. Append a
+    line when the premise genuinely changes, and say why in `--reason`.
+    Attribution is per revision: to see who added which line, run
+    `tack memo --diff` or `tack memo --history`.
 ## Pitfalls (things that look broken but are not)
+
+- **`--edit` refuses without a terminal** (exit 2, naming `--file` and `-`).
+  Use `--append`, `--file` or `-`; an unattended agent must never wait on an
+  editor prompt.
+- **A replace on a non-empty memo needs `--if-rev N` or `--force --reason`.**
+  A bare `tack memo "text"` exits 2. Every revision is kept, so the guard is
+  about not clobbering a concurrent writer, not about losing data.
+- **A memo revision conflict is not retryable.** `stale_rev` exits 5 with
+  `retryable: false`: re-read the memo and re-decide, or `--force --reason`.
+- **`--reason` is required on a memo replace, restore or clear** and optional on
+  an append. On tasks it stays `--force`-only.
+- **A memo write never touches a task.** It appears in the board-wide `history`
+  with a null task id, so `tack history <TASK_ID>` and `show` are unaffected.
+- **An unmigrated board has no memo.** Opening it is exit 6 until
+  `tack migrate` runs.
 
 - **`claim` on a `backlog` task fails with exit 4.** That is the intended
   guard; move it to `ready` first.

@@ -6,7 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A board-level memo: one standing document per project board, read first and
+  edited as a whole, for a project's operating premise rather than the
+  per-session narrative. `tack memo` reads the head revision as JSON,
+  `--rev N` reads one revision, `--history` lists them newest first (with
+  `--limit`), `--diff [A [B]]` renders a line-based unified diff with three
+  lines of context from the standard library, `--append TEXT` adds a line,
+  `--restore N` re-applies an earlier revision as a new revision, `--clear`
+  writes an empty revision, `--file PATH` / `-` replace from a file or stdin,
+  and `--edit` edits in `$VISUAL`/`$EDITOR` (refusing with exit 2 when there is
+  no terminal, so an unattended agent cannot block on an editor prompt).
+  Revisions are immutable and append-only, the cap is 64 KiB measured in bytes,
+  `--dry-run` reports a write's real outcome without performing it, and a
+  guarded write against a stale revision exits 5 with code `stale_rev` and
+  `retryable: false`. `--reason` is required for a replace, restore or clear
+  and optional for an append.
+- Schema migration 1 -> 2, adding the `memo_revisions` table. Nothing
+  auto-migrates: a board created by the previous release is refused with exit 6
+  until `tack migrate` runs, which writes its usual pre-migrate backup.
+  `tack backup` needs no change and preserves every revision.
+- `doctor` validates the memo when the schema version claims it: a missing
+  table, an oversize revision, a blank author, and a revision run that is not a
+  gapless `1..N` are errors.
+- The web view shows the memo as a panel at the top of `/board` (escaped
+  inside a `<pre>`, collapsed by default when it is large, never truncated)
+  and publishes it at `/api/memo`, which is exactly the `tack memo --json`
+  document. There is no web write path.
+
 ### Changed
+
 
 - The Host-header refusal now explains itself. A refused request still gets a
   single `403`, but the body names the received `Host` value (or says plainly

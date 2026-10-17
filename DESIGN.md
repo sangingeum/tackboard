@@ -21,7 +21,8 @@ src/tackboard/
   dependencies.py  edges, cycle detection, readiness, graph export
   claims.py        claim/release, the atomic `next --claim` selector
   history.py       append-only events: write and read
-  views.py         read models (board, graph, task detail) for CLI and web
+  memo.py          the board-level memo: revisions, guard, append rules
+  views.py         read models (board, graph, task detail, memo) for CLI and web
   web.py           read-only HTTP server (board, DAG, task detail, /api/*)
   templates/       server-rendered HTML
   static/          committed CSS and JavaScript (no build step, no CDN)
@@ -39,6 +40,12 @@ Two rules keep the layers apart:
    `service.py`, `claims.py`, `dependencies.py` or `history.py` knows that a
    command line exists. They raise typed exceptions and return plain
    dictionaries.
+
+`memo.py` sits beside the service layer on the same footing: it owns the
+board-level memo's revision table and its rules, holds no interface logic, and
+raises typed exceptions returning plain dictionaries. Section 11 describes it.
+The CLI and the web layer read it through one read model,
+`views.memo_document`.
 
 ## 2. One database per project
 
@@ -145,13 +152,18 @@ first.
   the caller's. The `events` table is append-only, enforced by SQLite triggers
   that abort `UPDATE` and `DELETE`. Events carry a UTC timestamp, an actor, an
   event type, the task id where applicable, and a compact JSON payload holding
-  the changed fields.
+  the changed fields. A board-level memo write appends its own event the same
+  way, with `task_id` null and a payload that names the revision it created
+  (section 11) — never the memo body, so `history` stays a log rather than a
+  document store.
 - **Versioning.** `version` starts at 1 and increments once per successful
   mutation of a task record or its own prerequisite set — including claims and
   releases, since a claim changes the task's state. Notes are event-only and
   change neither `version` nor `updated_at`. A caller may pass `--if-version N`
   to make a mutation conditional; the comparison happens inside the write
-  transaction, so it cannot be raced.
+  transaction, so it cannot be raced. The board-level memo keeps a separate
+  counter, `rev`, with its own guard, `--if-rev N` (section 11); a memo write
+  changes no task's `version` and no task's `updated_at`.
 - **Idempotence is a first-class result.** Setting a task to the status it
   already has, claiming a task already claimed by the same agent, re-adding an
   existing dependency, and removing an absent one all return `changed: false`
@@ -218,6 +230,9 @@ The CLI is the primary interface for agents, so its output is a versioned API:
   writing its own text.
 - Tracebacks appear only under `--verbose`; output is UTF-8 and never carries
   color codes; long-lived output is never written while a transaction is open.
+- The board-level memo (section 11) adds its own documents without changing any
+  other: `board`, `list`, `next`, `counts`, `deps`, `dependents`, `graph`,
+  `doctor` and `history <TASK_ID>` are untouched by a memo write.
 
 Exit codes and JSON documents are the parts an agent is allowed to depend on.
 Human output may be re-worded.
@@ -235,6 +250,10 @@ Human output may be re-worded.
 | Atomic select-and-claim | `claims.next_task` | one `BEGIN IMMEDIATE` around both steps |
 | Version arithmetic | compare-and-set on `version` | `_update_task_row`, `update_task` |
 | Append-only history | triggers plus `record_event` | `schema._DDL` |
+| Whole-document memo guard | `memo._guard` | `replace_memo`, `restore_memo`, `clear_memo` |
+| Guard-free append safety | current text read inside the write transaction | `memo.append_memo` |
+| Append-only memo revisions | triggers plus `memo._insert_revision` | `schema._MEMO_DDL` |
+| Memo revision integrity | `schema._doctor_memo` | `doctor` (schema version 2 only) |
 | Identifier/shape rules | `models` limits, `config.AGENT_ID_RE` | `service` validators |
 | JSON envelope shape | `cli` renderers | `errors.TackError.to_json` |
 
@@ -245,7 +264,12 @@ be ignored into the next release. Areas map one-to-one onto the tool's own
 surface: task lifecycle, project selection and database safety,
 dependencies, claims and real multi-process concurrency (racing OS processes
 against one task), the CLI contract, and integrity checks including seeded
-corruption. Every test owns a temporary database and never touches a
+corruption. The board-level memo has its own area: the 1 -> 2 migration on a
+board the previous release seeded, a backup round-trip that preserves every
+revision, doctor's revision-gap and oversize checks, the size cap, the guarded
+whole-document writes against the guard-free append, two real processes racing
+to append, the diff shapes, the web parity of `/api/memo`, and a no-leakage
+test that pins the task surface byte for byte. Every test owns a temporary database and never touches a
 developer's board.
 
 Two habits are worth keeping:
@@ -256,6 +280,90 @@ Two habits are worth keeping:
   once through the installed console script and the `python -m` form, so a
   packaging regression cannot hide behind an importable module.
 
+## 11. The board-level memo
+
+The memo is the project's **standing note**: the rules of engagement, the
+read-me-first premise, the operating premise of the board. It is not the
+per-session handoff narrative — that record keeps its own home — and the memo is
+never mirror-written from it. One fact, one home still holds; the memo is a
+document that stands on its own at board scope, read first and edited as a
+whole.
+
+It is deliberately not a task. Nothing in `tasks`, `claims` or `dependencies`
+reads it, so it can never be claimed, completed, blocked or counted, and it
+never appears in `board`, `list`, `next` or `counts`.
+
+**Storage.** `memo_revisions(rev, text, author, created_at, reason)`, created by
+the 1 -> 2 migration (`PRAGMA user_version` becomes 2; `application_id` is
+unchanged because it identifies the file family, not the schema version). `rev`
+is a `INTEGER PRIMARY KEY` assigned as `MAX(rev) + 1` inside the write
+transaction, so it is gapless and monotonic; **rev 0 means "no memo yet"** and
+the first write creates rev 1. A revision is immutable, which is why its stamp
+is `created_at` and why the table is append-only (the same triggers `events`
+carries). `--restore` and `--clear` add a revision; nothing is ever updated or
+deleted. `backup` needs no code change — it is a whole-file SQLite snapshot, so
+the revisions travel with it.
+
+**Two counters, one idiom.** A task has `version` and `--if-version`; the memo
+has `rev` and `--if-rev`. The flag, the field and the error code say the same
+word: a mismatch is `stale_rev`, exit 5, **not retryable** — like
+`stale_version` and `claim_conflict`, and unlike `locked`, because retrying
+against a stale snapshot overwrites the other writer's revision.
+
+**Append is guard-free; whole-document writes are guarded.** `--append` reads
+the current text *inside* its own write transaction and inserts one `\n` before
+the new text when the memo is non-empty and does not already end with one. Two
+concurrent appends therefore serialise on `BEGIN IMMEDIATE` and both survive: an
+append can never erase anyone's content because it never trusts a stale
+snapshot. `replace` (positional text, `--file`, `-`, `--edit`), `--restore` and
+`--clear` rewrite the whole document, so on a non-empty memo they require
+`--if-rev N` or `--force --reason`; the first creation is exempt because there is
+nothing to clobber. `--force` is one enumerated case, requires `--reason`, is
+refused on an append (there is nothing to force), and is recorded in its event
+as `{"forced": true, "reason": ..., "rev": N, "previous_rev": M}` — the audit
+names the revision the write displaced, which is the only thing a forced
+overwrite actually costs: the displaced revision stays readable via `--rev` and
+restorable via `--restore`.
+
+**Audit.** Every accepted write appends exactly one board-level event
+(`memo.replaced`, `memo.appended`, `memo.restored`, `memo.cleared`) inside the
+same transaction, with `task_id` null and a payload that points at the revision
+(`rev`, `bytes`, and the `reason` when one was given). The body lives only in
+`memo_revisions`; the log holds the pointer.
+
+**Limits and attribution.** The cap is 64 KiB (65536 UTF-8 bytes), the same
+size as a `description`, measured in bytes on the stored text and reported in
+the same `details` shape (`field`, `max`, `unit`, `actual`). Attribution is
+per revision — author and `created_at` live on the revision, never inline in the
+text, so the document stays clean and `--diff` stays meaningful. To see who
+added which line, read `--diff` or `--history`.
+
+**Reading and editing.** `tack memo --json` is the cheap head read a session
+opens with; `--rev N` reads one revision, `--history` lists them newest first
+(with `--limit`), and `--diff` renders a line-based unified diff with three
+lines of context from the standard library alone (the project still has no
+runtime dependency beyond it). `--edit` refuses outright without a terminal
+(exit 2) rather than blocking on an editor prompt, which would cost a whole
+dispatched leg; an editor that exits non-zero writes nothing and reports
+`changed: false`.
+
+**Availability.** Nothing auto-migrates. A board created by the previous release
+is schema version 1 and the v2 build refuses it with exit 6 until `tack migrate`
+runs, which writes its usual pre-migrate backup. The memo is therefore
+unavailable on an unmigrated board — the intended uniform behaviour, not a gap
+to smooth over.
+
+`doctor` validates the memo only when `user_version` is 2: a missing table
+(`memo_table_missing`), a revision run that is not a gapless `1..N`
+(`memo_revision_gap`, details `{expected, found}`), a stored revision over the
+cap (`memo_revision_oversize`, details `{rev, bytes, max}`), and a blank author
+(`memo_revision_author`). The memo has no foreign keys, so the existing
+foreign-key check is untouched.
+
+`SCHEMA_VERSION` (2) and the release version are independent: the JSON document
+`schema_version` stays 1, the database `user_version` is 2, and the release
+number is neither.
+
 ## 10. Deliberate non-goals
 
 No user accounts or authorization (agent identifiers are advisory labels);
@@ -263,3 +371,9 @@ no cross-project dependencies; no automatic lease expiry or heartbeats; no
 bulk import; no web mutations; no automatic status change when a dependency
 changes; no deletion of tasks (cancel, never delete). The design should stay
 extensible, but none of these belong in the current version.
+
+Two notes on where the memo sits against this list. The board-level memo
+(section 11) is **in scope** as of schema version 2: it is the project's
+standing note, not a task. Pinning a **card** — a per-card `pin` — is
+deliberately **deferred**, and the name `pin` is reserved for it so nobody
+reaches for it to mean the board's memo.

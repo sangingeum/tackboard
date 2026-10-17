@@ -142,6 +142,9 @@ tack reopen TASK_ID [mutation options]
 tack cancel TASK_ID [mutation options]
 tack restore TASK_ID [mutation options]
 tack note TASK_ID TEXT [--agent ID]
+tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
+           | --history | --diff [N [N]] | --restore N | --clear]
+          [--if-rev N] [--reason TEXT] [--force] [--dry-run] [--limit N]
 tack claim TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
 tack release TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
 tack claims [--agent ID] [--older-than DURATION]
@@ -271,6 +274,7 @@ message names the field and the limit.
 |---|---|
 | `title` | 200 characters, after trimming (whitespace-only is rejected) |
 | `description` | 64 KiB (65536 UTF-8 bytes) |
+| memo text (`memo`) | 64 KiB (65536 UTF-8 bytes) |
 | `label` | 50 characters per label, at most 20 labels per task |
 | `blocked_reason` | 2 KiB (2048 UTF-8 bytes) |
 | note text (`note`) | 2 KiB (2048 UTF-8 bytes) |
@@ -283,6 +287,61 @@ recover without parsing the message:
 ```json
 {"schema_version": 1, "error": {"code": "validation", "message": "Title is too long: 228 characters, maximum is 200.", "exit_code": 4, "retryable": false, "details": {"field": "title", "max": 200, "unit": "characters", "actual": 228}}}
 ```
+
+## The project memo
+
+A board carries its own **standing note**: the project's operating premise and
+rules of engagement, one document at board scope. It is read first and edited as
+a whole.
+
+```bash
+tack memo --json                              # the current memo (the read-me-first call)
+tack memo --rev 3 --json                      # one revision
+tack memo --history --limit 5                 # the revisions, newest first
+tack memo --diff 6 7                          # what changed between two revisions
+tack memo "the premise" --reason "initial"    # replace (the first write needs no guard)
+tack memo --append "read me first"            # add a line
+tack memo --restore 2 --reason "rollback" --if-rev 5
+tack memo --clear --reason "starting over"
+tack memo --file notes.md --reason "import"   # '-' reads stdin
+```
+
+Every write creates the next revision and every revision is kept — `--restore`
+and `--clear` add a revision rather than editing or deleting one. Revision `0`
+means "no memo yet", and `--history` reports `current_rev` alongside each
+revision's author, timestamp, size and reason.
+
+A **replace** (positional text, `--file`, `-`, `--edit`), a `--restore` and a
+`--clear` rewrite the whole document, so on a non-empty memo each requires
+`--if-rev N` **or** `--force --reason`. A bare `tack memo "text"` exits 2. An
+**append** needs no guard: it reads the current text inside its own write
+transaction, so two agents appending at the same moment both land and neither
+erases the other's content. `--reason` is required for a replace, restore or
+clear and optional for an append; `--force` records the revision it displaced.
+
+```json
+{"schema_version": 1, "rev": 4, "text": "Read me first.\n", "author": "dev", "created_at": "2026-10-17T04:05:06Z", "bytes": 15}
+```
+
+The cap is 64 KiB, measured in bytes, and the `details` of a violation name the
+field and the limit. `--dry-run` runs the real validation and reports what the
+write would do (`max`, `bytes`, `remaining`) without writing anything, exiting
+with the real code when it would fail — that is how to probe the cap. A write
+against a stale revision is exit 5 with code `stale_rev` and
+`retryable: false`: re-read the memo and re-decide, or force. `--edit` needs a
+terminal and exits 2 without one, so an unattended agent is never left waiting
+on an editor prompt.
+
+The memo is **not a task** and **not the session handoff record**. Nothing
+claims, completes or blocks it, it never appears in `board`, `list`, `next` or
+`counts`, and a memo write appears in the board-wide `history` with a null task
+id, leaving `tack history <TASK_ID>` and `show` untouched. It is a standing
+note, distinct from the per-session narrative. A board created by an earlier
+release has no memo table and is refused with exit 6 until `tack migrate` runs.
+
+**Attribution is per revision** — the author and timestamp live on the revision,
+never inline in the text. To see who added which line, run `tack memo --diff`
+or `tack memo --history`.
 
 ## Status, readiness and claims
 
@@ -366,7 +425,8 @@ are also JSON — on **stdout**, matching:
 ```
 
 Error codes are `usage`, `not_found`, `validation`, `invalid_transition`,
-`cycle`, `claim_conflict`, `stale_version`, `locked`, `schema`, `internal`.
+`cycle`, `claim_conflict`, `stale_version`, `stale_rev`, `locked`, `schema`,
+`internal`.
 A length-limit violation fills `details` with `field`, `max`, `unit` and
 `actual` (see [Field limits](#field-limits)); other errors document their own
 keys.
@@ -467,7 +527,7 @@ operator can confirm which board is on screen.
 
 | Path | What it shows |
 |---|---|
-| `/board` | Kanban columns per stored status, with filters (status, assignee, priority, label, blocked, eligible) and the same counts as `board --count`, computed over those filters. `done` and `cancelled` show their 20 most recently updated cards behind a "show all" link, and an optional 5-second auto-refresh can be paused. |
+| `/board` | The project memo at the top of the page (escaped, collapsible, never truncated), then Kanban columns per stored status, with filters (status, assignee, priority, label, blocked, eligible) and the same counts as `board --count`, computed over those filters. `done` and `cancelled` show their 20 most recently updated cards behind a "show all" link, and an optional 5-second auto-refresh can be paused. |
 | `/graph` | The dependency DAG — edge `A -> B` means B depends on A — with zoom, pan, fit-to-screen and a one-task neighbourhood. Nodes show ID, title, status, priority and assignee. Done, eligible, in-progress, review, blocked and cancelled are distinguished by shape and label as well as colour, and a server-rendered indented outline sits underneath the canvas, so the dependency structure is readable with JavaScript disabled or if the drawing fails. |
 | `/task/<id>` | Description, status, priority, assignee, labels, the claim holder and its age, prerequisites and dependents with their statuses, derived blockers and readiness, timestamps, notes and recent history. |
 
@@ -478,6 +538,7 @@ task projection, same counts object:
 |---|---|
 | `/api/board` | `tack board --json` |
 | `/api/graph` (add `?task=T-000123` for one neighbourhood) | `tack graph --json` |
+| `/api/memo` | `tack memo --json` |
 | `/api/tasks/<id>` | the `task` from `tack show --json`, plus its claim, prerequisites, dependents, notes and history |
 
 ### Read-only, loopback-only, no authentication
@@ -550,6 +611,10 @@ silences the banner but never the record.
 | `Database is locked after retries; retry the command.` | 5 | Retry — the error is marked `retryable: true` |
 | `<file> is not a tackboard database (application_id ...).` | 6 | Point `--db` at the right file; `init` never overwrites one |
 | `<file> uses schema version N, older than the supported version M.` | 6 | Run `tack migrate` |
+| `A memo replacement needs --if-rev N or --force --reason: the memo already has revision 4.` | 2 | Read the memo, then pass `--if-rev` or `--force --reason` |
+| `Stale memo revision: expected 3, current 4.` | 5 | Re-read the memo with `tack memo --json`, then retry with the current `--if-rev` |
+| `Memo is too long: maximum is 65536 bytes.` | 4 | Shorten it, or keep the document in the repository instead |
+| `--edit needs a terminal; use 'tack memo --file PATH' or 'tack memo -' instead.` | 2 | Use `--append`, `--file` or `-` |
 
 ## Development
 

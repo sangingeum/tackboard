@@ -36,6 +36,7 @@ src/tackboard/
   dependencies.py  dependency edges, cycle detection, readiness, graph export
   claims.py        claim/release, atomic `next --claim`
   history.py       append-only event emission and queries
+  memo.py          the board-level memo: revisions, guard, append rules
   views.py         read models shared by the CLI and the web layer
   web.py           read-only HTTP server (board, DAG, task detail, /api/*)
   templates/       server-rendered HTML
@@ -44,8 +45,10 @@ tests/             pytest suite, mirrors the module layout
 ```
 
 `views.py` holds the interface-neutral read models (`board_document`,
-`graph_document`, `task_document`): one read transaction, plain dictionaries,
-no HTTP. The CLI and the web layer both consume them, so the pages, the JSON
+`graph_document`, `task_document`, `memo_document`): one read transaction, plain
+dictionaries, no HTTP. `memo.py` is the domain module for the board-level memo
+(one standing document per board, revisions, its own `--if-rev` guard); it
+holds no interface logic either. The CLI and the web layer both consume them, so the pages, the JSON
 API and the CLI describe one snapshot with the same shapes. `web.py` adds the
 HTTP concerns only — routing, Host validation, headers, escaping.
 
