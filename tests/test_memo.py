@@ -142,13 +142,31 @@ def _corrupt_memo_table(path: Path) -> None:
 
     The file is otherwise intact, so the memo path reaches for a
     ``memo_revisions`` table that is not there — the corrupt state ``doctor``
-    names ``memo_table_missing``.
+    names ``memo_table_invalid``.
     """
     raw = _raw(path)
     try:
         raw.execute("DROP TRIGGER IF EXISTS memo_revisions_no_update")
         raw.execute("DROP TRIGGER IF EXISTS memo_revisions_no_delete")
         raw.execute("DROP TABLE IF EXISTS memo_revisions")
+        raw.execute("PRAGMA user_version=2")
+    finally:
+        raw.close()
+
+
+def _malformed_memo_table(path: Path) -> None:
+    """A board that claims ``user_version`` 2 but whose memo table is unusable.
+
+    The table exists with the wrong columns, so a "can I select from it" probe
+    would pass while the real query fails — the second corrupt shape the
+    ``memo_table_invalid`` condition covers.
+    """
+    raw = _raw(path)
+    try:
+        raw.execute("DROP TRIGGER IF EXISTS memo_revisions_no_update")
+        raw.execute("DROP TRIGGER IF EXISTS memo_revisions_no_delete")
+        raw.execute("DROP TABLE IF EXISTS memo_revisions")
+        raw.execute("CREATE TABLE memo_revisions (zzz TEXT)")
         raw.execute("PRAGMA user_version=2")
     finally:
         raw.close()
@@ -897,15 +915,20 @@ def test_doctor_detects_a_blank_author(db_path: Path) -> None:
 
 
 def test_doctor_detects_a_missing_memo_table(db_path: Path) -> None:
-    raw = _raw(db_path)
-    try:
-        raw.execute("DROP TRIGGER IF EXISTS memo_revisions_no_update")
-        raw.execute("DROP TRIGGER IF EXISTS memo_revisions_no_delete")
-        raw.execute("DROP TABLE IF EXISTS memo_revisions")
-    finally:
-        raw.close()
+    _corrupt_memo_table(db_path)
     report = schema.doctor(db_path)
-    assert any(entry["code"] == "memo_table_missing" for entry in report["errors"])
+    assert any(entry["code"] == "memo_table_invalid" for entry in report["errors"])
+
+
+def test_doctor_detects_an_unusable_memo_table(db_path: Path) -> None:
+    _malformed_memo_table(db_path)
+    report = schema.doctor(db_path)
+    findings = [
+        entry for entry in report["errors"] if entry["code"] == "memo_table_invalid"
+    ]
+    assert len(findings) == 1
+    assert findings[0]["message"] == memo.MEMO_TABLE_INVALID_MESSAGE
+    assert report["ok"] is False
 
 
 def test_a_memo_read_on_a_missing_table_is_a_schema_error(
@@ -915,11 +938,12 @@ def test_a_memo_read_on_a_missing_table_is_a_schema_error(
     code, document = _cli(run, db_path, "memo")
     assert code == 6
     error = document["error"]
-    assert error["code"] == "memo_table_missing"
+    assert error["code"] == "memo_table_invalid"
     assert error["exit_code"] == 6
     assert error["retryable"] is False
-    # A probe on a corrupt board must not read like a tool crash.
+    # A corrupt board must not read like a tool crash.
     assert "OperationalError" not in error["message"]
+    assert error["message"] == memo.MEMO_TABLE_INVALID_MESSAGE
 
 
 def test_a_memo_write_on_a_missing_table_is_a_schema_error(
@@ -929,9 +953,40 @@ def test_a_memo_write_on_a_missing_table_is_a_schema_error(
     code, document = _write(run, db_path, "memo", "--append", "hello")
     assert code == 6
     error = document["error"]
-    assert error["code"] == "memo_table_missing"
+    assert error["code"] == "memo_table_invalid"
     assert error["exit_code"] == 6
     assert "OperationalError" not in error["message"]
+    assert error["message"] == memo.MEMO_TABLE_INVALID_MESSAGE
+
+
+def test_a_memo_read_on_an_unusable_table_is_a_schema_error(
+    run: RunCli, db_path: Path
+) -> None:
+    # The table exists with the wrong columns, so only a guard wrapped around
+    # the real query — not a "does the table answer" probe — catches this shape.
+    _malformed_memo_table(db_path)
+    code, document = _cli(run, db_path, "memo")
+    assert code == 6
+    error = document["error"]
+    assert error["code"] == "memo_table_invalid"
+    assert error["exit_code"] == 6
+    assert error["retryable"] is False
+    assert "OperationalError" not in error["message"]
+    assert "no such column" not in error["message"]
+    assert error["message"] == memo.MEMO_TABLE_INVALID_MESSAGE
+
+
+def test_a_memo_write_on_an_unusable_table_is_a_schema_error(
+    run: RunCli, db_path: Path
+) -> None:
+    _malformed_memo_table(db_path)
+    code, document = _write(run, db_path, "memo", "--append", "hello")
+    assert code == 6
+    error = document["error"]
+    assert error["code"] == "memo_table_invalid"
+    assert error["exit_code"] == 6
+    assert "OperationalError" not in error["message"]
+    assert error["message"] == memo.MEMO_TABLE_INVALID_MESSAGE
 
 
 def test_the_memo_table_is_append_only(db_path: Path, conn: Any) -> None:

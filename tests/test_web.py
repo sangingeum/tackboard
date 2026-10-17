@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.client
 import json
 import re
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -878,3 +879,33 @@ def test_the_web_has_no_memo_write_path(server: WebClient, db_file: Path) -> Non
     before = server.request("/api/memo").body
     server.request("/api/memo", method="POST")
     assert server.request("/api/memo").body == before
+
+
+def test_a_corrupt_memo_table_answers_on_the_api_and_the_board(
+    db_file: Path, start_server: Callable[..., WebClient]
+) -> None:
+    """A board whose memo table is unusable must not drop the connection.
+
+    The API returns the typed 500 envelope and the board page renders the typed
+    error page, rather than raising out of ``_respond`` with no response.
+    """
+    connection = sqlite3.connect(db_file, isolation_level=None)
+    try:
+        connection.execute("DROP TABLE IF EXISTS memo_revisions")
+        connection.execute("CREATE TABLE memo_revisions (zzz TEXT)")
+        connection.execute("PRAGMA user_version=2")
+    finally:
+        connection.close()
+
+    client = start_server(db_file)
+
+    api = client.request("/api/memo")
+    assert api.status == 500
+    error = api.json()["error"]
+    assert error["code"] == "memo_table_invalid"
+    assert error["exit_code"] == 6
+    assert error["retryable"] is False
+
+    board = client.request("/board")
+    assert board.status == 500
+    assert "memo revision table is not usable" in board.text

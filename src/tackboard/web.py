@@ -725,6 +725,15 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
                 message=_esc(exc.message),
             )
             return status, HTML_CONTENT_TYPE, page.encode("utf-8")
+        except sqlite3.Error as exc:  # pragma: no cover - defensive
+            status = HTTPStatus.INTERNAL_SERVER_ERROR
+            page = _render(
+                "error.html",
+                title=_esc(f"{status} {HTTPStatus(status).phrase}"),
+                heading=_esc(f"{status} {HTTPStatus(status).phrase}"),
+                message=_esc(str(exc)),
+            )
+            return status, HTML_CONTENT_TYPE, page.encode("utf-8")
         finally:
             conn.close()
         return HTTPStatus.OK, HTML_CONTENT_TYPE, body.encode("utf-8")

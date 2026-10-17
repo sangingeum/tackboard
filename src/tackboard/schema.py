@@ -578,7 +578,11 @@ def _doctor_memo(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
     A revision row is immutable and is never deleted, so the revisions must be
     a gapless, monotonic run ``1..N``; anything else is tampering or corruption.
+    A revision table that is missing or unusable is one condition, reported with
+    the same code and message the memo command path raises.
     """
+    from .memo import MEMO_TABLE_INVALID_MESSAGE
+
     try:
         rows = conn.execute(
             "SELECT rev, text, author FROM memo_revisions ORDER BY rev"
@@ -586,8 +590,8 @@ def _doctor_memo(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     except sqlite3.DatabaseError:
         return [
             {
-                "code": "memo_table_missing",
-                "message": "schema version 2 requires the memo_revisions table.",
+                "code": "memo_table_invalid",
+                "message": MEMO_TABLE_INVALID_MESSAGE,
             }
         ]
 

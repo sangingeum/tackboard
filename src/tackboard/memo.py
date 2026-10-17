@@ -30,6 +30,7 @@ from __future__ import annotations
 import contextlib
 import difflib
 import sqlite3
+from collections.abc import Iterator
 from typing import Any
 
 from . import history
@@ -37,7 +38,7 @@ from .config import validate_agent_id
 from .db import read_transaction, write_transaction
 from .errors import (
     InternalError,
-    MemoTableMissingError,
+    MemoTableInvalidError,
     NotFoundError,
     StaleRevError,
     UsageError,
@@ -143,41 +144,49 @@ def _document(row: sqlite3.Row) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-_MEMO_TABLE_MISSING_MESSAGE = (
-    "This board is missing the memo_revisions table that schema version 2 "
-    "requires."
+#: The one message for the "memo revision table is not usable" condition: it
+#: names the observed state and the version-2 expectation, so it is true both
+#: when the table is absent and when it exists with the wrong shape.
+MEMO_TABLE_INVALID_MESSAGE = (
+    "This board's memo revision table is not usable; schema version 2 expects "
+    "a memo_revisions table with rev, text, author, created_at and reason."
 )
 
 
-def _require_memo_table(conn: sqlite3.Connection) -> None:
-    """Fail as a typed schema error when the memo's revision table is absent.
+@contextlib.contextmanager
+def _memo_revision_queries(
+    conn: sqlite3.Connection,
+) -> Iterator[sqlite3.Connection]:
+    """Map a database error raised while touching ``memo_revisions`` to one error.
 
-    A board whose ``user_version`` claims 2 but which is missing
-    ``memo_revisions`` is corrupt, not crashing: ``doctor`` reports the same
-    condition as ``memo_table_missing``. This probe runs wherever the memo path
-    first touches the table, so one guard covers every read and every write and
-    maps the condition to the same typed error (exit 6) instead of leaking a raw
-    ``sqlite3.OperationalError``.
+    Every ``memo_revisions`` query on the memo path runs inside this guard, so a
+    board whose ``user_version`` claims 2 but whose revision table is absent or
+    malformed fails as one typed schema error (exit 6) — the same condition
+    ``doctor`` reports as ``memo_table_invalid`` — instead of leaking a raw
+    ``sqlite3.OperationalError``. The guard wraps the queries only, never
+    transaction control, so a lock or busy outcome keeps its own ``LockedError``
+    (exit 5, retryable).
     """
     try:
-        conn.execute("SELECT 1 FROM memo_revisions LIMIT 1").fetchone()
+        yield conn
     except sqlite3.DatabaseError as exc:
-        raise MemoTableMissingError(_MEMO_TABLE_MISSING_MESSAGE) from exc
+        raise MemoTableInvalidError(MEMO_TABLE_INVALID_MESSAGE) from exc
 
 
 def current_rev(conn: sqlite3.Connection) -> int:
     """The board's current memo revision (0 when there is no memo)."""
-    _require_memo_table(conn)
-    row = conn.execute(
-        "SELECT COALESCE(MAX(rev), 0) AS rev FROM memo_revisions"
-    ).fetchone()
+    with _memo_revision_queries(conn):
+        row = conn.execute(
+            "SELECT COALESCE(MAX(rev), 0) AS rev FROM memo_revisions"
+        ).fetchone()
     return int(row["rev"])
 
 
 def _current_text(conn: sqlite3.Connection) -> str:
-    row = conn.execute(
-        "SELECT text FROM memo_revisions ORDER BY rev DESC LIMIT 1"
-    ).fetchone()
+    with _memo_revision_queries(conn):
+        row = conn.execute(
+            "SELECT text FROM memo_revisions ORDER BY rev DESC LIMIT 1"
+        ).fetchone()
     return "" if row is None else str(row["text"])
 
 
@@ -187,18 +196,19 @@ def read_memo(conn: sqlite3.Connection, rev: int | None = None) -> dict[str, Any
     ``rev`` 0 is always the empty document (no memo); a revision that does not
     exist is exit 3.
     """
-    _require_memo_table(conn)
     with read_transaction(conn):
         if rev is None:
-            row = conn.execute(
-                "SELECT * FROM memo_revisions ORDER BY rev DESC LIMIT 1"
-            ).fetchone()
+            with _memo_revision_queries(conn):
+                row = conn.execute(
+                    "SELECT * FROM memo_revisions ORDER BY rev DESC LIMIT 1"
+                ).fetchone()
             return dict(_EMPTY_DOCUMENT) if row is None else _document(row)
         if rev == NO_MEMO_REV:
             return dict(_EMPTY_DOCUMENT)
-        row = conn.execute(
-            "SELECT * FROM memo_revisions WHERE rev = ?", (rev,)
-        ).fetchone()
+        with _memo_revision_queries(conn):
+            row = conn.execute(
+                "SELECT * FROM memo_revisions WHERE rev = ?", (rev,)
+            ).fetchone()
         if row is None:
             current = current_rev(conn)
             raise NotFoundError(
@@ -220,9 +230,9 @@ def memo_history(
     if limit is not None:
         sql += " LIMIT ?"
         params.append(int(limit))
-    _require_memo_table(conn)
     with read_transaction(conn):
-        rows = conn.execute(sql, params).fetchall()
+        with _memo_revision_queries(conn):
+            rows = conn.execute(sql, params).fetchall()
         current = current_rev(conn)
     return {
         "current_rev": current,
@@ -243,9 +253,10 @@ def _text_at(conn: sqlite3.Connection, rev: int) -> str:
     """The text of one revision; rev 0 is the empty document."""
     if rev == NO_MEMO_REV:
         return ""
-    row = conn.execute(
-        "SELECT text FROM memo_revisions WHERE rev = ?", (rev,)
-    ).fetchone()
+    with _memo_revision_queries(conn):
+        row = conn.execute(
+            "SELECT text FROM memo_revisions WHERE rev = ?", (rev,)
+        ).fetchone()
     if row is None:
         raise NotFoundError(
             f"Memo revision {rev} not found.",
@@ -372,11 +383,12 @@ def _insert_revision(
     new_rev = previous_rev + 1
     created_at = utcnow_iso()
     size = len(text.encode("utf-8"))
-    conn.execute(
-        "INSERT INTO memo_revisions(rev, text, author, created_at, reason) "
-        "VALUES(?, ?, ?, ?, ?)",
-        (new_rev, text, actor, created_at, reason),
-    )
+    with _memo_revision_queries(conn):
+        conn.execute(
+            "INSERT INTO memo_revisions(rev, text, author, created_at, reason) "
+            "VALUES(?, ?, ?, ?, ?)",
+            (new_rev, text, actor, created_at, reason),
+        )
     payload: dict[str, Any] = {"rev": new_rev, "bytes": size}
     if reason is not None:
         payload["reason"] = reason
