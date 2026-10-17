@@ -1473,7 +1473,16 @@ def _run_memo(ctx: _Context, args: argparse.Namespace) -> int:
         return _emit_memo_read(ctx, document)
 
     dry_run = bool(args.dry_run)
-    actor = None if dry_run else _actor(args)
+    if dry_run:
+        # A dry run needs no actor: it is a read of "would this write succeed".
+        # When one is available it still names it, so the predicted revision
+        # looks like the revision the write would create.
+        try:
+            actor: str | None = _actor(args)
+        except UsageError:
+            actor = None
+    else:
+        actor = _actor(args)
     with _project(args) as conn:
         result: Mapping[str, Any]
         if args.append_text is not None:

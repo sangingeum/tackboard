@@ -469,6 +469,15 @@ def test_dry_run_needs_no_actor(run: RunCli, db_path: Path) -> None:
     assert document["max"] == memo.MAX_MEMO_BYTES
     assert document["bytes"] == len("text")
     assert document["remaining"] == memo.MAX_MEMO_BYTES - len("text")
+    # With no actor at all the predicted revision simply has none.
+    assert document["memo"]["author"] is None
+
+    # When an actor is available the predicted revision names it, so a dry run
+    # describes the revision the write would actually create.
+    code, document = _write(run, db_path, "memo", "text", "--reason", "r", "--dry-run")
+    assert code == 0
+    assert document["memo"]["author"] == DEFAULT_ACTOR
+    assert memo.current_rev(schema.open_database(db_path)) == 0
 
 
 # --------------------------------------------------------------------------- #
