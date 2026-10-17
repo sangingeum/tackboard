@@ -172,7 +172,9 @@ def test_migrate_preserves_data_and_writes_a_backup(tmp_path: Path) -> None:
 
     backup = Path(result["backup"])
     assert backup.exists()
-    assert backup.name.startswith(f"{path.name}.pre-migrate-v0-to-v1-")
+    assert backup.name.startswith(
+        f"{path.name}.pre-migrate-v0-to-v{schema.SCHEMA_VERSION}-"
+    )
 
     conn = schema.open_database(path)
     try:
@@ -198,7 +200,9 @@ def test_migrate_aborts_when_the_backup_already_exists(
     raw.close()
 
     monkeypatch.setattr(schema, "utcstamp_iso", lambda: "fixed")
-    existing = path.with_name(f"{path.name}.pre-migrate-v0-to-v1-fixed.sqlite3")
+    existing = path.with_name(
+        f"{path.name}.pre-migrate-v0-to-v{schema.SCHEMA_VERSION}-fixed.sqlite3"
+    )
     existing.write_bytes(b"occupied")
 
     with pytest.raises(SchemaError) as caught:

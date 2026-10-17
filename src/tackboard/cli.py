@@ -15,8 +15,12 @@ import argparse
 import contextlib
 import json
 import os
+import shlex
+import shutil
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import traceback
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -30,13 +34,20 @@ from . import (
     config,
     dependencies,
     history,
+    memo,
     schema,
     service,
     views,
     web,
 )
-from .errors import InternalError, NotFoundError, TackError, UsageError
-from .models import PRIORITIES, STATUSES, TERMINAL_STATUSES
+from .errors import (
+    InternalError,
+    NotFoundError,
+    TackError,
+    UsageError,
+    ValidationError,
+)
+from .models import MAX_MEMO_BYTES, PRIORITIES, STATUSES, TERMINAL_STATUSES
 
 #: Version of the JSON documents written to stdout (spec 10.5). Every document
 #: carries it; contracts only ever grow by adding fields within a version.
@@ -101,6 +112,7 @@ Setup
   tack guide                           print this summary
 
 The work loop
+  tack memo --json                     read the project memo before you start
   tack next --claim --json             take the top eligible task, atomically
   tack next --stage review --claim     take a task waiting for review
   tack show T-000001 --json            read one task in full
@@ -674,6 +686,67 @@ def _build_parser() -> _Parser:
     )
     serve.set_defaults(handler="serve")
 
+    memo_parser = subparsers.add_parser(
+        "memo", parents=[shared], help="read or write the board-level memo"
+    )
+    memo_parser.add_argument(
+        "text", nargs="?", metavar="TEXT", help="replace the memo with TEXT"
+    )
+    memo_parser.add_argument(
+        "--file",
+        metavar="PATH",
+        help="replace the memo with PATH's contents ('-' reads stdin)",
+    )
+    memo_parser.add_argument(
+        "--edit", action="store_true", help="edit the memo in $VISUAL/$EDITOR"
+    )
+    memo_parser.add_argument("--append", dest="append_text", metavar="TEXT")
+    memo_parser.add_argument("--rev", type=int, metavar="N", help="read revision N")
+    memo_parser.add_argument(
+        "--history", action="store_true", help="list the revisions, newest first"
+    )
+    memo_parser.add_argument(
+        "--diff",
+        nargs="*",
+        type=int,
+        metavar="N",
+        help="diff revisions: '--diff A B', '--diff A' (to current), or bare",
+    )
+    memo_parser.add_argument(
+        "--restore", type=int, metavar="N", help="restore revision N's text"
+    )
+    memo_parser.add_argument(
+        "--clear", action="store_true", help="write an empty memo revision"
+    )
+    memo_parser.add_argument(
+        "--if-rev",
+        dest="if_rev",
+        type=int,
+        metavar="N",
+        help="fail with exit 5 unless the memo revision is N",
+    )
+    memo_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="replace without a rev guard (audited; requires --reason)",
+    )
+    memo_parser.add_argument(
+        "--reason", metavar="TEXT", help="the explanation recorded with the write"
+    )
+    memo_parser.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="run a write's validation without performing it",
+    )
+    memo_parser.add_argument(
+        "--limit", type=int, metavar="N", help="cap '--history' at N revisions"
+    )
+    memo_parser.add_argument(
+        "--agent", metavar="AGENT_ID", help="acting agent (overrides TACKBOARD_AGENT)"
+    )
+    memo_parser.set_defaults(handler="memo")
+
     return parser
 
 
@@ -1140,6 +1213,317 @@ def _run_serve(ctx: _Context, args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# the board-level memo
+# --------------------------------------------------------------------------- #
+
+
+def _resolve_editor() -> str | None:
+    """``$VISUAL``, then ``$EDITOR``, then ``editor`` on PATH."""
+    for name in ("VISUAL", "EDITOR"):
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value
+    return shutil.which("editor")
+
+
+def _require_terminal_for_edit() -> None:
+    """Refuse ``--edit`` immediately when there is no terminal and no editor.
+
+    This is the first check of the mode, before the database is even opened: a
+    dispatched agent has no user and no TTY, and a command that blocks on an
+    editor prompt burns a whole dispatch leg. Nothing is read from stdin, no
+    editor is spawned, and nothing waits.
+    """
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        raise UsageError(
+            "--edit needs a terminal; use 'tack memo --file PATH' or "
+            "'tack memo -' instead."
+        )
+    if _resolve_editor() is None:
+        raise UsageError(
+            "--edit needs an editor: set $VISUAL or $EDITOR, or use "
+            "'tack memo --file PATH'."
+        )
+
+
+def _edit_text(current: str) -> str | None:
+    """Edit ``current`` in the configured editor; ``None`` when it aborts.
+
+    An editor that exits non-zero means "I changed my mind" (``:q!``), which is
+    an idempotent no-op rather than a tool failure.
+    """
+    editor = _resolve_editor()
+    assert editor is not None  # checked before any database work
+    argv = shlex.split(editor)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", suffix=".memo", delete=False
+    ) as handle:
+        handle.write(current)
+        path = Path(handle.name)
+    try:
+        try:
+            completed = subprocess.run([*argv, str(path)], check=False)
+        except OSError as exc:
+            raise UsageError(f"Cannot launch editor {argv[0]!r}: {exc}") from exc
+        if completed.returncode != 0:
+            return None
+        return path.read_text(encoding="utf-8")
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def _memo_file_text(path: str) -> str:
+    """Read the memo text from a file, mirroring the description-file contract.
+
+    UTF-8 verbatim, no trailing-newline stripping; ``-`` reads stdin; an
+    unreadable file is exit 3 and invalid UTF-8 is exit 4.
+    """
+    if path == "-":
+        return sys.stdin.read()
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise NotFoundError(f"Cannot read {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ValidationError(f"Cannot read {path}: the file is not UTF-8 ({exc}).") from exc
+
+
+def _memo_mode_names(args: argparse.Namespace) -> list[str]:
+    """The memo modes named on the command line, in a stable order."""
+    names: list[str] = []
+    if args.text is not None:
+        names.append("the memo text")
+    if args.file is not None:
+        names.append("--file")
+    if args.edit:
+        names.append("--edit")
+    if args.append_text is not None:
+        names.append("--append")
+    if args.rev is not None:
+        names.append("--rev")
+    if args.history:
+        names.append("--history")
+    if args.diff is not None:
+        names.append("--diff")
+    if args.restore is not None:
+        names.append("--restore")
+    if args.clear:
+        names.append("--clear")
+    return names
+
+
+def _memo_replace_text(args: argparse.Namespace, conn: sqlite3.Connection) -> str | None:
+    """The replacement text: ``--file``/``-``, ``--edit``, or the positional text.
+
+    ``None`` means the edit was aborted (the editor exited non-zero).
+    """
+    if args.file is not None:
+        return _memo_file_text(args.file)
+    if args.edit:
+        return _edit_text(str(memo.read_memo(conn)["text"]))
+    if args.text == "-":
+        return sys.stdin.read()
+    return args.text if args.text is not None else ""
+
+
+def _emit_memo_read(ctx: _Context, document: Mapping[str, Any]) -> int:
+    if ctx.json:
+        _write_json(document)
+        return 0
+    rev = int(document["rev"])
+    if rev == 0:
+        _write_line("No memo yet.")
+        return 0
+    _write_line(
+        f"Memo rev {rev}  {document['author']}  {document['created_at']}  "
+        f"{document['bytes']} bytes"
+    )
+    text = str(document["text"])
+    if not text:
+        _write_line("  (empty memo)")
+        return 0
+    for line in text.splitlines():
+        _write_line(f"  {line}")
+    return 0
+
+
+def _emit_memo_history(ctx: _Context, document: Mapping[str, Any]) -> int:
+    if ctx.json:
+        _write_json(document)
+        return 0
+    _write_line(f"# memo history (current rev {document['current_rev']})")
+    items = document["items"]
+    if not items:
+        _write_line("(no revisions)")
+    for item in items:
+        _write_line(
+            f"rev {item['rev']}  {item['created_at']}  {item['author']}  "
+            f"{item['bytes']} bytes  {item['reason'] or '-'}"
+        )
+    return 0
+
+
+def _emit_memo_write(ctx: _Context, result: Mapping[str, Any]) -> int:
+    memo_document = result["memo"]
+    if result.get("dry_run"):
+        remaining = MAX_MEMO_BYTES - int(memo_document["bytes"])
+        if ctx.json:
+            _write_json(
+                {
+                    "schema_version": JSON_SCHEMA_VERSION,
+                    "dry_run": True,
+                    "changed": bool(result["changed"]),
+                    "memo": memo_document,
+                    "max": MAX_MEMO_BYTES,
+                    "bytes": memo_document["bytes"],
+                    "remaining": remaining,
+                }
+            )
+            return 0
+        _write_line(
+            f"Dry run: rev {memo_document['rev']} would be "
+            f"{memo_document['bytes']} bytes ({remaining} of {MAX_MEMO_BYTES} left)."
+        )
+        return 0
+    if ctx.json:
+        _write_json(
+            {
+                "schema_version": JSON_SCHEMA_VERSION,
+                "changed": bool(result["changed"]),
+                "memo": memo_document,
+            }
+        )
+        return 0
+    if not result["changed"]:
+        _write_line("Memo unchanged.")
+        return 0
+    _write_line(f"Memo rev {memo_document['rev']} written.")
+    return 0
+
+
+def _run_memo_diff(ctx: _Context, args: argparse.Namespace) -> int:
+    revs = list(args.diff or [])
+    if len(revs) > 2:
+        raise UsageError(
+            "--diff takes at most two revisions: '--diff A B' or '--diff A'."
+        )
+    a: int
+    b: int | None
+    with _project(args) as conn:
+        if len(revs) == 2:
+            a, b = revs[0], revs[1]
+        elif len(revs) == 1:
+            a, b = revs[0], None
+        else:
+            current = memo.current_rev(conn)
+            a, b = max(current - 1, 0), current
+        result = memo.diff_memos(conn, a, b)
+    document = {"schema_version": JSON_SCHEMA_VERSION, **result}
+    if ctx.json:
+        _write_json(document)
+        return 0
+    unified = str(result["unified"])
+    if not unified:
+        _write_line(
+            f"No differences between rev {result['from']} and rev {result['to']}."
+        )
+        return 0
+    for line in unified.splitlines():
+        _write_line(line)
+    return 0
+
+
+def _run_memo(ctx: _Context, args: argparse.Namespace) -> int:
+    """Read or write the board-level memo (one mode per call)."""
+    if args.edit:
+        _require_terminal_for_edit()
+
+    modes = _memo_mode_names(args)
+    if len(modes) > 1:
+        raise UsageError(
+            "Choose a single memo mode, not several: " + ", ".join(modes) + "."
+        )
+
+    read_mode = args.rev is not None or args.history or args.diff is not None
+    if read_mode and (
+        args.force or args.reason is not None or args.if_rev is not None or args.dry_run
+    ):
+        raise UsageError(
+            "--force, --reason, --if-rev and --dry-run apply only to a memo write."
+        )
+    if not args.history and args.limit is not None:
+        raise UsageError("--limit applies only to 'tack memo --history'.")
+
+    if args.rev is not None:
+        with _project(args) as conn:
+            document = views.memo_document(conn, args.rev)
+        return _emit_memo_read(ctx, document)
+    if args.history:
+        with _project(args) as conn:
+            history_document: dict[str, Any] = {
+                "schema_version": JSON_SCHEMA_VERSION,
+                **memo.memo_history(conn, limit=args.limit),
+            }
+        return _emit_memo_history(ctx, history_document)
+    if args.diff is not None:
+        return _run_memo_diff(ctx, args)
+    if not modes:
+        with _project(args) as conn:
+            document = views.memo_document(conn)
+        return _emit_memo_read(ctx, document)
+
+    dry_run = bool(args.dry_run)
+    actor = None if dry_run else _actor(args)
+    with _project(args) as conn:
+        result: Mapping[str, Any]
+        if args.append_text is not None:
+            result = memo.append_memo(
+                conn,
+                actor=actor,
+                text=args.append_text,
+                reason=args.reason,
+                if_rev=args.if_rev,
+                force=args.force,
+                dry_run=dry_run,
+            )
+        elif args.restore is not None:
+            result = memo.restore_memo(
+                conn,
+                actor=actor,
+                rev=args.restore,
+                reason=args.reason,
+                if_rev=args.if_rev,
+                force=args.force,
+                dry_run=dry_run,
+            )
+        elif args.clear:
+            result = memo.clear_memo(
+                conn,
+                actor=actor,
+                reason=args.reason,
+                if_rev=args.if_rev,
+                force=args.force,
+                dry_run=dry_run,
+            )
+        else:
+            text = _memo_replace_text(args, conn)
+            if text is None:
+                return _emit_memo_write(
+                    ctx, {"changed": False, "memo": memo.read_memo(conn)}
+                )
+            result = memo.replace_memo(
+                conn,
+                actor=actor,
+                text=text,
+                reason=args.reason,
+                if_rev=args.if_rev,
+                force=args.force,
+                dry_run=dry_run,
+            )
+    return _emit_memo_write(ctx, result)
+
+
+# --------------------------------------------------------------------------- #
 # dispatch
 # --------------------------------------------------------------------------- #
 
@@ -1191,6 +1575,8 @@ def _dispatch(ctx: _Context, args: argparse.Namespace) -> int:
         return _run_guide(ctx, args)
     if handler == "serve":
         return _run_serve(ctx, args)
+    if handler == "memo":
+        return _run_memo(ctx, args)
     raise InternalError(f"Unhandled command {handler!r}.")
 
 

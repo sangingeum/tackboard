@@ -101,6 +101,18 @@ class StaleVersionError(TackError):
     exit_code = 5
 
 
+class StaleRevError(TackError):
+    """The ``--if-rev`` guard did not match the memo's current revision.
+
+    A snapshot conflict, exactly like ``stale_version``: exit 5 and **not**
+    retryable — a blind retry would overwrite the other writer's revision.
+    Only ``locked`` carries ``retryable: true``.
+    """
+
+    code = "stale_rev"
+    exit_code = 5
+
+
 class LockedError(TackError):
     """SQLite stayed locked after the bounded retry budget."""
 
@@ -131,6 +143,7 @@ __all__ = [
     "LockedError",
     "NotFoundError",
     "SchemaError",
+    "StaleRevError",
     "StaleVersionError",
     "TackError",
     "UsageError",

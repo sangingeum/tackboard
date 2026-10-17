@@ -945,7 +945,7 @@ def test_end_to_end_lifecycle_through_the_cli(run: RunCli, tmp_path: Path) -> No
     assert document["ok"] is True
     assert document["operation"] == "init"
     assert document["created"] is True
-    assert document["database_schema_version"] == 1
+    assert document["database_schema_version"] == schema.SCHEMA_VERSION
 
     code, out, err = run(
         "create", "Write the parser", "--description", "recursive descent",

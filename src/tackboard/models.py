@@ -22,6 +22,9 @@ MAX_LABEL_LENGTH = 50
 MAX_BLOCKED_REASON_BYTES = 2 * 1024
 MAX_REASON_LENGTH = 1024
 MAX_NOTE_BYTES = 2 * 1024
+#: The board-level memo's cap: the same "large free-text field" size as
+#: ``description``, byte-measured on the UTF-8 encoding of the stored text.
+MAX_MEMO_BYTES = 64 * 1024
 
 
 class Status(StrEnum):
@@ -197,6 +200,7 @@ __all__ = [
     "MAX_DESCRIPTION_BYTES",
     "MAX_LABEL_LENGTH",
     "MAX_LABELS",
+    "MAX_MEMO_BYTES",
     "MAX_NOTE_BYTES",
     "MAX_REASON_LENGTH",
     "MAX_TITLE_LENGTH",

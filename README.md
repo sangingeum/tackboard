@@ -402,6 +402,7 @@ Setup
   tack guide                           print this summary
 
 The work loop
+  tack memo --json                     read the project memo before you start
   tack next --claim --json             take the top eligible task, atomically
   tack next --stage review --claim     take a task waiting for review
   tack show T-000001 --json            read one task in full

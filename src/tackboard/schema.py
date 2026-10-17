@@ -14,15 +14,50 @@ from typing import Any
 
 from . import db
 from .errors import NotFoundError, SchemaError, TackError, ValidationError
-from .models import utcnow_iso, utcstamp_iso
+from .models import MAX_MEMO_BYTES, utcnow_iso, utcstamp_iso
 
 #: A fixed magic number identifying a tackboard database (spec 5.4).
 APPLICATION_ID = 0x5441434B  # "TACK"
 
 #: The schema version this build supports (``PRAGMA user_version``).
-SCHEMA_VERSION = 1
+#:
+#: Independent of the release version: ``user_version`` moves to 2 for the
+#: board-level memo's revision table, while the JSON document contract stays
+#: ``schema_version: 1``.
+SCHEMA_VERSION = 2
 
 METADATA_REQUIRED_KEYS = ("project_label", "created_at", "next_sequence")
+
+#: The board-level memo's revision table and its append-only triggers
+#: (migration 1 -> 2). A memo revision is immutable once written — ``--restore``
+#: and ``--clear`` add a revision rather than editing or deleting one — so the
+#: table carries the same append-only enforcement as ``events``. It has no
+#: foreign keys: a memo is board-scoped, not attached to any task.
+_MEMO_DDL: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS memo_revisions (
+        rev INTEGER PRIMARY KEY,
+        text TEXT NOT NULL,
+        author TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        reason TEXT NULL
+    )
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS memo_revisions_no_update
+    BEFORE UPDATE ON memo_revisions
+    BEGIN
+        SELECT RAISE(ABORT, 'memo_revisions is append-only');
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS memo_revisions_no_delete
+    BEFORE DELETE ON memo_revisions
+    BEGIN
+        SELECT RAISE(ABORT, 'memo_revisions is append-only');
+    END
+    """,
+)
 
 _DDL: tuple[str, ...] = (
     """
@@ -108,6 +143,7 @@ _DDL: tuple[str, ...] = (
         SELECT RAISE(ABORT, 'events is append-only');
     END
     """,
+    *_MEMO_DDL,
 )
 
 
@@ -283,9 +319,16 @@ def backup_database(source: Path, dest: Path) -> dict[str, Any]:
     }
 
 
+def _migrate_to_v2(conn: sqlite3.Connection) -> None:
+    """Migration 1 -> 2: add the board-level memo's revision table."""
+    for statement in _MEMO_DDL:
+        conn.execute(statement)
+
+
 #: Migration steps keyed by the version they upgrade *from*.
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     0: lambda conn: _apply_schema(conn, label="project"),
+    1: _migrate_to_v2,
 }
 
 
@@ -433,6 +476,8 @@ def doctor(path: Path) -> dict[str, Any]:
         errors.extend(_doctor_foreign_keys(conn))
         errors.extend(_doctor_metadata(conn))
         errors.extend(_doctor_cycles(conn))
+        if version == SCHEMA_VERSION:
+            errors.extend(_doctor_memo(conn))
         warnings.extend(_doctor_claim_states(conn))
     finally:
         conn.close()
@@ -526,6 +571,67 @@ def _doctor_cycles(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             "path": cycle,
         }
     ]
+
+
+def _doctor_memo(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Validate the board-level memo's revision table (schema version 2 only).
+
+    A revision row is immutable and is never deleted, so the revisions must be
+    a gapless, monotonic run ``1..N``; anything else is tampering or corruption.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT rev, text, author FROM memo_revisions ORDER BY rev"
+        ).fetchall()
+    except sqlite3.DatabaseError:
+        return [
+            {
+                "code": "memo_table_missing",
+                "message": "schema version 2 requires the memo_revisions table.",
+            }
+        ]
+
+    findings: list[dict[str, Any]] = []
+    expected = 1
+    for row in rows:
+        rev = int(row["rev"])
+        if rev != expected:
+            findings.append(
+                {
+                    "code": "memo_revision_gap",
+                    "message": (
+                        "memo revisions must run 1..N without a gap: expected "
+                        f"{expected}, found {rev}."
+                    ),
+                    "expected": expected,
+                    "found": rev,
+                }
+            )
+        expected = rev + 1
+
+        size = len(str(row["text"]).encode("utf-8"))
+        if size > MAX_MEMO_BYTES:
+            findings.append(
+                {
+                    "code": "memo_revision_oversize",
+                    "message": (
+                        f"memo revision {rev} is {size} bytes, over the "
+                        f"{MAX_MEMO_BYTES}-byte cap."
+                    ),
+                    "rev": rev,
+                    "bytes": size,
+                    "max": MAX_MEMO_BYTES,
+                }
+            )
+        if not str(row["author"]).strip():
+            findings.append(
+                {
+                    "code": "memo_revision_author",
+                    "message": f"memo revision {rev} has an empty author.",
+                    "rev": rev,
+                }
+            )
+    return findings
 
 
 def _doctor_claim_states(conn: sqlite3.Connection) -> list[dict[str, Any]]:

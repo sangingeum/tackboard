@@ -17,7 +17,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from . import claims, dependencies, history, service
+from . import claims, dependencies, history, memo, service
 from .db import read_transaction
 from .schema import database_label
 
@@ -130,11 +130,23 @@ def task_document(
     }
 
 
+def memo_document(
+    conn: sqlite3.Connection, rev: int | None = None
+) -> dict[str, Any]:
+    """The board-level memo document, exactly as ``tack memo --json`` prints it.
+
+    The CLI and the web layer both consume this, so ``/api/memo`` is the CLI's
+    own document — one snapshot, one vocabulary (spec 11.3).
+    """
+    return {"schema_version": JSON_SCHEMA_VERSION, **memo.read_memo(conn, rev)}
+
+
 __all__ = [
     "JSON_SCHEMA_VERSION",
     "TASK_DETAIL_HISTORY_LIMIT",
     "TASK_DETAIL_NOTE_LIMIT",
     "board_document",
     "graph_document",
+    "memo_document",
     "task_document",
 ]
