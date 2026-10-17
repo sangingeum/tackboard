@@ -37,6 +37,7 @@ from .config import validate_agent_id
 from .db import read_transaction, write_transaction
 from .errors import (
     InternalError,
+    MemoTableMissingError,
     NotFoundError,
     StaleRevError,
     UsageError,
@@ -142,8 +143,31 @@ def _document(row: sqlite3.Row) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+_MEMO_TABLE_MISSING_MESSAGE = (
+    "This board is missing the memo_revisions table that schema version 2 "
+    "requires."
+)
+
+
+def _require_memo_table(conn: sqlite3.Connection) -> None:
+    """Fail as a typed schema error when the memo's revision table is absent.
+
+    A board whose ``user_version`` claims 2 but which is missing
+    ``memo_revisions`` is corrupt, not crashing: ``doctor`` reports the same
+    condition as ``memo_table_missing``. This probe runs wherever the memo path
+    first touches the table, so one guard covers every read and every write and
+    maps the condition to the same typed error (exit 6) instead of leaking a raw
+    ``sqlite3.OperationalError``.
+    """
+    try:
+        conn.execute("SELECT 1 FROM memo_revisions LIMIT 1").fetchone()
+    except sqlite3.DatabaseError as exc:
+        raise MemoTableMissingError(_MEMO_TABLE_MISSING_MESSAGE) from exc
+
+
 def current_rev(conn: sqlite3.Connection) -> int:
     """The board's current memo revision (0 when there is no memo)."""
+    _require_memo_table(conn)
     row = conn.execute(
         "SELECT COALESCE(MAX(rev), 0) AS rev FROM memo_revisions"
     ).fetchone()
@@ -163,6 +187,7 @@ def read_memo(conn: sqlite3.Connection, rev: int | None = None) -> dict[str, Any
     ``rev`` 0 is always the empty document (no memo); a revision that does not
     exist is exit 3.
     """
+    _require_memo_table(conn)
     with read_transaction(conn):
         if rev is None:
             row = conn.execute(
@@ -195,6 +220,7 @@ def memo_history(
     if limit is not None:
         sql += " LIMIT ?"
         params.append(int(limit))
+    _require_memo_table(conn)
     with read_transaction(conn):
         rows = conn.execute(sql, params).fetchall()
         current = current_rev(conn)

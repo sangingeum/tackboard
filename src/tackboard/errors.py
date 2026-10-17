@@ -128,6 +128,18 @@ class SchemaError(TackError):
     exit_code = 6
 
 
+class MemoTableMissingError(SchemaError):
+    """A board claims schema version 2 but has no ``memo_revisions`` table.
+
+    The same condition ``doctor`` reports as ``memo_table_missing``: a corrupt
+    board, not a crash, so a memo read or write fails the way the documented
+    exit-code table says a schema error fails (exit 6) instead of leaking a raw
+    ``sqlite3.OperationalError`` as an internal error.
+    """
+
+    code = "memo_table_missing"
+
+
 class InternalError(TackError):
     """Unexpected internal failure."""
 
@@ -141,6 +153,7 @@ __all__ = [
     "InternalError",
     "InvalidTransitionError",
     "LockedError",
+    "MemoTableMissingError",
     "NotFoundError",
     "SchemaError",
     "StaleRevError",

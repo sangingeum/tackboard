@@ -240,7 +240,9 @@ exits non-zero writes nothing (`changed: false`, exit 0).
 
 **Availability.** A board created by an earlier release has no memo table and is
 refused with exit 6 until `tack migrate` runs, which writes its usual
-pre-migrate backup. Nothing auto-migrates.
+pre-migrate backup. Nothing auto-migrates. A board that claims schema version 2
+but is missing the table is refused the same way, with error code
+`memo_table_missing`.
 
 ## Field limits
 

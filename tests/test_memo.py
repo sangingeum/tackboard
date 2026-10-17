@@ -137,6 +137,23 @@ def _as_v1_board(path: Path, *, seed_task: bool = True) -> None:
         raw.close()
 
 
+def _corrupt_memo_table(path: Path) -> None:
+    """A board that still claims ``user_version`` 2 but has no memo table.
+
+    The file is otherwise intact, so the memo path reaches for a
+    ``memo_revisions`` table that is not there — the corrupt state ``doctor``
+    names ``memo_table_missing``.
+    """
+    raw = _raw(path)
+    try:
+        raw.execute("DROP TRIGGER IF EXISTS memo_revisions_no_update")
+        raw.execute("DROP TRIGGER IF EXISTS memo_revisions_no_delete")
+        raw.execute("DROP TABLE IF EXISTS memo_revisions")
+        raw.execute("PRAGMA user_version=2")
+    finally:
+        raw.close()
+
+
 # --------------------------------------------------------------------------- #
 # storage and the revision counter
 # --------------------------------------------------------------------------- #
@@ -889,6 +906,32 @@ def test_doctor_detects_a_missing_memo_table(db_path: Path) -> None:
         raw.close()
     report = schema.doctor(db_path)
     assert any(entry["code"] == "memo_table_missing" for entry in report["errors"])
+
+
+def test_a_memo_read_on_a_missing_table_is_a_schema_error(
+    run: RunCli, db_path: Path
+) -> None:
+    _corrupt_memo_table(db_path)
+    code, document = _cli(run, db_path, "memo")
+    assert code == 6
+    error = document["error"]
+    assert error["code"] == "memo_table_missing"
+    assert error["exit_code"] == 6
+    assert error["retryable"] is False
+    # A probe on a corrupt board must not read like a tool crash.
+    assert "OperationalError" not in error["message"]
+
+
+def test_a_memo_write_on_a_missing_table_is_a_schema_error(
+    run: RunCli, db_path: Path
+) -> None:
+    _corrupt_memo_table(db_path)
+    code, document = _write(run, db_path, "memo", "--append", "hello")
+    assert code == 6
+    error = document["error"]
+    assert error["code"] == "memo_table_missing"
+    assert error["exit_code"] == 6
+    assert "OperationalError" not in error["message"]
 
 
 def test_the_memo_table_is_append_only(db_path: Path, conn: Any) -> None:
