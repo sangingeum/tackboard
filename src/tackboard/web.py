@@ -126,6 +126,24 @@ def _parse_port(text: str) -> int | None:
     return port
 
 
+#: Longest ``repr()`` rendering of a received ``Host`` value echoed in a
+#: refusal body; a giant or garbage header must not inflate the response.
+HOST_ECHO_LIMIT = 200
+
+
+def _echo_host(raw: str) -> str:
+    """A bounded, escaped rendering of a received ``Host`` value.
+
+    ``repr`` escapes control characters and quotes, so a hostile header cannot
+    forge extra body lines; the length cap keeps one oversized header from
+    inflating the refusal.
+    """
+    text = repr(raw)
+    if len(text) > HOST_ECHO_LIMIT:
+        return text[:HOST_ECHO_LIMIT] + "..."
+    return text
+
+
 def resolve_allowed_hosts(
     host: str,
     *,
@@ -522,17 +540,45 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
             extra_headers={"Allow": "GET, HEAD"},
         )
 
-    def _host_allowed(self) -> bool:
+    def _host_refusal(self) -> str | None:
+        """Return the 403 body when the ``Host`` header is refused, else ``None``.
+
+        The accepted hostnames and the bound port are already public (the
+        startup banner and the ``--json`` startup record carry them), so the
+        refusal names both. Every refusal keeps one ``403`` status; only the
+        body distinguishes an absent header, an unparseable one, a ``host:port``
+        whose port differs from the bound port, and a host outside the
+        allowlist.
+        """
         raw = self.headers.get("Host")
         if not raw:
-            return False
+            return self._host_refusal_body("no Host header was sent")
         try:
             host, port = parse_host_header(raw)
         except ValueError:
-            return False
+            return self._host_refusal_body(
+                f"{_echo_host(raw)} is not a valid host or host:port value"
+            )
         if port is not None and port != self._config_port:
-            return False
-        return host in self._config.allowed_hosts
+            return self._host_refusal_body(
+                f"{_echo_host(raw)} names port {port}, but this server is bound "
+                f"to port {self._config_port}"
+            )
+        if host not in self._config.allowed_hosts:
+            return self._host_refusal_body(_echo_host(raw))
+        return None
+
+    def _host_refusal_body(self, reason: str) -> str:
+        """The refusal body: the offending value, the allowlist and the bound port."""
+        accepted = ", ".join(sorted(self._config.allowed_hosts))
+        return (
+            f"Host header not allowed: {reason}.\n"
+            f"Accepted Host names: {accepted}.\n"
+            f"A host:port Host header must carry the port this server is bound "
+            f"to ({self._config_port}).\n"
+            f"Add --allowed-host NAME to accept another host; a non-loopback "
+            f"bind also needs --allow-remote.\n"
+        )
 
     def _dispatch(self, *, include_body: bool) -> None:
         try:
@@ -546,10 +592,9 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
             self._send(status, content_type, body, include_body=include_body)
             return
 
-        if not self._host_allowed():
-            status, content_type, body = _plain_response(
-                HTTPStatus.FORBIDDEN, "Host header not allowed.\n"
-            )
+        refusal = self._host_refusal()
+        if refusal is not None:
+            status, content_type, body = _plain_response(HTTPStatus.FORBIDDEN, refusal)
             self._send(status, content_type, body, include_body=include_body)
             return
 

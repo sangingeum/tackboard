@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The Host-header refusal now explains itself. A refused request still gets a
+  single `403`, but the body names the received `Host` value (or says plainly
+  that the header was absent or unparseable), lists the accepted host names,
+  states that a `host:port` value must carry the port the server is bound to,
+  and points at `--allowed-host` (a non-loopback bind also needs
+  `--allow-remote`). The value is echoed `repr()`-escaped and length-capped so
+  a hostile or oversized header cannot inflate the response, and `HEAD`
+  refusals stay body-less as before.
+
 ## [0.2.0] - 2026-10-17
 
 ### Changed

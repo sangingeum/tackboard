@@ -488,7 +488,11 @@ task projection, same counts object:
 - **Host validation.** The hostname *and* port from the `Host` header are
   checked against an allowlist — `localhost`, `127.0.0.1`, `::1` and the bind
   host for a loopback bind; only the explicitly configured values for a remote
-  one. This is the DNS-rebinding guard.
+  one. This is the DNS-rebinding guard. A refused request is answered with a
+  single `403` whose body names the received value (or says the header was
+  absent or unparseable), lists the accepted host names, states that a
+  `host:port` value must carry the bound port, and points at `--allowed-host`
+  (a non-loopback bind also needs `--allow-remote`).
 - **Headers.** Every response carries
   `Content-Security-Policy: default-src 'self'` and
   `X-Content-Type-Options: nosniff`. There are no inline scripts or styles, the

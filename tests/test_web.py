@@ -101,12 +101,23 @@ class WebClient:
         self.port = port
 
     def request(
-        self, path: str, *, method: str = "GET", host: str | None = None
+        self,
+        path: str,
+        *,
+        method: str = "GET",
+        host: str | None = None,
+        skip_host: bool = False,
     ) -> Response:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=20)
         headers = {"Host": host} if host is not None else {}
         try:
-            connection.request(method, path, headers=headers)
+            if skip_host:
+                connection.putrequest(method, path, skip_host=True)
+                for key, value in headers.items():
+                    connection.putheader(key, value)
+                connection.endheaders()
+            else:
+                connection.request(method, path, headers=headers)
             response = connection.getresponse()
             status = response.status
             body = response.read()
@@ -401,6 +412,66 @@ def test_a_foreign_host_header_is_rejected(
     assert server.request("/board", host="localhost").status == 200
     assert server.request("/board", host=f"localhost:{server.port}").status == 200
     assert server.request("/board", host=f"[::1]:{server.port}").status == 200
+
+
+def test_a_refused_host_body_names_the_value_and_the_accepted_set(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    """Every refusal cause is named, and the accepted set comes with it."""
+    accepted = ", ".join(sorted(web.LOOPBACK_HOSTNAMES))
+
+    # Control: an accepted host is served on the same fixture, so the 403s below
+    # are the header's fault, not the harness's.
+    control = server.request("/board", host=f"localhost:{server.port}")
+    assert control.status == 200
+
+    # A host outside the allowlist.
+    foreign = server.request("/board", host="evil.example.com")
+    assert foreign.status == 403
+    assert foreign.headers["Content-Type"] == "text/plain; charset=utf-8"
+    assert "'evil.example.com'" in foreign.text
+    assert accepted in foreign.text
+    assert str(server.port) in foreign.text
+    assert "--allowed-host" in foreign.text
+    assert foreign.text.endswith("\n")
+
+    # A host:port whose port differs from the bound port.
+    wrong_port = server.request("/board", host="localhost:9")
+    assert wrong_port.status == 403
+    assert "'localhost:9'" in wrong_port.text
+    assert str(server.port) in wrong_port.text
+    assert "port" in wrong_port.text
+
+    # An unparseable Host header.
+    unparseable = server.request("/board", host="a:b:c")
+    assert unparseable.status == 403
+    assert "'a:b:c'" in unparseable.text
+    assert accepted in unparseable.text
+
+    # No Host header at all.
+    absent = server.request("/board", skip_host=True)
+    assert absent.status == 403
+    assert "no Host header" in absent.text
+    assert accepted in absent.text
+
+
+def test_a_refused_host_head_request_carries_no_body(server: WebClient) -> None:
+    """HEAD stays body-less, so the refusal text never leaks into headers."""
+    response = server.request("/board", method="HEAD", host="evil.example.com")
+    assert response.status == 403
+    assert response.headers["Content-Type"] == "text/plain; charset=utf-8"
+    assert response.body == b""
+    assert all(
+        "Host header not allowed" not in value for value in response.headers.values()
+    )
+
+
+def test_a_giant_host_header_cannot_inflate_the_refusal(server: WebClient) -> None:
+    """An oversized Host value is echoed bounded, never verbatim."""
+    response = server.request("/board", host="x" * 5000)
+    assert response.status == 403
+    assert "..." in response.text
+    assert len(response.text) < web.HOST_ECHO_LIMIT + 400
 
 
 def test_remote_binding_accepts_only_configured_hosts(
