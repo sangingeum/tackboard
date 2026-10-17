@@ -762,6 +762,12 @@ def test_the_memo_file_form_matches_the_description_file_form(
 
     ``memo --file`` and ``create --description-file`` read through one helper,
     so valid UTF-8, an absent path and invalid UTF-8 must agree exactly.
+
+    This test drives a real OS pipe, in a child process. The same reader's
+    stdin branch is also covered in process by
+    ``tests/test_cli.py::test_a_buffer_stdin_is_read_as_utf8_bytes_verbatim``
+    (and its invalid-bytes and no-``.buffer`` siblings), which is what makes the
+    branch visible to coverage.
     """
     valid = tmp_path / "text.txt"
     valid.write_text("from a file\n", encoding="utf-8")

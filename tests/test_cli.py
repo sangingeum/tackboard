@@ -7,6 +7,7 @@ script as a real subprocess to prove the packaging.
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -1140,6 +1141,87 @@ def test_update_description_file(run: RunCli, db_file: Path, tmp_path: Path) -> 
 
     assert code == 0, err
     assert _json_document(out)["task"]["description"] == "first line\nsecond line\n"
+
+
+# --------------------------------------------------------------------------- #
+# the in-process half of the stdin reader
+# --------------------------------------------------------------------------- #
+#
+# ``tests/test_memo.py`` proves the stdin contract over a real OS pipe, in a
+# child process. pytest-cov collects nothing from that child, so the stdin
+# branch of ``cli._read_text_source`` needs a second, in-process instrument:
+# these tests hand the reader a fake ``sys.stdin`` and cover every branch a
+# real stdin reaches. Both instruments stay: the subprocess tests are the
+# behavioural proof, these exercise the reader in this process.
+
+
+class _StdinWithBuffer:
+    """A stdin stand-in exposing a raw ``.buffer`` of bytes, like a real pipe."""
+
+    def __init__(self, data: bytes) -> None:
+        self.buffer = io.BytesIO(data)
+
+
+class _DecodedStdin:
+    """A stdin stand-in with no ``.buffer``: an already-decoded text stream."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def read(self) -> str:
+        return self._text
+
+
+def test_a_buffer_stdin_is_read_as_utf8_bytes_verbatim(
+    run: RunCli, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bytes on a fake buffered stdin come back as text, unstripped."""
+    monkeypatch.setattr(sys, "stdin", _StdinWithBuffer(b"  padded text\n"))
+    code, out, err = run(
+        "create", "from stdin", "--description-file", "-",
+        "--agent", DEFAULT_ACTOR, "--json", "--db", str(db_file),
+    )
+    assert code == 0, err
+    assert _json_document(out)["task"]["description"] == "  padded text\n"
+
+    monkeypatch.setattr(sys, "stdin", _StdinWithBuffer(b"memo body\n"))
+    code, out, err = run(
+        "memo", "-", "--reason", "r",
+        "--agent", DEFAULT_ACTOR, "--json", "--db", str(db_file),
+    )
+    assert code == 0, err
+    assert _json_document(out)["memo"]["text"] == "memo body\n"
+
+
+def test_a_buffer_stdin_with_invalid_utf8_is_a_validation_error(
+    run: RunCli, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invalid bytes on a fake buffered stdin fail exactly where a bad file does."""
+    for argv in (
+        ("create", "bad stdin", "--description-file", "-"),
+        ("memo", "-", "--reason", "r"),
+    ):
+        monkeypatch.setattr(sys, "stdin", _StdinWithBuffer(b"\xff\xfe"))
+        code, out, _ = run(
+            *argv, "--agent", DEFAULT_ACTOR, "--json", "--db", str(db_file)
+        )
+        assert code == 4, argv
+        document = _json_document(out)
+        assert document["error"]["code"] == "validation"
+        assert "stdin" in document["error"]["message"]
+
+
+def test_a_stdin_without_a_buffer_falls_back_to_reading_text(
+    run: RunCli, db_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller-injected decoded stream is read through ``sys.stdin.read()``."""
+    monkeypatch.setattr(sys, "stdin", _DecodedStdin("decoded text\n"))
+    code, out, err = run(
+        "create", "text stdin", "--description-file", "-",
+        "--agent", DEFAULT_ACTOR, "--json", "--db", str(db_file),
+    )
+    assert code == 0, err
+    assert _json_document(out)["task"]["description"] == "decoded text\n"
 
 
 def test_depend_add_remove_and_related_reads(run: RunCli, db_file: Path) -> None:
