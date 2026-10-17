@@ -8,7 +8,6 @@ matters most — that it never leaks into the task surface.
 
 from __future__ import annotations
 
-import io
 import json
 import sqlite3
 import subprocess
@@ -728,6 +727,34 @@ def test_empty_positional_text_points_at_clear(run: RunCli, db_path: Path) -> No
     assert "--clear" in document["error"]["message"]
 
 
+def _pipe_stdin(db: Path, data: bytes, *argv: str) -> tuple[int, dict[str, Any]]:
+    """Run the CLI as a real process, feeding ``data`` through a real stdin pipe.
+
+    An in-process call cannot reproduce the defect: a real stdin decodes with
+    ``errors=surrogateescape``, while a strict ``TextIOWrapper`` does not.
+    """
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tackboard",
+            *argv,
+            "--agent",
+            DEFAULT_ACTOR,
+            "--db",
+            str(db),
+            "--json",
+        ],
+        input=data,
+        capture_output=True,
+        check=False,
+        timeout=TIMEOUT_SECONDS,
+    )
+    stdout = result.stdout.decode("utf-8")
+    document = json.loads(stdout) if stdout.strip() else {}
+    return result.returncode, {**document, "_stderr": result.stderr.decode("utf-8")}
+
+
 def test_the_memo_file_form_matches_the_description_file_form(
     run: RunCli, db_path: Path, tmp_path: Path
 ) -> None:
@@ -775,17 +802,53 @@ def test_the_memo_file_form_matches_the_description_file_form(
     for document in (memo_document, create_document):
         assert str(invalid) in document["error"]["message"]
 
+    # The ``-`` form is the same contract on a real pipe, both surfaces. A
+    # fresh board keeps the memo replace unguarded.
+    stdin_db = tmp_path / "stdin.sqlite3"
+    schema.init_database(stdin_db, label="stdin")
 
-def test_invalid_utf8_on_stdin_is_a_validation_error(
-    run: RunCli, db_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Stdin bytes are decoded by Python; a failure lands where a bad file does."""
-    monkeypatch.setattr(
-        "sys.stdin", io.TextIOWrapper(io.BytesIO(b"\xff\xfe"), encoding="utf-8")
+    for argv in (
+        ("memo", "-", "--reason", "r"),
+        ("create", "a stdin task", "--description-file", "-"),
+    ):
+        code, document = _pipe_stdin(stdin_db, b"\xff\xfe", *argv)
+        assert code == 4, argv
+        assert document["error"]["code"] == "validation"
+        assert "stdin" in document["error"]["message"]
+
+    memo_code, memo_document = _pipe_stdin(
+        stdin_db, b"from stdin\n", "memo", "-", "--reason", "r"
     )
-    code, document = _write(run, db_path, "create", "task", "--description-file", "-")
-    assert code == 4
-    assert document["error"]["code"] == "validation"
+    create_code, create_document = _pipe_stdin(
+        stdin_db,
+        b"from stdin\n",
+        "create",
+        "another stdin task",
+        "--description-file",
+        "-",
+    )
+    assert (memo_code, create_code) == (0, 0)
+    assert memo_document["memo"]["text"] == "from stdin\n"
+    assert create_document["task"]["description"] == "from stdin\n"
+
+
+def test_invalid_utf8_on_stdin_is_a_validation_error(tmp_path: Path) -> None:
+    """A real stdin pipe decodes strictly; a failure lands where a bad file does.
+
+    An in-process fake stream cannot reproduce the defect: a real stdin decodes
+    its bytes with ``errors=surrogateescape``.
+    """
+    db = tmp_path / "pipe.sqlite3"
+    schema.init_database(db, label="pipe")
+
+    for argv in (
+        ("create", "task", "--description-file", "-"),
+        ("memo", "-", "--reason", "r"),
+    ):
+        code, document = _pipe_stdin(db, b"\xff\xfe", *argv)
+        assert code == 4, argv
+        assert document["error"]["code"] == "validation"
+        assert document["error"]["message"].startswith("Cannot read stdin:")
 
 
 def test_read_modifiers_are_usage_errors(run: RunCli, db_path: Path) -> None:

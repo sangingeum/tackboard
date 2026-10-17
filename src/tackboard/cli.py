@@ -356,15 +356,24 @@ def _read_text_source(path: str) -> str:
     is exit 4. ``--description-file`` and ``memo --file`` both call this, so
     the two forms cannot drift apart.
     """
+    label = "stdin" if path == "-" else path
     try:
         if path == "-":
-            return sys.stdin.read()
+            stream = getattr(sys.stdin, "buffer", None)
+            if stream is None:
+                # A caller injected an already-decoded text stream: it does its
+                # own decoding, and its failures already raise here.
+                return sys.stdin.read()
+            # A real stdin is encoding=utf-8 with surrogateescape, so text-mode
+            # reads accept invalid bytes as lone surrogates. Read bytes and
+            # decode strictly so a decode failure is a validation failure.
+            return stream.read().decode("utf-8")
         return Path(path).read_text(encoding="utf-8")
     except OSError as exc:
-        raise NotFoundError(f"Cannot read {path}: {exc}") from exc
+        raise NotFoundError(f"Cannot read {label}: {exc}") from exc
     except UnicodeDecodeError as exc:
         raise ValidationError(
-            f"Cannot read {path}: the text is not UTF-8 ({exc})."
+            f"Cannot read {label}: the text is not UTF-8 ({exc})."
         ) from exc
 
 
