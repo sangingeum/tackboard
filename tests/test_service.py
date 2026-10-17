@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -353,9 +354,26 @@ def test_if_version_guards_updates(
     with pytest.raises(StaleVersionError) as caught:
         service.update_task(conn, task["id"], actor="dev", title="New", if_version=99)
     assert caught.value.exit_code == 5
+    assert caught.value.details == {"expected": 99, "current": task["version"]}
     assert service.update_task(
         conn, task["id"], actor="dev", title="New", if_version=task["version"]
     )["changed"] is True
+
+
+def test_a_lost_row_count_race_reports_the_stored_version(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """The optimistic row-count conflict carries ``expected``/``current`` too.
+
+    The row update is exercised directly: inside ``BEGIN IMMEDIATE`` the row
+    cannot move, so the public path cannot be made to lose the race.
+    """
+    task = make_task(title="Racy")
+    stale = replace(service._load_task(conn, task["id"]), version=99)
+    with pytest.raises(StaleVersionError) as caught:
+        service._update_task_row(conn, stale, status="ready", completed_at=None)
+    assert caught.value.exit_code == 5
+    assert caught.value.details == {"expected": 99, "current": task["version"]}
 
 
 ALLOWED = [

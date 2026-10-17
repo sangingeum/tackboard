@@ -235,10 +235,20 @@ def test_status_change_version_guard_applies_to_edges(
 ) -> None:
     first = make_task(title="First")
     second = make_task(title="Second")
-    with pytest.raises(StaleVersionError):
+    with pytest.raises(StaleVersionError) as caught:
         dependencies.add_dependency(
             conn, second["id"], first["id"], actor="dev", if_version=42
         )
+    assert caught.value.details == {"expected": 42, "current": second["version"]}
+
+    with pytest.raises(StaleVersionError) as remove_caught:
+        dependencies.remove_dependency(
+            conn, second["id"], first["id"], actor="dev", if_version=42
+        )
+    assert remove_caught.value.details == {
+        "expected": 42,
+        "current": second["version"],
+    }
 
 
 def test_json_graph_export(

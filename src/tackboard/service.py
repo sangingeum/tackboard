@@ -520,8 +520,15 @@ def _update_task_row(
         (status, completed_at, now, task.version + 1, task.id, task.version),
     )
     if cursor.rowcount != 1:
+        row = conn.execute(
+            "SELECT version FROM tasks WHERE id = ?", (task.id,)
+        ).fetchone()
+        if row is None:
+            raise NotFoundError(f"Task {task.id} no longer exists.")
         raise StaleVersionError(
-            f"Stale version for {task.id}: the task changed during this operation."
+            f"Stale version for {task.id}: the task changed during this "
+            f"operation (expected {task.version}, current {row['version']}).",
+            details={"expected": task.version, "current": int(row["version"])},
         )
 
 
@@ -578,7 +585,8 @@ def apply_transition(
         if if_version is not None and task.version != if_version:
             raise StaleVersionError(
                 f"Stale version for {task_id}: expected {if_version}, "
-                f"current {task.version}."
+                f"current {task.version}.",
+                details={"expected": if_version, "current": task.version},
             )
         claim = _active_claim(conn, task_id)
         prerequisites = _prerequisites_for(conn, [task_id])[task_id]
@@ -1101,7 +1109,8 @@ def update_task(
         if if_version is not None and task.version != if_version:
             raise StaleVersionError(
                 f"Stale version for {task_id}: expected {if_version}, "
-                f"current {task.version}."
+                f"current {task.version}.",
+                details={"expected": if_version, "current": task.version},
             )
 
         changes: dict[str, Any] = {}

@@ -120,7 +120,8 @@ def add_dependency(
         if if_version is not None and task.version != if_version:
             raise StaleVersionError(
                 f"Stale version for {task_id}: expected {if_version}, "
-                f"current {task.version}."
+                f"current {task.version}.",
+                details={"expected": if_version, "current": task.version},
             )
         if task_id == prerequisite_id:
             raise ValidationError(f"{task_id} cannot depend on itself.")
@@ -197,7 +198,8 @@ def remove_dependency(
         if if_version is not None and task.version != if_version:
             raise StaleVersionError(
                 f"Stale version for {task_id}: expected {if_version}, "
-                f"current {task.version}."
+                f"current {task.version}.",
+                details={"expected": if_version, "current": task.version},
             )
         _load_task(conn, prerequisite_id)
 
