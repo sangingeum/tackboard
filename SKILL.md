@@ -210,8 +210,9 @@ non-empty memo it requires **either** `--if-rev N` **or** `--force --reason`; a
 bare `tack memo "text"` is exit 2. `--force` is one enumerated case: it records
 `{"forced": true, "reason": ..., "rev": N, "previous_rev": M}` in the event, and
 is refused on an append (an append is never guarded, so there is nothing to
-force). A stale `--if-rev` is exit 5 with code `stale_rev` and
-`retryable: false` — re-read the memo and re-decide, or force.
+force). A stale `--if-rev` is exit 5 with code `stale_rev`,
+`retryable: false` and `details: {"expected", "current"}`, exactly like a stale
+`--if-version` — re-read the memo and re-decide, or force.
 
 **The append rule.** If the current memo is non-empty and does not end with a
 newline, one `\n` is inserted before the appended text; nothing else about
@@ -433,7 +434,7 @@ same filtered set.
 | 2 | usage error: bad option combination, no actor, a memo replace without a guard, `--edit` without a terminal |
 | 3 | task, project, database or memo revision not found / not configured |
 | 4 | validation error, invalid transition, or dependency cycle; over the memo cap, a missing or too long `--reason`, invalid UTF-8 |
-| 5 | concurrency conflict: claim held, stale version, stale memo revision (`stale_rev`), lock timeout (`locked` is the only `retryable: true`) |
+| 5 | concurrency conflict: claim held, stale version (`stale_version`), stale memo revision (`stale_rev`) — both carry `details: {expected, current}` — lock timeout (`locked` is the only `retryable: true`) |
 | 6 | database, schema, or migration error (including an unmigrated board), or a `doctor` run that found errors |
 
 ## Best practices
@@ -519,7 +520,8 @@ same filtered set.
   A bare `tack memo "text"` exits 2. Every revision is kept, so the guard is
   about not clobbering a concurrent writer, not about losing data.
 - **A memo revision conflict is not retryable.** `stale_rev` exits 5 with
-  `retryable: false`: re-read the memo and re-decide, or `--force --reason`.
+  `retryable: false` and `details: {expected, current}`, like `stale_version`:
+  re-read the memo and re-decide, or `--force --reason`.
 - **`--reason` is required on a memo replace, restore or clear** and optional on
   an append. On tasks it stays `--force`-only.
 - **A memo write never touches a task.** It appears in the board-wide `history`

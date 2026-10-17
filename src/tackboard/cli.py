@@ -343,14 +343,29 @@ def _description_from_args(args: argparse.Namespace) -> str | None:
     """Return the requested description, or ``None`` when none was supplied."""
     path = args.description_file
     if path is not None:
-        if path == "-":
-            return sys.stdin.read()
-        try:
-            return Path(path).read_text(encoding="utf-8")
-        except OSError as exc:
-            raise NotFoundError(f"Cannot read {path}: {exc}") from exc
+        return _read_text_source(path)
     text = args.description
     return None if text is None else str(text)
+
+
+def _read_text_source(path: str) -> str:
+    """Read UTF-8 text from a path, or stdin when the path is ``-``.
+
+    One contract for every text input named by a path: UTF-8 verbatim, no
+    trailing-newline stripping, an unreadable path is exit 3 and invalid UTF-8
+    is exit 4. ``--description-file`` and ``memo --file`` both call this, so
+    the two forms cannot drift apart.
+    """
+    try:
+        if path == "-":
+            return sys.stdin.read()
+        return Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise NotFoundError(f"Cannot read {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ValidationError(
+            f"Cannot read {path}: the text is not UTF-8 ({exc})."
+        ) from exc
 
 
 # --------------------------------------------------------------------------- #
@@ -1272,22 +1287,6 @@ def _edit_text(current: str) -> str | None:
         path.unlink(missing_ok=True)
 
 
-def _memo_file_text(path: str) -> str:
-    """Read the memo text from a file, mirroring the description-file contract.
-
-    UTF-8 verbatim, no trailing-newline stripping; ``-`` reads stdin; an
-    unreadable file is exit 3 and invalid UTF-8 is exit 4.
-    """
-    if path == "-":
-        return sys.stdin.read()
-    try:
-        return Path(path).read_text(encoding="utf-8")
-    except OSError as exc:
-        raise NotFoundError(f"Cannot read {path}: {exc}") from exc
-    except UnicodeDecodeError as exc:
-        raise ValidationError(f"Cannot read {path}: the file is not UTF-8 ({exc}).") from exc
-
-
 def _memo_mode_names(args: argparse.Namespace) -> list[str]:
     """The memo modes named on the command line, in a stable order."""
     names: list[str] = []
@@ -1318,11 +1317,11 @@ def _memo_replace_text(args: argparse.Namespace, conn: sqlite3.Connection) -> st
     ``None`` means the edit was aborted (the editor exited non-zero).
     """
     if args.file is not None:
-        return _memo_file_text(args.file)
+        return _read_text_source(args.file)
     if args.edit:
         return _edit_text(str(memo.read_memo(conn)["text"]))
     if args.text == "-":
-        return sys.stdin.read()
+        return _read_text_source("-")
     return args.text if args.text is not None else ""
 
 

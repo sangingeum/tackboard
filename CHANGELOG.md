@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A stale `--if-version` now carries `details: {"expected", "current"}` on
+  every `stale_version` error, matching `stale_rev`; the code, exit status 5
+  and `retryable: false` are unchanged. This includes the row-count conflict
+  inside a transition, which reads the stored version back after the failed
+  update.
+- `--description-file` reports invalid UTF-8 as exit 4 `validation` naming the
+  path, instead of an uncaught decode error and exit 1. It now reads through
+  the same helper as `memo --file` (file and `-`), so the two forms share one
+  contract: valid UTF-8 verbatim, an unreadable path as exit 3, invalid UTF-8
+  as exit 4.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added

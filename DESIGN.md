@@ -308,7 +308,9 @@ the revisions travel with it.
 has `rev` and `--if-rev`. The flag, the field and the error code say the same
 word: a mismatch is `stale_rev`, exit 5, **not retryable** — like
 `stale_version` and `claim_conflict`, and unlike `locked`, because retrying
-against a stale snapshot overwrites the other writer's revision.
+against a stale snapshot overwrites the other writer's revision. Both stale
+guards report the same `details` shape, `{expected, current}`, so a caller can
+branch on the numbers instead of parsing the message.
 
 **Append is guard-free; whole-document writes are guarded.** `--append` reads
 the current text *inside* its own write transaction and inserts one `\n` before

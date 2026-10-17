@@ -8,6 +8,7 @@ matters most — that it never leaks into the task surface.
 
 from __future__ import annotations
 
+import io
 import json
 import sqlite3
 import subprocess
@@ -730,19 +731,59 @@ def test_empty_positional_text_points_at_clear(run: RunCli, db_path: Path) -> No
 def test_the_memo_file_form_matches_the_description_file_form(
     run: RunCli, db_path: Path, tmp_path: Path
 ) -> None:
-    source = tmp_path / "memo.txt"
-    source.write_text("from a file\n", encoding="utf-8")
-    code, document = _write(run, db_path, "memo", "--file", str(source), "--reason", "r")
-    assert code == 0
-    # UTF-8 verbatim: no trailing-newline stripping.
-    assert document["memo"]["text"] == "from a file\n"
+    """One fixture, both path surfaces: same result and same error contract.
 
-    code, document = _write(run, db_path, "memo", "--file", str(tmp_path / "absent"))
-    assert code == 3
-
+    ``memo --file`` and ``create --description-file`` read through one helper,
+    so valid UTF-8, an absent path and invalid UTF-8 must agree exactly.
+    """
+    valid = tmp_path / "text.txt"
+    valid.write_text("from a file\n", encoding="utf-8")
+    absent = tmp_path / "absent.txt"
     invalid = tmp_path / "invalid.txt"
     invalid.write_bytes(b"\xff\xfe\x00not utf-8")
-    code, document = _write(run, db_path, "memo", "--file", str(invalid), "--reason", "r")
+
+    memo_code, memo_document = _write(
+        run, db_path, "memo", "--file", str(valid), "--reason", "r"
+    )
+    create_code, create_document = _write(
+        run, db_path, "create", "a task", "--description-file", str(valid)
+    )
+    assert (memo_code, create_code) == (0, 0)
+    # UTF-8 verbatim: no trailing-newline stripping, on either surface.
+    assert memo_document["memo"]["text"] == "from a file\n"
+    assert create_document["task"]["description"] == "from a file\n"
+
+    memo_code, memo_document = _write(
+        run, db_path, "memo", "--file", str(absent), "--reason", "r"
+    )
+    create_code, create_document = _write(
+        run, db_path, "create", "another task", "--description-file", str(absent)
+    )
+    assert (memo_code, create_code) == (3, 3)
+    assert memo_document["error"]["code"] == create_document["error"]["code"]
+    assert memo_document["error"]["code"] == "not_found"
+
+    memo_code, memo_document = _write(
+        run, db_path, "memo", "--file", str(invalid), "--reason", "r"
+    )
+    create_code, create_document = _write(
+        run, db_path, "create", "a third task", "--description-file", str(invalid)
+    )
+    assert (memo_code, create_code) == (4, 4)
+    assert memo_document["error"]["code"] == create_document["error"]["code"]
+    assert memo_document["error"]["code"] == "validation"
+    for document in (memo_document, create_document):
+        assert str(invalid) in document["error"]["message"]
+
+
+def test_invalid_utf8_on_stdin_is_a_validation_error(
+    run: RunCli, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stdin bytes are decoded by Python; a failure lands where a bad file does."""
+    monkeypatch.setattr(
+        "sys.stdin", io.TextIOWrapper(io.BytesIO(b"\xff\xfe"), encoding="utf-8")
+    )
+    code, document = _write(run, db_path, "create", "task", "--description-file", "-")
     assert code == 4
     assert document["error"]["code"] == "validation"
 

@@ -428,8 +428,10 @@ Error codes are `usage`, `not_found`, `validation`, `invalid_transition`,
 `cycle`, `claim_conflict`, `stale_version`, `stale_rev`, `locked`, `schema`,
 `internal`.
 A length-limit violation fills `details` with `field`, `max`, `unit` and
-`actual` (see [Field limits](#field-limits)); other errors document their own
-keys.
+`actual` (see [Field limits](#field-limits)). `stale_version` and `stale_rev`
+both carry `details: {"expected": N, "current": M}` — the version or revision
+the caller held and the one now stored — so a caller never has to read the
+numbers out of the message. Other errors document their own keys.
 Without `--json`, errors go to stderr as `error: <message>`. Tracebacks appear
 only with `--verbose`, and output is UTF-8 with no color codes.
 
