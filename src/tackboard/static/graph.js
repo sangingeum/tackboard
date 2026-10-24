@@ -523,9 +523,11 @@
     });
     minimapSvg.appendChild(edgeLayer);
 
+    var drawn = 0;
     graph.nodes.forEach(function (node) {
       var place = plan.positions[node.id];
       if (!place) { return; }
+      drawn += 1;
       var group = el("g", {
         "class": "minimap__node node",
         "data-status": node.status,
@@ -556,7 +558,7 @@
     });
     minimapSvg.appendChild(minimapViewRect);
 
-    var hidden = 0;
+    var hidden = graph.nodes.length - drawn;
     var label = "Overview of the whole graph: " + graph.nodes.length +
       " nodes, " + graph.edges.length + " edges, " + hidden + " hidden";
     minimapSvg.setAttribute("aria-label", label);
