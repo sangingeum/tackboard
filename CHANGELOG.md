@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-24
+
 ### Added
 
 - Graph and task documents now carry optional `claimed_by` and `claimed_at`
@@ -26,6 +28,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in text fields and suspended while a dialog is open. The canvas is a single
   tab stop with `role="group"`, `aria-roledescription`, `aria-activedescendant`
   and per-node `role="link"` labels; a skip link precedes the top bar.
+
+### Changed
+
+- The read-only web view (`tack serve`) is rebuilt as a modern dashboard. The
+  CLI contract, the JSON `schema_version: 1` and the database are unchanged;
+  every change is additive or visual. The board polls the JSON API with
+  `If-None-Match`/`ETag` (an unchanged board answers `304` with an empty body)
+  and diffs the DOM instead of reloading the page. Filters, scroll position,
+  selection and open disclosures survive updates, cards animate between columns
+  (FLIP), changed items flash briefly, and count changes animate. Polling pauses
+  while the tab is hidden and has a visible pause/resume control and a
+  "last updated Ns ago" indicator.
+- Design tokens and a theme: CSS custom properties for colour, spacing, radius,
+  shadow, type scale and motion durations; one visual language for the six
+  statuses and the priorities across board, graph and task pages. The theme
+  follows `prefers-color-scheme` with a manual `auto → light → dark` toggle
+  stored in `localStorage` and applied as `data-theme` on `<html>`, set before
+  first paint by an external synchronous script so there is no flash of the
+  wrong theme. `prefers-reduced-motion` disables or shortens animations.
+- `/board` is a dashboard: clickable status counts, chip filters, claim badges
+  and a bounded closed-card list. `/task/<id>` gains a facts panel, blocker
+  summary, timeline and an in-house Markdown renderer built from
+  `createElement`/`textContent` with `http(s)`-only links and
+  `rel="noopener noreferrer"` — no third-party library and no build step.
+  `/graph` is rebuilt on hand-written SVG with a longest-path layout, pointer
+  navigation (drag-to-pan with a movement threshold, zoom-at-cursor, wheel and
+  trackpad handling, click-to-select, click-empty-to-clear, double-click zoom,
+  edge hover and a draggable minimap), path highlighting and a minimap. The
+  server-rendered dependency outline still works without JavaScript.
+- The web view is responsive: scroll-snap columns at wide widths, tabs below
+  640px, touch pan/pinch/tap support and 44×44px minimum targets. The
+  accessibility pass targets WCAG 2.2 AA in both themes: state is never conveyed
+  by colour alone, focus rings meet contrast requirements, and count changes are
+  announced through one debounced live region.
+
+### Removed
+
+- The full-page auto-refresh script (`static/refresh.js`); polling and diffing
+  replace it.
+
+### Fixed
+
+- The graph keeps its viewport still when arrowing between active nodes instead
+  of recentring the camera on every keyboard move. Graph pointer targets and the
+  minimap mount survive re-renders, and the minimap label counts nodes that were
+  not drawn. The keyboard active descendant and mobile board overflow are
+  correct at narrow widths.
 
 ## [0.3.1] - 2026-10-17
 
