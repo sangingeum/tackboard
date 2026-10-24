@@ -2119,3 +2119,25 @@ nodes carry the double ring and holder badge and the outline prints the holder;
 all 50 contrast pairs still pass; keyboard reaches every mouse action; the help
 dialog opens on `?` and closes on `Esc`; and the pytest suite stays warn-clean
 with the updated field-set assertion.
+
+---
+
+## 11. Owner decisions (locked 2026-10-24)
+
+These two display/persistence questions were open at the end of the design leg.
+The owner has decided; implementation legs must treat them as settled.
+
+1. **Claim age display — relative age in the badge, full timestamp in the
+   tooltip.** A claimed card or node shows the holder's agent ID plus a compact
+   relative age (for example `12m`) in the badge title. The full ISO-8601
+   `claimed_at` value appears in the tooltip and in the `<title>` element. This
+   keeps dense surfaces readable while leaving the exact timestamp one hover
+   away. The server-rendered outline prints `[claimed by <agent> since
+   <timestamp>]` so the information survives without JavaScript.
+2. **Hide-closed persistence — the URL query wins over `localStorage`; default
+   off.** `?hide_closed=1` in the request URL is authoritative when present, in
+   both the JavaScript canvas and the server-rendered outline. With no query
+   parameter, the guarded `localStorage` preference applies; with neither, the
+   default is "show everything". The JavaScript toggle writes the same query
+   parameter with `history.replaceState` so the state stays shareable and
+   reload-safe. A storage failure degrades to the default without an error.
