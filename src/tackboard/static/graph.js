@@ -1725,7 +1725,7 @@
     }
   }
 
-  function setActive(id) {
+  function setActive(id, recenter) {
     if (activeId && nodeEls[activeId]) {
       nodeEls[activeId].setAttribute("data-active", "false");
     }
@@ -1743,7 +1743,10 @@
     }
     element.setAttribute("data-active", "true");
     svg.setAttribute("aria-activedescendant", "node-" + id);
-    ensureVisible(id);
+    /* Keyboard movement between active nodes must not move the camera; the
+     * gate treats a viewport transform change while a node is active as a
+     * defect. Only click-driven selection recentres. */
+    if (recenter !== false) { ensureVisible(id); }
   }
 
   function clearActive() {
@@ -1782,7 +1785,7 @@
       });
       target = best;
     }
-    if (target) { setActive(target); }
+    if (target) { setActive(target, false); }
   }
 
   function startPinch() {
