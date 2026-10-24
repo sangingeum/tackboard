@@ -702,6 +702,22 @@ def test_no_javascript_fallback_renders_the_dependency_structure(
     assert f"depends on: {board['eligible']}" in page
 
 
+def test_graph_page_exposes_the_canvas_toolbar_selection_and_minimap(
+    server: WebClient,
+) -> None:
+    """The interactive shell is server-rendered; the script only fills it."""
+    page = server.request("/graph").text
+    assert 'class="graph-toolbar"' in page
+    assert 'role="toolbar"' in page
+    for action in ("zoom-in", "zoom-out", "fit-all", "zoom-reset"):
+        assert f'data-graph-action="{action}"' in page
+    assert 'id="graph-canvas"' in page
+    assert 'id="graph-selection"' in page
+    assert 'id="minimap"' in page
+    assert 'id="minimap-toggle"' in page
+    assert "A &#8594; B means B depends on A." in page
+
+
 def test_a_thousand_task_graph_degrades_gracefully(
     server: WebClient, db_file: Path
 ) -> None:

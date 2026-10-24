@@ -5,18 +5,30 @@
     <button type="submit">Neighbourhood</button>
     <a class="reset" href="/graph">whole graph</a>
   </form>
-  <div class="graph-buttons">
-    <button type="button" class="graph-action" data-graph-action="zoom-in">zoom in</button>
-    <button type="button" class="graph-action" data-graph-action="zoom-out">zoom out</button>
-    <button type="button" class="graph-action" data-graph-action="fit">fit to screen</button>
+  <div class="graph-toolbar" role="toolbar" aria-label="Graph controls" aria-orientation="horizontal">
+    <button type="button" data-graph-action="zoom-in" aria-label="Zoom in">+</button>
+    <button type="button" data-graph-action="zoom-out" aria-label="Zoom out">&#8722;</button>
+    <button type="button" data-graph-action="fit-all">Fit all</button>
+    <button type="button" data-graph-action="zoom-reset">100%</button>
   </div>
   <p class="graph-counts">nodes=$node_count edges=$edge_count</p>
-  $legend
+  <section class="legend" aria-labelledby="legend-heading">
+    <h2 class="legend__heading" id="legend-heading">Legend</h2>
+    $legend
+    <p class="legend__direction">A &#8594; B means B depends on A.</p>
+  </section>
 </section>
 <div class="graph" id="graph" data-task="$task">
-  <div class="graph-canvas is-hidden" id="graph-canvas"></div>
-  <div class="graph-fallback" id="graph-fallback">
-    <h2>Dependency outline</h2>
+  <div class="graph-canvas is-hidden" id="graph-canvas" data-panning="false">
+    <div class="minimap" id="minimap" data-collapsed="false">
+      <svg class="minimap__svg" id="minimap-svg" role="img" aria-label="Overview of the whole graph"></svg>
+      <button type="button" class="minimap__toggle" id="minimap-toggle" aria-expanded="true" aria-controls="minimap">Collapse minimap</button>
+    </div>
+  </div>
+  <section class="graph-selection" id="graph-selection" hidden aria-live="polite" aria-label="Selected task"></section>
+  <p class="graph-status" id="graph-status" role="status"></p>
+  <details class="graph-fallback" id="graph-fallback" open>
+    <summary>Dependency outline</summary>
     <p class="hint">
       Server-rendered fallback: this outline is what you see with JavaScript
       disabled or if the graph cannot be drawn. Each line names a task, its
@@ -25,5 +37,5 @@
     <ul class="dep-list">
 $fallback
     </ul>
-  </div>
+  </details>
 </div>

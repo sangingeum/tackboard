@@ -15,8 +15,14 @@ so full inline scripts and inline styles are impossible by design.
              board in place (keyed cards, FLIP movement, change highlight,
              pause/resume, last-updated stamp, polite live region).
 - graph.js   the dependency graph renderer and the server-rendered fallback's
-             client-side counterpart. The indented outline under the canvas
-             stays readable with JavaScript disabled.
+             client-side counterpart. Pointer Events pan/zoom (zoom at the
+             cursor, 4 px click/drag threshold, soft pan limits), click to
+             select with transitive path highlighting, double-click to centre,
+             a hover tooltip, and a collapsible minimap. The camera lives in
+             module state and is written to the viewport transform at most once
+             per animation frame; level of detail follows the zoom scale. The
+             indented outline under the canvas stays readable with JavaScript
+             disabled.
 - markdown.js the in-house task-text renderer: builds DOM nodes with
              createElement and textContent, supports a small Markdown subset
              (paragraphs, headings, lists, fenced/inline code, bold, italic and
