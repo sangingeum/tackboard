@@ -1173,7 +1173,7 @@ reachable while a column is scrolled.
 
 ```
 ┌──────────────────────────────────────────────┐
-│ tackboard  Board Graph      agent-a  ◐        │
+│ tackboard  Board Graph      tackboard  ◐        │
 ├──────────────────────────────────────────────┤
 │ total 41 · eligible 7 · blocked 3 · claimed 2│
 │ ◀ …backlog 12  ▷ready 7  ▶in prog 4  ◐rev 2 ▶│  ← summary row scrolls
@@ -1201,7 +1201,7 @@ edge peeks in so the gesture is discoverable. Status order is preserved.
 ┌────────────────────────────┐
 │ tackboard        ◐   ?     │
 ├────────────────────────────┤
-│ agent-a · …/board.sqlite3   │  ← identity wraps, never hidden
+│ tackboard · …/board.sqlite3   │  ← identity wraps, never hidden
 ├────────────────────────────┤
 │ total 41  eligible 7  …    │  ← summary as a 2-row wrapped grid
 ├────────────────────────────┤
