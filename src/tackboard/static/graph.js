@@ -98,6 +98,7 @@
   var nodeEls = {};
   var edgeEls = {};
   var nodesById = {};
+  var edges = [];
   var prereqMap = {};
   var depMap = {};
   var blockedByMap = {};
@@ -114,11 +115,14 @@
   var tooltipVisible = false;
   var minimapCollapsed = false;
   var minimapPref = null;
+  var lastDownNodeId = null;
+  var lastClickNodeId = null;
 
   var W = 0;
   var H = 0;
   var canvasRect = null;
   var minimapRect = null;
+  var minimapInverse = null;
   var reduceMotion = !!(window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
@@ -485,7 +489,8 @@
     tooltip = buildTooltip();
     svg.appendChild(tooltip);
 
-    canvas.textContent = "";
+    var previous = canvas.querySelector("svg:not(.minimap__svg)");
+    if (previous) { previous.remove(); }
     canvas.appendChild(svg);
     if (fallback) {
       if ("open" in fallback) { fallback.open = false; }
@@ -719,7 +724,10 @@
       if (event.pointerType === "mouse" && event.button !== 0) { return; }
       hideTooltip();
       clearHoverTimer();
+      window.clearTimeout(selectTimer);
       var point = pointInCanvas(event);
+      var downNode = closest(event.target, ".node");
+      lastDownNodeId = downNode ? downNode.getAttribute("data-id") : null;
       drag = {
         id: event.pointerId,
         startX: event.clientX,
@@ -784,13 +792,15 @@
         event.stopPropagation();
         return;
       }
-      var node = closest(event.target, ".node");
-      if (!node) {
+      var id = lastDownNodeId;
+      lastDownNodeId = null;
+      if (!id) {
+        lastClickNodeId = null;
+        window.clearTimeout(selectTimer);
         clearSelection();
         return;
       }
-      var id = node.getAttribute("data-id");
-      if (!id) { return; }
+      lastClickNodeId = id;
       window.clearTimeout(selectTimer);
       selectTimer = window.setTimeout(function () { selectNode(id); }, SELECT_DELAY);
       event.preventDefault();
@@ -799,18 +809,16 @@
     svg.addEventListener("dblclick", function (event) {
       event.preventDefault();
       window.clearTimeout(selectTimer);
-      var node = closest(event.target, ".node");
       var point = pointInCanvas(event);
-      if (node) {
-        var id = node.getAttribute("data-id");
-        if (id && plan.positions[id]) {
-          var place = plan.positions[id];
-          animateTo({
-            scale: clamp(1.4, MIN_SCALE, MAX_SCALE),
-            tx: W / 2 - (place.x + NODE_W / 2) * 1.4,
-            ty: H / 2 - (place.y + NODE_H / 2) * 1.4
-          }, DUR_LAYOUT);
-        }
+      var id = lastClickNodeId;
+      lastClickNodeId = null;
+      if (id && plan.positions[id]) {
+        var place = plan.positions[id];
+        animateTo({
+          scale: clamp(1.4, MIN_SCALE, MAX_SCALE),
+          tx: W / 2 - (place.x + NODE_W / 2) * 1.4,
+          ty: H / 2 - (place.y + NODE_H / 2) * 1.4
+        }, DUR_LAYOUT);
         return;
       }
       zoomAt(point.x, point.y, 1.6);
@@ -903,6 +911,7 @@
     H = Math.max(1, Math.round(canvasRect.height));
     svg.setAttribute("viewBox", "0 0 " + W + " " + H);
     if (minimapSvg) { minimapRect = minimapSvg.getBoundingClientRect(); }
+    minimapInverse = null;
     if (!userOwnsCamera) { fitAll(true); }
     else { clampPan(); requestFlush(); }
   }
@@ -971,6 +980,7 @@
   function selectNode(id) {
     var node = nodesById[id];
     if (!node) { return; }
+    lastClickNodeId = null;
     selectedId = id;
     hideTooltip();
     var key;
@@ -987,6 +997,7 @@
   }
 
   function clearSelection() {
+    lastClickNodeId = null;
     selectedId = null;
     hideTooltip();
     clearPathMarks();
@@ -1165,6 +1176,16 @@
   }
 
   function minimapPoint(event) {
+    if (minimapInverse) {
+      var point = minimapSvg.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      var user = point.matrixTransform(minimapInverse);
+      return {
+        x: clamp(user.x, 0, plan.width),
+        y: clamp(user.y, 0, plan.height)
+      };
+    }
     if (!minimapRect || !minimapRect.width) {
       minimapRect = minimapSvg.getBoundingClientRect();
     }
@@ -1197,24 +1218,35 @@
     minimapSvg.addEventListener("pointerdown", function (event) {
       if (event.pointerType === "mouse" && event.button !== 0) { return; }
       event.stopPropagation();
+      var ctm = minimapSvg.getScreenCTM();
+      minimapInverse = ctm ? ctm.inverse() : null;
       var point = minimapPoint(event);
-      minimapDrag = { id: event.pointerId, moved: false };
+      minimapDrag = { id: event.pointerId, moved: false, point: point };
       try { minimapSvg.setPointerCapture(event.pointerId); } catch (e) { /* capture */ }
-      centreOnGraphPoint(point.x, point.y);
       event.preventDefault();
     });
 
     minimapSvg.addEventListener("pointermove", function (event) {
       if (!minimapDrag || minimapDrag.id !== event.pointerId) { return; }
-      minimapDrag.moved = true;
       var point = minimapPoint(event);
+      minimapDrag.moved = true;
+      minimapDrag.point = point;
       centreOnGraphPoint(point.x, point.y);
       event.preventDefault();
     });
 
     minimapSvg.addEventListener("pointerup", function (event) {
       if (!minimapDrag || minimapDrag.id !== event.pointerId) { return; }
+      var point = minimapPoint(event);
+      var moved = minimapDrag.moved;
       endMinimapDrag(event);
+      if (!moved) {
+        animateTo({
+          scale: view.scale,
+          tx: W / 2 - point.x * view.scale,
+          ty: H / 2 - point.y * view.scale
+        }, DUR_LAYOUT);
+      }
     });
 
     minimapSvg.addEventListener("pointercancel", function (event) {
@@ -1267,7 +1299,7 @@
   /* ----------------------------------------------------------------------- */
 
   function attachControls() {
-    var buttons = root.querySelectorAll("[data-graph-action]");
+    var buttons = document.querySelectorAll("[data-graph-action]");
     Array.prototype.forEach.call(buttons, function (button) {
       button.addEventListener("click", function () {
         var action = button.getAttribute("data-graph-action");
