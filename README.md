@@ -449,6 +449,18 @@ anything). `doctor` returns `ok`, `errors` and `warnings`, where
 contract* section (`SKILL.md`); if this summary and `SKILL.md`'s *The JSON
 contract* differ, the skill is authoritative.
 
+### Claim fields in graph and task documents
+
+Graph nodes and task documents may carry two optional claim fields:
+`claimed_by` (the holder's agent ID, or `null`) and `claimed_at` (the full
+ISO-8601 timestamp at which the claim was taken, or `null`). They are additive:
+`schema_version` stays `1`, no field is removed or renamed, and a consumer must
+treat both as possibly absent or null. `tack graph --json` and `/api/graph`
+carry the same values for the same database. The web view uses `claimed_at`
+only for display — a compact relative age in the holder badge's title text,
+with the full ISO timestamp in the badge's tooltip and `<title>` — and never
+changes the underlying claim.
+
 ## Agent quickstart
 
 The text below is the output of `tack guide`. Paste it into an agent's
@@ -513,6 +525,25 @@ Status and readiness
 ```
 
 ## Web view
+
+The interactive graph implements the claimed overlay and the hide-closed
+toggle from the web redesign. A claimed node keeps its status shape and gains
+a double ring and a holder badge; "Highlight claimed" (on by default) shows the
+emphasis, and turning it off hides only the ring and badge — the claim stays in
+the tooltip, the node's `aria-label`, and the server-rendered outline. "Focus
+claimed" dims non-claimed nodes and edges to 35 % without hiding them. "Hide
+done & cancelled" (off by default) removes `done` and `cancelled` nodes and
+every edge touching them from the canvas and the outline, counts the hidden
+nodes, marks visible nodes whose links were elided with a `+N` marker, and
+leaves the derived `blocked`, `eligible`, `reviewable` and `dependency_ready`
+flags computed from the full graph. The URL parameter `?hide_closed=1` wins
+over the `localStorage` preference (`tackboard.hideClosed`); the default is
+off. `?hide_closed=0` forces the full view. The outline shows `nodes=X of Y ·
+edges=A of B` when filtering is on. Every graph action has a keyboard
+equivalent; press `?` for the shortcut table. A skip link precedes the top bar,
+and the canvas is a single tab stop with `aria-activedescendant` tracking the
+active node.
+
 
 `tack serve` starts a **read-only** browser view of one board:
 

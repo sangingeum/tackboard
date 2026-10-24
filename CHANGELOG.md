@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Graph and task documents now carry optional `claimed_by` and `claimed_at`
+  fields on every node and task, so `tack graph --json` and `/api/graph` agree
+  on claim data for the same database. The change is additive: `schema_version`
+  stays `1` and no field is removed or renamed. Both fields are nullable and a
+  consumer must treat them as possibly absent.
+- The web view implements the claimed overlay and hide-closed design: a double
+  ring and holder badge on claimed nodes (relative age in the badge title, full
+  ISO timestamp in the tooltip and `<title>`), "Highlight claimed" and "Focus
+  claimed" toggles, a "Hide done & cancelled" toggle with URL-over-storage
+  persistence (`?hide_closed=1` / `?hide_closed=0`), hidden-node and elided-link
+  counts, and a `+N` marker on nodes whose links were hidden. Derived
+  `blocked`/`eligible`/`reviewable`/`dependency_ready` flags remain computed
+  from the full graph.
+- Keyboard shortcuts and a help dialog: `g b`/`g g`, `/`, `f`, `j`/`k`, Enter,
+  `t`, `c`, `h`, `+`/`-`/`0`, arrow keys, `?` and Esc, with the bindings ignored
+  in text fields and suspended while a dialog is open. The canvas is a single
+  tab stop with `role="group"`, `aria-roledescription`, `aria-activedescendant`
+  and per-node `role="link"` labels; a skip link precedes the top bar.
+
 ## [0.3.1] - 2026-10-17
 
 ### Fixed

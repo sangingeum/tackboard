@@ -2040,3 +2040,125 @@ text.tooltip__title {
     box-shadow: none;
   }
 }
+
+/* -- claimed layer, hidden markers and active focus ---------------------- */
+
+.node__claim-ring--inner {
+  /* The two concentric rings are drawn as separate rects; the class only
+   * exists so a future theme can distinguish the inner ring if needed. */
+  stroke-width: 2;
+}
+
+.viewport[data-claim-highlight="off"] .node__claim-ring,
+.viewport[data-claim-highlight="off"] .node__claim-badge-group {
+  display: none;
+}
+
+.viewport[data-focus-claimed="true"] .node:not([data-claimed="true"]),
+.viewport[data-focus-claimed="true"] .edge:not([data-claimed="true"]) {
+  opacity: 0.35;
+}
+
+.node[data-active="true"] .node__shape {
+  stroke: var(--border-focus);
+  stroke-width: 3;
+}
+
+.node__elided {
+  fill: var(--bg-raised);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.node__elided-text {
+  font: var(--text-2xs) var(--font-mono);
+  fill: var(--fg-default);
+}
+
+/* -- keyboard help dialog and skip link --------------------------------- */
+
+.skip-link {
+  position: absolute;
+  left: var(--space-3);
+  top: -4rem;
+  z-index: 100;
+  padding: var(--space-2) var(--space-3);
+  color: var(--fg-default);
+  background: var(--bg-surface);
+  border: 2px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+}
+
+.skip-link:focus {
+  top: var(--space-3);
+}
+
+.help-open {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  padding: 0;
+  color: var(--fg-default);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font: var(--text-sm) var(--font-sans);
+  cursor: pointer;
+}
+
+.help {
+  width: min(46rem, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: var(--space-4);
+  color: var(--fg-default);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  overflow: auto;
+}
+
+.help::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.help__intro {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.help__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.help__table th,
+.help__table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.help__table kbd {
+  padding: 0 0.35em;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: var(--text-2xs) var(--font-mono);
+}
+
+.help__close {
+  margin-top: var(--space-3);
+  min-height: var(--touch-target);
+  min-width: var(--touch-target);
+}
+
+.link-button {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

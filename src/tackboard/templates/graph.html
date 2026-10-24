@@ -1,7 +1,8 @@
 <section class="panel graph-controls">
-  <form method="get" action="/graph">
+  <form method="get" action="/graph" class="graph-neighbourhood">
     <label for="graph-task">task</label>
     <input id="graph-task" type="text" name="task" value="$task" placeholder="T-000001">
+    <input type="hidden" name="hide_closed" value="$hide_closed_value">
     <button type="submit">Neighbourhood</button>
     <a class="reset" href="/graph">whole graph</a>
   </form>
@@ -10,15 +11,22 @@
     <button type="button" data-graph-action="zoom-out" aria-label="Zoom out">&#8722;</button>
     <button type="button" data-graph-action="fit-all">Fit all</button>
     <button type="button" data-graph-action="zoom-reset">100%</button>
+    <button type="button" data-graph-action="toggle-claimed" aria-pressed="true"
+            title="Show or hide the claimed ring and holder badge; the claim stays in the tooltip and outline">Highlight claimed</button>
+    <button type="button" data-graph-action="focus-claimed" aria-pressed="false" disabled
+            title="Dim every task that is not claimed; nothing is hidden">Focus claimed</button>
+    <button type="button" data-graph-action="toggle-hide-closed" aria-pressed="$hide_closed_pressed"
+            title="Hide done and cancelled tasks and their edges; derived blocked and eligible flags stay as computed from the full graph">Hide done &amp; cancelled</button>
+    <span class="graph-hidden-count" id="graph-hidden-count" title="Nodes hidden and their edges">$hidden_count hidden</span>
   </div>
-  <p class="graph-counts">nodes=$node_count edges=$edge_count</p>
+  <p class="graph-counts" id="graph-counts">$outline_counts</p>
   <section class="legend" aria-labelledby="legend-heading">
     <h2 class="legend__heading" id="legend-heading">Legend</h2>
     $legend
     <p class="legend__direction">A &#8594; B means B depends on A.</p>
   </section>
 </section>
-<div class="graph" id="graph" data-task="$task">
+<div class="graph" id="graph" data-task="$task" data-hide-closed="$hide_closed_value">
   <div class="graph-canvas is-hidden" id="graph-canvas" data-panning="false">
     <div class="minimap" id="minimap" data-collapsed="false">
       <svg class="minimap__svg" id="minimap-svg" role="img" aria-label="Overview of the whole graph"></svg>

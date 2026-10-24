@@ -94,7 +94,7 @@ def graph_document(
                 "eligible": bool(projection.get("eligible", False)),
                 "reviewable": bool(projection.get("reviewable", False)),
                 "blocked": bool(projection.get("blocked", False)),
-                "claimed_by": projection.get("claimed_by"),
+                "claimed_at": node.get("claimed_at"),
             }
         )
     return {

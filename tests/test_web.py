@@ -48,9 +48,13 @@ LARGE_GRAPH_TASKS = 1000
 LARGE_GRAPH_BYTE_LIMIT = 4 * 1024 * 1024
 
 #: Fields :func:`tackboard.views.graph_document` adds on top of the CLI nodes.
+#: Claim data is now part of the shared projection, so it is not derived here.
 DERIVED_NODE_FIELDS = frozenset(
-    {"dependency_ready", "eligible", "reviewable", "blocked", "claimed_by"}
+    {"dependency_ready", "eligible", "reviewable", "blocked"}
 )
+
+#: Claim fields the shared projection carries on every node (nullable when absent).
+CLAIM_NODE_FIELDS = frozenset({"claimed_by", "claimed_at"})
 
 
 @pytest.fixture(autouse=True)
@@ -295,6 +299,13 @@ def test_json_endpoints_match_the_cli_schemas(
     ]
     assert trimmed == cli_graph["nodes"]
     assert served_graph["edges"] == cli_graph["edges"]
+    # The claim fields are part of the shared projection now: both documents
+    # must carry them, and the trimmed comparison above already proves the
+    # values agree for the same database.
+    for node in served_graph["nodes"]:
+        assert set(node) >= CLAIM_NODE_FIELDS
+    for node in cli_graph["nodes"]:
+        assert set(node) >= CLAIM_NODE_FIELDS
 
     cli_show = json.loads(run("show", board["claimed"], "--db", str(db_file), "--json")[1])
     detail = server.request(f"/api/tasks/{board['claimed']}").json()
@@ -700,6 +711,69 @@ def test_no_javascript_fallback_renders_the_dependency_structure(
     assert board["blocked"] in page
     assert f"depends on: {board['done']}" in page
     assert f"depends on: {board['eligible']}" in page
+
+
+def test_hide_closed_filters_the_outline_and_keeps_derived_flags(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    """?hide_closed=1 removes done/cancelled nodes and their edges only.
+
+    The blocked flag and reason must still come from the full graph: the
+    blocked task depends on the eligible task (not closed), so it stays blocked
+    and keeps its marker text even though its finished prerequisite is gone.
+    """
+    full = server.request("/graph").text
+    hidden = server.request("/graph?hide_closed=1").text
+
+    # The full view names the finished task and its dependents.
+    assert board["done"] in full
+    assert f"depends on: {board['done']}" in full
+
+    # The filtered view removes the finished node's outline line and every edge
+    # touching it. (The ID still appears as the neighbourhood form placeholder.)
+    assert f'href="/task/{board["done"]}"' not in hidden
+    assert f"depends on: {board['done']}" not in hidden
+    # Every remaining node is still present.
+    for key in ("claimed", "eligible", "blocked", "backlog"):
+        assert f'href="/task/{board[key]}"' in hidden
+    # The hidden count and the "of" totals are visible. The seed graph has five
+    # nodes and three edges; hiding "done" removes one node and two edges.
+    assert "nodes=4 of 5" in hidden
+    assert "edges=1 of 3" in hidden
+    assert "1 hidden" in hidden
+
+    # The derived flag survives: the blocked task is still marked blocked and
+    # its reason still names the eligible prerequisite computed from the full
+    # graph, not from the filtered set.
+    assert 'data-blocked="true"' in hidden
+    assert "blocked" in hidden
+
+
+def test_graph_page_marks_claim_holders_in_the_outline(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    page = server.request("/graph").text
+    assert f"[claimed by {DEFAULT_ACTOR} since " in page
+    assert "claimed \u2014 double ring + holder badge" in page
+    # The legend states both the claimed and hidden cues as words, not colour.
+    assert "double ring" in page
+    assert "holder badge" in page
+
+
+def test_graph_page_carries_keyboard_and_accessibility_hooks(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    page = server.request("/graph").text
+    # The help dialog and the skip link are in the shared shell.
+    assert 'id="help-dialog"' in page
+    assert 'class="skip-link"' in page
+    assert 'href="#main-content"' in page
+    # The toolbar exposes the two new toggles with pressed state.
+    assert 'data-graph-action="toggle-claimed"' in page
+    assert 'aria-pressed="true"' in page
+    assert 'data-graph-action="focus-claimed"' in page
+    assert 'data-graph-action="toggle-hide-closed"' in page
+    assert 'aria-pressed="false"' in page
 
 
 def test_graph_page_exposes_the_canvas_toolbar_selection_and_minimap(

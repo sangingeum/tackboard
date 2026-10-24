@@ -118,6 +118,22 @@
   var lastDownNodeId = null;
   var lastClickNodeId = null;
 
+  var HIDE_CLOSED_KEY = "tackboard.hideClosed";
+  var fullData = null;
+  var visibleData = null;
+  var hiddenIds = {};
+  var hiddenLinkCount = {};
+  var hideClosed = false;
+  var claimHighlight = true;
+  var focusClaimed = false;
+  var activeId = null;
+  var pointers = {};
+  var pinch = null;
+  var lastTap = { time: 0, x: 0, y: 0 };
+  var tapHandled = false;
+  var globalEventsBound = false;
+  var announceTimer = 0;
+
   var W = 0;
   var H = 0;
   var canvasRect = null;
@@ -172,6 +188,34 @@
 
   function isTerminal(status) {
     return status === "done" || status === "cancelled";
+  }
+
+  function relativeAge(iso) {
+    if (!iso) { return ""; }
+    var stamp = Date.parse(iso);
+    if (isNaN(stamp)) { return ""; }
+    var seconds = Math.max(0, Math.round((Date.now() - stamp) / 1000));
+    if (seconds < 60) { return "just now"; }
+    var minutes = Math.floor(seconds / 60);
+    if (minutes < 60) { return minutes + "m"; }
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) { return hours + "h"; }
+    var days = Math.floor(hours / 24);
+    if (days < 7) { return days + "d"; }
+    var weeks = Math.floor(days / 7);
+    if (weeks < 5) { return weeks + "w"; }
+    return Math.floor(days / 30) + "mo";
+  }
+
+  function clipHolder(value) {
+    var text = String(value === null || value === undefined ? "" : value);
+    return text.length > 12 ? text.slice(0, 12) + "\u2026" : text;
+  }
+
+  function announce(message) {
+    if (!graphStatus) { return; }
+    window.clearTimeout(announceTimer);
+    setText(graphStatus, message);
   }
 
   /* ----------------------------------------------------------------------- */
@@ -231,11 +275,13 @@
   /* adjacency and derived facts                                             */
   /* ----------------------------------------------------------------------- */
 
-  function buildAdjacency(graph) {
+  function buildAdjacency(graph, edgeList) {
     prereqMap = {};
     depMap = {};
     blockedByMap = {};
+    nodesById = {};
     var statusById = {};
+    var links = edgeList || graph.edges;
     graph.nodes.forEach(function (node) {
       prereqMap[node.id] = [];
       depMap[node.id] = [];
@@ -243,7 +289,7 @@
       nodesById[node.id] = node;
       statusById[node.id] = node.status;
     });
-    graph.edges.forEach(function (edge) {
+    links.forEach(function (edge) {
       if (!prereqMap[edge.target] || !depMap[edge.source]) { return; }
       prereqMap[edge.target].push(edge.source);
       depMap[edge.source].push(edge.target);
@@ -253,12 +299,34 @@
     });
   }
 
+  function useVisibleAdjacency(graph) {
+    var visiblePrereq = {};
+    var visibleDep = {};
+    graph.nodes.forEach(function (node) {
+      visiblePrereq[node.id] = [];
+      visibleDep[node.id] = [];
+    });
+    graph.edges.forEach(function (edge) {
+      if (visiblePrereq[edge.target]) { visiblePrereq[edge.target].push(edge.source); }
+      if (visibleDep[edge.source]) { visibleDep[edge.source].push(edge.target); }
+    });
+    prereqMap = visiblePrereq;
+    depMap = visibleDep;
+  }
+
   function nodeLabel(node) {
     var label = STATUS_LABEL[node.status] || node.status;
     var parts = [node.id + ", " + node.title + ", " + label];
     if (node.priority) { parts.push("priority " + node.priority); }
     if (node.assignee) { parts.push("assignee " + node.assignee); }
-    if (node.claimed_by) { parts.push("claimed by " + node.claimed_by); }
+    if (node.claimed_by) {
+      var age = relativeAge(node.claimed_at);
+      parts.push("claimed by " + node.claimed_by + (age ? " " + age + " ago" : ""));
+    }
+    var hiddenLinks = hiddenLinkCount[node.id] || 0;
+    if (hiddenLinks) {
+      parts.push(hiddenLinks + " hidden link" + (hiddenLinks === 1 ? "" : "s"));
+    }
     var blocked = blockedByMap[node.id] || [];
     if (blocked.length) { parts.push("blocked by " + blocked.join(", ")); }
     return parts.join(", ");
@@ -267,7 +335,14 @@
   function nodeTitleText(node) {
     var label = STATUS_LABEL[node.status] || node.status;
     var text = node.id + " \u2014 " + node.title + " (" + label;
-    if (node.claimed_by) { text += ", claimed by " + node.claimed_by; }
+    if (node.claimed_by) {
+      text += ", claimed by " + node.claimed_by;
+      if (node.claimed_at) { text += " since " + node.claimed_at; }
+    }
+    var hiddenLinks = hiddenLinkCount[node.id] || 0;
+    if (hiddenLinks) {
+      text += ", " + hiddenLinks + " hidden link" + (hiddenLinks === 1 ? "" : "s");
+    }
     return text + ")";
   }
 
@@ -322,10 +397,15 @@
       var mid = (x1 + x2) / 2;
       var d = "M " + x1 + " " + y1 + " C " + mid + " " + y1 + ", " +
         mid + " " + y2 + ", " + x2 + " " + y2;
+      var claimedEdge = !!(
+        (nodesById[edge.source] && nodesById[edge.source].claimed_by) ||
+        (nodesById[edge.target] && nodesById[edge.target].claimed_by)
+      );
       var group = el("g", {
         "class": "edge",
         "data-source": edge.source,
-        "data-target": edge.target
+        "data-target": edge.target,
+        "data-claimed": claimedEdge ? "true" : "false"
       });
       group.appendChild(el("title", {}));
       group.lastChild.textContent = edge.source + " must finish before " + edge.target;
@@ -352,14 +432,15 @@
       if (!place) { return; }
       var group = el("g", {
         "class": "node",
-        role: "button",
-        tabindex: "-1",
+        id: "node-" + node.id,
+        role: "link",
         "data-id": node.id,
         "data-status": node.status,
         "data-claimed": node.claimed_by ? "true" : "false",
         "data-blocked": node.blocked ? "true" : "false",
         "data-eligible": node.eligible ? "true" : "false",
         "data-reviewable": node.reviewable ? "true" : "false",
+        "data-active": "false",
         transform: "translate(" + place.x + "," + place.y + ")",
         "aria-label": nodeLabel(node)
       });
@@ -377,8 +458,20 @@
       }));
 
       if (node.claimed_by) {
+        /* Two concentric rounded rects: the inner ring sits 4 px outside the
+         * status shape with a 2 px gap, the outer ring 4 px further out. The
+         * bounding box is used even on diamonds and hexagons. */
         group.appendChild(el("rect", {
           "class": "node__claim-ring",
+          x: -8,
+          y: -8,
+          width: NODE_W + 16,
+          height: NODE_H + 16,
+          rx: 10,
+          "aria-hidden": "true"
+        }));
+        group.appendChild(el("rect", {
+          "class": "node__claim-ring node__claim-ring--inner",
           x: -4,
           y: -4,
           width: NODE_W + 8,
@@ -399,11 +492,39 @@
       if (node.blocked) { statusText += " \u00b7 blocked"; }
       group.appendChild(textEl({ "class": "node__status", x: 10, y: 50 }, statusText));
 
-      if (node.claimed_by) {
-        var holder = truncate("@" + node.claimed_by, 13);
-        var badgeWidth = Math.max(52, holder.length * 6.4 + 12);
-        var badgeX = NODE_W - badgeWidth - 4;
+      var hiddenLinks = hiddenLinkCount[node.id] || 0;
+      if (hiddenLinks) {
+        var markText = "+" + hiddenLinks;
+        var markWidth = Math.max(22, markText.length * 7 + 8);
+        var markX = NODE_W - markWidth - 4;
+        var markY = node.claimed_by ? NODE_H - 30 : NODE_H - 16;
         group.appendChild(el("rect", {
+          "class": "node__elided",
+          x: markX,
+          y: markY,
+          width: markWidth,
+          height: 13,
+          rx: 3,
+          "aria-hidden": "true"
+        }));
+        group.appendChild(textEl(
+          { "class": "node__elided-text", x: markX + 4, y: markY + 10 },
+          markText
+        ));
+      }
+
+      if (node.claimed_by) {
+        var fullHolder = String(node.claimed_by);
+        var holder = clipHolder(fullHolder);
+        var age = relativeAge(node.claimed_at);
+        var badgeText = "@" + holder + (age ? " \u00b7 " + age : "");
+        var badgeWidth = Math.max(52, badgeText.length * 6.2 + 10);
+        var badgeX = NODE_W - badgeWidth - 4;
+        var badge = el("g", { "class": "node__claim-badge-group" });
+        badge.appendChild(el("title", {}));
+        badge.lastChild.textContent =
+          "@" + fullHolder + (node.claimed_at ? " since " + node.claimed_at : "");
+        badge.appendChild(el("rect", {
           "class": "node__claim-badge",
           x: badgeX,
           y: NODE_H - 16,
@@ -412,10 +533,11 @@
           rx: 3,
           "aria-hidden": "true"
         }));
-        group.appendChild(textEl(
-          { "class": "node__claim-text", x: badgeX + 5, y: NODE_H - 6 },
-          holder
+        badge.appendChild(textEl(
+          { "class": "node__claim-text", x: badgeX + 4, y: NODE_H - 6 },
+          badgeText
         ));
+        group.appendChild(badge);
       }
 
       if (node.eligible) {
@@ -451,7 +573,7 @@
     tooltipBg = el("rect", { "class": "tooltip__bg", x: 0, y: 0, width: 1, height: 1, rx: 6 });
     group.appendChild(tooltipBg);
     tooltipRows = [];
-    for (var i = 0; i < 5; i += 1) {
+    for (var i = 0; i < 6; i += 1) {
       var rowClass = i === 0 ? "tooltip__row tooltip__title" : "tooltip__row";
       var row = textEl({ "class": rowClass, x: 10, y: 18 + i * 18 }, "");
       tooltipRows.push(row);
@@ -460,30 +582,60 @@
     return group;
   }
 
-  function render(graph) {
+  function render(graph, initial) {
+    var previousPlan = plan;
+    var previousView = { scale: view.scale, tx: view.tx, ty: view.ty };
+    var anchor = null;
+    if (previousPlan) {
+      if (selectedId && previousPlan.positions[selectedId]) {
+        var anchorPlace = previousPlan.positions[selectedId];
+        anchor = {
+          gx: anchorPlace.x + NODE_W / 2,
+          gy: anchorPlace.y + NODE_H / 2,
+          sx: (anchorPlace.x + NODE_W / 2) * previousView.scale + previousView.tx,
+          sy: (anchorPlace.y + NODE_H / 2) * previousView.scale + previousView.ty
+        };
+      } else {
+        anchor = {
+          gx: (W / 2 - previousView.tx) / previousView.scale,
+          gy: (H / 2 - previousView.ty) / previousView.scale,
+          sx: W / 2,
+          sy: H / 2
+        };
+      }
+    }
+
     plan = layout(graph);
     canvas.classList.remove("is-hidden");
     canvasRect = canvas.getBoundingClientRect();
     W = Math.max(1, Math.round(canvasRect.width));
     H = Math.max(1, Math.round(canvasRect.height));
 
+    buildAdjacency(fullData || graph, fullData ? fullData.edges : graph.edges);
+    useVisibleAdjacency(graph);
+
     svg = el("svg", {
+      "class": "graph-canvas__svg",
+      id: "graph-svg",
       viewBox: "0 0 " + W + " " + H,
-      role: "application",
-      tabindex: "0",
-      "aria-label": "Dependency graph"
+      role: "group",
+      "aria-roledescription": "dependency graph",
+      "aria-label": "Dependency graph: " + graph.nodes.length + " tasks, " +
+        graph.edges.length + " links. Press question mark for shortcuts.",
+      "aria-activedescendant": "",
+      tabindex: "0"
     });
 
     viewport = el("g", {
       "class": "viewport",
       transform: "translate(0,0) scale(1)",
-      "data-lod": "full"
+      "data-lod": "full",
+      "data-claim-highlight": claimHighlight ? "on" : "off",
+      "data-focus-claimed": focusClaimed ? "true" : "false"
     });
 
-    var edgesFragment = buildEdgesFragment(graph);
-    var nodesFragment = buildNodesFragment(graph);
-    viewport.appendChild(edgesFragment);
-    viewport.appendChild(nodesFragment);
+    viewport.appendChild(buildEdgesFragment(graph));
+    viewport.appendChild(buildNodesFragment(graph));
     svg.appendChild(viewport);
 
     tooltip = buildTooltip();
@@ -499,7 +651,20 @@
 
     buildMinimap(graph);
     attachEvents();
-    fitAll(true);
+    syncClaimLayer();
+    if (activeId && !nodeEls[activeId]) { activeId = null; }
+
+    if (initial || !previousPlan) {
+      fitAll(true);
+      return;
+    }
+    view.scale = clamp(previousView.scale, MIN_SCALE, MAX_SCALE);
+    if (anchor) {
+      view.tx = anchor.sx - anchor.gx * view.scale;
+      view.ty = anchor.sy - anchor.gy * view.scale;
+    }
+    clampPan();
+    requestFlush();
   }
 
   function buildMinimap(graph) {
@@ -558,9 +723,10 @@
     });
     minimapSvg.appendChild(minimapViewRect);
 
-    var hidden = graph.nodes.length - drawn;
-    var label = "Overview of the whole graph: " + graph.nodes.length +
-      " nodes, " + graph.edges.length + " edges, " + hidden + " hidden";
+    var hidden = hiddenCount();
+    var label = "Overview: " + graph.nodes.length + " visible nodes, " +
+      graph.edges.length + " visible edges" +
+      (hidden ? ", " + hidden + " hidden" : "");
     minimapSvg.setAttribute("aria-label", label);
 
     minimapRect = minimapSvg.getBoundingClientRect();
@@ -728,15 +894,28 @@
       clearHoverTimer();
       window.clearTimeout(selectTimer);
       var point = pointInCanvas(event);
+      pointers[event.pointerId] = point;
+      if (Object.keys(pointers).length === 2) {
+        startPinch();
+        event.preventDefault();
+        return;
+      }
+      if (pinch) {
+        /* A third pointer is tracked but ignored by the pinch maths. */
+        event.preventDefault();
+        return;
+      }
       var downNode = closest(event.target, ".node");
       lastDownNodeId = downNode ? downNode.getAttribute("data-id") : null;
       drag = {
         id: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
+        startTime: Date.now(),
         lastX: event.clientX,
         lastY: event.clientY,
-        moved: false
+        moved: false,
+        pointerType: event.pointerType || "mouse"
       };
       panning = true;
       canvas.setAttribute("data-panning", "true");
@@ -745,6 +924,29 @@
     });
 
     svg.addEventListener("pointermove", function (event) {
+      if (pointers[event.pointerId]) {
+        pointers[event.pointerId] = pointInCanvas(event);
+      }
+      if (pinch) {
+        if (pinch.ids.indexOf(event.pointerId) >= 0) {
+          var first = pointers[pinch.ids[0]];
+          var second = pointers[pinch.ids[1]];
+          if (first && second) {
+            var distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y));
+            var ratio = distance / pinch.dist;
+            var nextScale = clamp(pinch.scale * ratio, MIN_SCALE, MAX_SCALE);
+            var mid = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+            view.scale = nextScale;
+            view.tx = mid.x - (pinch.mid.x - pinch.tx) * ratio;
+            view.ty = mid.y - (pinch.mid.y - pinch.ty) * ratio;
+            userOwnsCamera = true;
+            clampPan();
+            requestFlush();
+          }
+        }
+        event.preventDefault();
+        return;
+      }
       if (drag && drag.id === event.pointerId) {
         var dx = event.clientX - drag.lastX;
         var dy = event.clientY - drag.lastY;
@@ -769,16 +971,34 @@
     });
 
     svg.addEventListener("pointerup", function (event) {
+      var point = pointInCanvas(event);
+      delete pointers[event.pointerId];
+      if (pinch && pinch.ids.indexOf(event.pointerId) >= 0) {
+        pinch = null;
+        drag = null;
+        panning = false;
+        canvas.removeAttribute("data-panning");
+        return;
+      }
       if (!drag || drag.id !== event.pointerId) { return; }
       var moved = drag.moved;
+      var duration = Date.now() - drag.startTime;
+      var pointerType = drag.pointerType;
+      var downId = lastDownNodeId;
       endDrag(event);
       if (moved) {
         suppressClick = true;
         window.setTimeout(function () { suppressClick = false; }, 0);
+        return;
+      }
+      if (pointerType !== "mouse" && duration < 250) {
+        handleTap(point, downId);
       }
     });
 
     svg.addEventListener("pointercancel", function (event) {
+      delete pointers[event.pointerId];
+      if (pinch && pinch.ids.indexOf(event.pointerId) >= 0) { pinch = null; }
       endDrag(event);
       suppressClick = false;
     });
@@ -790,6 +1010,12 @@
     svg.addEventListener("click", function (event) {
       if (suppressClick) {
         suppressClick = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (tapHandled) {
+        tapHandled = false;
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -889,14 +1115,23 @@
       }
     });
 
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") {
-        hideTooltip();
-        clearSelection();
-      }
+    svg.addEventListener("focus", function () {
+      var count = visibleData ? visibleData.nodes.length : 0;
+      announce("Graph focused. " + count +
+        " tasks. Arrow keys pan or move along links.");
     });
 
-    window.addEventListener("resize", onResize);
+    if (!globalEventsBound) {
+      globalEventsBound = true;
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          hideTooltip();
+          clearSelection();
+          clearActive();
+        }
+      });
+      window.addEventListener("resize", onResize);
+    }
   }
 
   function clearHoverTimer() {
@@ -1104,9 +1339,18 @@
       (node.priority || "normal"));
     var blocked = blockedByMap[node.id] || [];
     if (node.assignee) { lines.push("assignee: " + truncate(node.assignee, 40)); }
-    if (node.claimed_by) { lines.push("claimed by " + truncate(node.claimed_by, 40)); }
+    if (node.claimed_by) {
+      var age = relativeAge(node.claimed_at);
+      lines.push("claimed by " + truncate(node.claimed_by, 24) +
+        (age ? " (" + age + " ago)" : ""));
+      if (node.claimed_at) { lines.push("claimed at " + node.claimed_at); }
+    }
+    var hiddenLinks = hiddenLinkCount[node.id] || 0;
+    if (hiddenLinks) {
+      lines.push(hiddenLinks + " hidden link" + (hiddenLinks === 1 ? "" : "s"));
+    }
     if (blocked.length) { lines.push("blocked by " + truncate(blocked.join(", "), 40)); }
-    return lines.slice(0, 5);
+    return lines.slice(0, 6);
   }
 
   function positionTooltip(px, py) {
@@ -1300,17 +1544,321 @@
   /* toolbar                                                                 */
   /* ----------------------------------------------------------------------- */
 
+  function hiddenCount() {
+    return Object.keys(hiddenIds).length;
+  }
+
+  function readHideClosedPreference() {
+    var fromUrl = null;
+    try {
+      var params = new URLSearchParams(window.location.search);
+      if (params.has("hide_closed")) {
+        fromUrl = params.get("hide_closed") === "1";
+      }
+    } catch (e) { fromUrl = null; }
+    if (fromUrl !== null) { return fromUrl; }
+    try {
+      var stored = window.localStorage.getItem(HIDE_CLOSED_KEY);
+      if (stored === "1" || stored === "0") { return stored === "1"; }
+    } catch (e) { /* storage unavailable */ }
+    return false;
+  }
+
+  function writeHidePreference(value) {
+    try {
+      window.localStorage.setItem(HIDE_CLOSED_KEY, value ? "1" : "0");
+    } catch (e) { /* session only */ }
+  }
+
+  function updateHiddenCount(count) {
+    var element = document.getElementById("graph-hidden-count");
+    if (!element) { return; }
+    setText(element, count + " hidden");
+    element.setAttribute(
+      "title",
+      count ? count + " nodes hidden and their edges" : "No nodes hidden"
+    );
+  }
+
+  function updateUrl() {
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.set("hide_closed", hideClosed ? "1" : "0");
+      window.history.replaceState(null, "", url.toString());
+    } catch (e) { /* history unavailable */ }
+  }
+
+  function syncClaimLayer() {
+    if (viewport) {
+      viewport.setAttribute("data-claim-highlight", claimHighlight ? "on" : "off");
+      viewport.setAttribute("data-focus-claimed", focusClaimed ? "true" : "false");
+    }
+    var claimedButton = document.querySelector(
+      '[data-graph-action="toggle-claimed"]'
+    );
+    if (claimedButton) {
+      claimedButton.setAttribute("aria-pressed", claimHighlight ? "true" : "false");
+    }
+    var focusButton = document.querySelector(
+      '[data-graph-action="focus-claimed"]'
+    );
+    if (focusButton) {
+      focusButton.disabled = !claimHighlight;
+      focusButton.setAttribute("aria-pressed", focusClaimed ? "true" : "false");
+    }
+  }
+
+  function toggleClaimHighlight() {
+    claimHighlight = !claimHighlight;
+    if (!claimHighlight) { focusClaimed = false; }
+    syncClaimLayer();
+    announce(claimHighlight
+      ? "Claimed highlight on."
+      : "Claimed highlight off; the claim stays in the tooltip and outline.");
+  }
+
+  function toggleFocusClaimed() {
+    if (!claimHighlight) { return; }
+    focusClaimed = !focusClaimed;
+    syncClaimLayer();
+    var total = visibleData ? visibleData.nodes.length : 0;
+    var claimed = visibleData
+      ? visibleData.nodes.filter(function (node) { return node.claimed_by; }).length
+      : 0;
+    announce(focusClaimed
+      ? claimed + " of " + total + " tasks are claimed."
+      : "Focus claimed off.");
+  }
+
+  function setHideClosed(value, remember) {
+    hideClosed = !!value;
+    var button = document.querySelector(
+      '[data-graph-action="toggle-hide-closed"]'
+    );
+    if (button) { button.setAttribute("aria-pressed", hideClosed ? "true" : "false"); }
+    if (remember) {
+      writeHidePreference(hideClosed);
+      updateUrl();
+    }
+    var selectionCleared = rebuildVisible();
+    if (!selectionCleared) {
+      announce(hideClosed
+        ? hiddenCount() + " done or cancelled tasks hidden."
+        : "Showing done and cancelled tasks again.");
+    }
+  }
+
+  function toggleHideClosed() {
+    setHideClosed(!hideClosed, true);
+  }
+
+  function rebuildVisible() {
+    if (!fullData) { return false; }
+    var closed = {};
+    if (hideClosed) {
+      fullData.nodes.forEach(function (node) {
+        if (isTerminal(node.status)) { closed[node.id] = true; }
+      });
+    }
+    hiddenIds = closed;
+    var nodes = fullData.nodes.filter(function (node) {
+      return !closed[node.id];
+    });
+    var visible = {};
+    nodes.forEach(function (node) { visible[node.id] = true; });
+    var edges = fullData.edges.filter(function (edge) {
+      return visible[edge.source] && visible[edge.target];
+    });
+    hiddenLinkCount = {};
+    fullData.edges.forEach(function (edge) {
+      if (closed[edge.source] && visible[edge.target]) {
+        hiddenLinkCount[edge.target] = (hiddenLinkCount[edge.target] || 0) + 1;
+      }
+      if (closed[edge.target] && visible[edge.source]) {
+        hiddenLinkCount[edge.source] = (hiddenLinkCount[edge.source] || 0) + 1;
+      }
+    });
+    updateHiddenCount(Object.keys(closed).length);
+    var selectionCleared = false;
+    if (selectedId && closed[selectedId]) {
+      var hiddenSelection = selectedId;
+      clearSelection();
+      announce("Selection cleared: " + hiddenSelection + " is hidden.");
+      selectionCleared = true;
+    }
+    if (activeId && closed[activeId]) { clearActive(); }
+    visibleData = { nodes: nodes, edges: edges };
+    render(visibleData, false);
+    return selectionCleared;
+  }
+
+  function zoomAtActive(factor) {
+    var cx = W / 2;
+    var cy = H / 2;
+    if (activeId && plan && plan.positions[activeId]) {
+      var place = plan.positions[activeId];
+      cx = (place.x + NODE_W / 2) * view.scale + view.tx;
+      cy = (place.y + NODE_H / 2) * view.scale + view.ty;
+    }
+    zoomAt(cx, cy, factor);
+  }
+
+  function ensureVisible(id) {
+    if (!plan || !plan.positions[id]) { return; }
+    var place = plan.positions[id];
+    var cx = (place.x + NODE_W / 2) * view.scale + view.tx;
+    var cy = (place.y + NODE_H / 2) * view.scale + view.ty;
+    var pad = 40;
+    if (cx < pad || cx > W - pad || cy < pad || cy > H - pad) {
+      view.tx = W / 2 - (place.x + NODE_W / 2) * view.scale;
+      view.ty = H / 2 - (place.y + NODE_H / 2) * view.scale;
+      userOwnsCamera = true;
+      clampPan();
+      requestFlush();
+    }
+  }
+
+  function setActive(id) {
+    if (activeId && nodeEls[activeId]) {
+      nodeEls[activeId].setAttribute("data-active", "false");
+    }
+    activeId = id;
+    if (!svg) { return; }
+    if (!id) {
+      svg.setAttribute("aria-activedescendant", "");
+      return;
+    }
+    var element = nodeEls[id];
+    if (!element) {
+      activeId = null;
+      svg.setAttribute("aria-activedescendant", "");
+      return;
+    }
+    element.setAttribute("data-active", "true");
+    svg.setAttribute("aria-activedescendant", "node-" + id);
+    ensureVisible(id);
+  }
+
+  function clearActive() {
+    setActive(null);
+  }
+
+  function moveActive(direction) {
+    if (!plan) { return; }
+    if (!activeId) {
+      var step = 64;
+      if (direction === "ArrowLeft") { panBy(step, 0); }
+      else if (direction === "ArrowRight") { panBy(-step, 0); }
+      else if (direction === "ArrowUp") { panBy(0, step); }
+      else if (direction === "ArrowDown") { panBy(0, -step); }
+      return;
+    }
+    var target = null;
+    if (direction === "ArrowLeft") {
+      target = (prereqMap[activeId] || [])[0] || null;
+    } else if (direction === "ArrowRight") {
+      target = (depMap[activeId] || [])[0] || null;
+    } else {
+      var place = plan.positions[activeId];
+      if (!place) { return; }
+      var best = null;
+      var bestDistance = Infinity;
+      Object.keys(plan.positions).forEach(function (key) {
+        if (key === activeId) { return; }
+        var candidate = plan.positions[key];
+        if (candidate.depth !== place.depth) { return; }
+        var dy = candidate.y - place.y;
+        if (direction === "ArrowUp" && dy >= 0) { return; }
+        if (direction === "ArrowDown" && dy <= 0) { return; }
+        var distance = Math.abs(dy);
+        if (distance < bestDistance) { bestDistance = distance; best = key; }
+      });
+      target = best;
+    }
+    if (target) { setActive(target); }
+  }
+
+  function startPinch() {
+    var ids = Object.keys(pointers);
+    if (ids.length < 2) { return; }
+    var first = pointers[ids[0]];
+    var second = pointers[ids[1]];
+    if (!first || !second) { return; }
+    pinch = {
+      ids: [ids[0], ids[1]],
+      dist: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)),
+      mid: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+      scale: view.scale,
+      tx: view.tx,
+      ty: view.ty
+    };
+    drag = null;
+    panning = false;
+    canvas.removeAttribute("data-panning");
+  }
+
+  function handleTap(point, downId) {
+    var now = Date.now();
+    var doubleTap = now - lastTap.time < 300 &&
+      Math.hypot(point.x - lastTap.x, point.y - lastTap.y) < 30;
+    lastTap = { time: now, x: point.x, y: point.y };
+    tapHandled = true;
+    window.setTimeout(function () { tapHandled = false; }, 350);
+    if (doubleTap) {
+      if (downId && plan.positions[downId]) {
+        var place = plan.positions[downId];
+        animateTo({
+          scale: clamp(1.4, MIN_SCALE, MAX_SCALE),
+          tx: W / 2 - (place.x + NODE_W / 2) * 1.4,
+          ty: H / 2 - (place.y + NODE_H / 2) * 1.4
+        }, DUR_LAYOUT);
+      } else {
+        zoomAt(point.x, point.y, 1.6);
+      }
+      return;
+    }
+    if (downId) { selectNode(downId); }
+    else { clearSelection(); clearActive(); }
+  }
+
+  function onGraphCommand(event) {
+    var detail = event.detail || {};
+    var action = detail.action;
+    if (action === "toggle-claimed") { toggleClaimHighlight(); }
+    else if (action === "focus-claimed") { toggleFocusClaimed(); }
+    else if (action === "toggle-hide-closed") { toggleHideClosed(); }
+    else if (action === "zoom-in") { zoomAtActive(1.25); }
+    else if (action === "zoom-out") { zoomAtActive(0.8); }
+    else if (action === "fit-all") { fitAll(false); }
+    else if (action === "zoom-reset") { resetZoom(); }
+    else if (action === "escape") {
+      hideTooltip();
+      clearSelection();
+      clearActive();
+    } else if (action === "activate") {
+      if (activeId) {
+        window.location.assign("/task/" + encodeURIComponent(activeId));
+      }
+    } else if (action === "move") {
+      moveActive(detail.detail);
+    }
+  }
+
   function attachControls() {
     var buttons = document.querySelectorAll("[data-graph-action]");
     Array.prototype.forEach.call(buttons, function (button) {
       button.addEventListener("click", function () {
         var action = button.getAttribute("data-graph-action");
-        if (action === "zoom-in") { zoomAt(W / 2, H / 2, 1.25); }
-        else if (action === "zoom-out") { zoomAt(W / 2, H / 2, 0.8); }
+        if (action === "zoom-in") { zoomAtActive(1.25); }
+        else if (action === "zoom-out") { zoomAtActive(0.8); }
         else if (action === "fit-all") { fitAll(false); }
         else if (action === "zoom-reset") { resetZoom(); }
+        else if (action === "toggle-claimed") { toggleClaimHighlight(); }
+        else if (action === "focus-claimed") { toggleFocusClaimed(); }
+        else if (action === "toggle-hide-closed") { toggleHideClosed(); }
       });
     });
+    syncClaimLayer();
   }
 
   /* ----------------------------------------------------------------------- */
@@ -1319,10 +1867,13 @@
 
   function show(graph) {
     if (!graph.nodes.length) { return; }
-    data = graph;
-    buildAdjacency(graph);
-    render(graph);
+    fullData = graph;
+    hideClosed = readHideClosedPreference();
+    updateHiddenCount(0);
+    rebuildVisible();
     attachControls();
+    syncClaimLayer();
+    root.addEventListener("tack:graph-command", onGraphCommand);
   }
 
   function buildWhenIdle(graph) {

@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <header class="topbar">
   <a class="brand" href="/board">tackboard</a>
   <nav class="nav" aria-label="Views">
@@ -21,18 +22,45 @@ $nav
     <span class="identity__label">database</span>
     <code>$database</code>
   </p>
+  <button type="button" class="help-open" data-help-open
+          aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button>
   <button type="button" class="theme-toggle" id="theme-toggle"
           aria-label="Theme: auto (follows system)" title="Theme: auto (follows system)">
     <span class="theme-toggle__glyph" aria-hidden="true">&#9686;</span>
     <span class="theme-toggle__label">auto</span>
   </button>
 </header>
-<main id="content">
+<main id="main-content">
 $content
 </main>
 <footer class="footer">
   <p>Read-only view. Every change goes through the <code>tack</code> CLI.</p>
+  <p><button type="button" class="link-button" data-help-open>Keyboard shortcuts</button></p>
 </footer>
+<dialog class="help" id="help-dialog" aria-labelledby="help-heading">
+  <h2 id="help-heading">Keyboard shortcuts</h2>
+  <p class="help__intro">Shortcuts are ignored while a text field has focus and suspended while this dialog is open, except <kbd>Esc</kbd>.</p>
+  <table class="help__table">
+    <thead><tr><th scope="col">Key</th><th scope="col">Action</th><th scope="col">Scope</th></tr></thead>
+    <tbody>
+      <tr><th scope="row"><kbd>g</kbd> then <kbd>b</kbd></th><td>Go to board</td><td>global</td></tr>
+      <tr><th scope="row"><kbd>g</kbd> then <kbd>g</kbd></th><td>Go to graph</td><td>global</td></tr>
+      <tr><th scope="row"><kbd>/</kbd></th><td>Focus the search/filter input</td><td>board</td></tr>
+      <tr><th scope="row"><kbd>f</kbd></th><td>Open the filters disclosure and focus its first control</td><td>board</td></tr>
+      <tr><th scope="row"><kbd>j</kbd> / <kbd>k</kbd></th><td>Next / previous card, scrolled into view</td><td>board</td></tr>
+      <tr><th scope="row"><kbd>Enter</kbd></th><td>Open the focused card or the active node's task page</td><td>board, graph</td></tr>
+      <tr><th scope="row"><kbd>t</kbd></th><td>Cycle theme (auto &rarr; light &rarr; dark)</td><td>global</td></tr>
+      <tr><th scope="row"><kbd>c</kbd></th><td>Toggle "Highlight claimed"</td><td>graph</td></tr>
+      <tr><th scope="row"><kbd>h</kbd></th><td>Toggle "Hide done &amp; cancelled"</td><td>graph</td></tr>
+      <tr><th scope="row"><kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd></th><td>Zoom in / out / fit all</td><td>graph</td></tr>
+      <tr><th scope="row">Arrow keys</th><td>Pan the graph; with a node active, move along edges (left = prerequisite, right = dependent, up/down = sibling in the same layer)</td><td>graph</td></tr>
+      <tr><th scope="row"><kbd>?</kbd></th><td>Show this help overlay</td><td>global</td></tr>
+      <tr><th scope="row"><kbd>Esc</kbd></th><td>Close the overlay / clear the selection / close the tooltip</td><td>global</td></tr>
+    </tbody>
+  </table>
+  <button type="button" class="help__close" data-close-help>Close</button>
+</dialog>
+<script src="/static/keys.js" defer></script>
 $scripts
 </body>
 </html>

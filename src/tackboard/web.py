@@ -794,19 +794,65 @@ def _board_columns(
     return "".join(columns)
 
 
-def _dependency_list(graph: Mapping[str, Any]) -> str:
-    """The server-rendered indented fallback: works with JavaScript disabled."""
-    nodes: list[Mapping[str, Any]] = list(graph["nodes"])
-    depths = _topological_depths(nodes, graph["edges"])
+def _outline_counts(
+    visible_nodes: int,
+    total_nodes: int,
+    visible_edges: int,
+    total_edges: int,
+    hidden: int,
+) -> str:
+    """The server-rendered count line for the dependency outline.
+
+    The short form is unchanged when nothing is hidden; when hide-closed is on
+    both the visible and the full totals appear so truncation is never silent.
+    """
+    if hidden:
+        return (
+            f"nodes={visible_nodes} of {total_nodes} \u00b7 "
+            f"edges={visible_edges} of {total_edges} \u00b7 {hidden} hidden"
+        )
+    return f"nodes={visible_nodes} edges={visible_edges}"
+
+
+def _claimed_suffix(node: Mapping[str, Any]) -> str:
+    """The outline's claim text: the information survives without JavaScript."""
+    holder = node.get("claimed_by")
+    if not holder:
+        return ""
+    claimed_at = node.get("claimed_at")
+    if claimed_at:
+        return f"[claimed by {holder} since {claimed_at}]"
+    return f"[claimed by {holder}]"
+
+
+def _dependency_list(
+    graph: Mapping[str, Any],
+    *,
+    nodes: Sequence[Mapping[str, Any]] | None = None,
+    edges: Sequence[Mapping[str, Any]] | None = None,
+) -> str:
+    """The server-rendered indented fallback: works with JavaScript disabled.
+
+    ``nodes`` and ``edges`` default to the full document. ``_graph_page`` passes
+    the hide-closed view so the outline matches the canvas while every node still
+    carries the derived flags computed from the full graph.
+    """
+    node_list: list[Mapping[str, Any]] = list(
+        nodes if nodes is not None else graph["nodes"]
+    )
+    edge_list: list[Mapping[str, Any]] = list(
+        edges if edges is not None else graph["edges"]
+    )
+    depths = _topological_depths(node_list, edge_list)
     prereqs: dict[str, list[str]] = {}
-    for edge in graph["edges"]:
+    for edge in edge_list:
         prereqs.setdefault(str(edge["target"]), []).append(str(edge["source"]))
 
     def order(node: Mapping[str, Any]) -> tuple[int, int]:
         return (depths.get(str(node["id"]), 0), _sequence(node))
 
     lines: list[str] = []
-    for node in sorted(nodes, key=order):
+    for node in sorted(node_list, key=order):
         node_id = str(node["id"])
         depth = min(depths.get(node_id, 0), MAX_INDENT_DEPTH)
         needs = ", ".join(prereqs.get(node_id, [])) or "none"
@@ -821,6 +867,9 @@ def _dependency_list(graph: Mapping[str, Any]) -> str:
                 glyph=_esc(_status_glyph(status)),
                 status_label=_esc(_status_label(status)),
                 needs=_esc(needs),
+                claimed=_esc(_claimed_suffix(node)),
+                blocked_flag="true" if node.get("blocked") else "false",
+                blocked_marker="\u2298 blocked" if node.get("blocked") else "",
             )
         )
     if not lines:
@@ -921,6 +970,7 @@ def _legend() -> str:
         ("shape-crossed", "blocked"),
         ("shape-octagon", "cancelled"),
         ("shape-dashed", "backlog / ready"),
+        ("shape-claimed", "claimed — double ring + holder badge"),
     )
     items = "".join(
         f'<li class="legend-item {css}"><span class="legend-shape"></span>'
@@ -1264,13 +1314,52 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
         task_id = _first(query, "task") or None
         document = views.graph_document(conn, task_id)
         project = schema.database_label(conn)
+        # ``hide_closed`` is the URL form of the toolbar toggle. The JSON
+        # endpoints keep returning the full graph; only the no-JS outline and
+        # the server-rendered counts are filtered here.
+        hide_closed = _first(query, "hide_closed") == "1"
+        total_nodes = len(document["nodes"])
+        total_edges = len(document["edges"])
+        outline_nodes: list[Mapping[str, Any]] = list(document["nodes"])
+        outline_edges: list[Mapping[str, Any]] = list(document["edges"])
+        hidden_count = 0
+        if hide_closed:
+            closed = {
+                str(node["id"])
+                for node in outline_nodes
+                if str(node["status"]) in TERMINAL_STATUSES
+            }
+            hidden_count = len(closed)
+            outline_nodes = [
+                node for node in outline_nodes if str(node["id"]) not in closed
+            ]
+            outline_edges = [
+                edge
+                for edge in outline_edges
+                if str(edge["source"]) not in closed
+                and str(edge["target"]) not in closed
+            ]
         content = _render(
             "graph.html",
             task=_esc(task_id or ""),
-            node_count=str(len(document["nodes"])),
-            edge_count=str(len(document["edges"])),
+            node_count=str(total_nodes),
+            edge_count=str(total_edges),
+            outline_counts=_esc(
+                _outline_counts(
+                    len(outline_nodes),
+                    total_nodes,
+                    len(outline_edges),
+                    total_edges,
+                    hidden_count,
+                )
+            ),
+            hidden_count=str(hidden_count),
+            hide_closed_pressed="true" if hide_closed else "false",
+            hide_closed_value="1" if hide_closed else "0",
             legend=_legend(),
-            fallback=_dependency_list(document),
+            fallback=_dependency_list(
+                document, nodes=outline_nodes, edges=outline_edges
+            ),
         )
         return self._shell(
             title="Dependency graph",

@@ -349,6 +349,19 @@ def _graph_data(
         ).fetchall()
 
     node_ids = [str(row["id"]) for row in rows]
+    # One batched claim lookup per payload: absent claims stay None so consumers
+    # can treat both fields as optional and additive.
+    claims_by_id: dict[str, sqlite3.Row] = {}
+    if node_ids:
+        placeholders = ",".join("?" for _ in node_ids)
+        claim_rows = conn.execute(
+            f"""
+            SELECT task_id, agent_id, claimed_at FROM claims
+            WHERE task_id IN ({placeholders})
+            """,
+            node_ids,
+        ).fetchall()
+        claims_by_id = {str(row["task_id"]): row for row in claim_rows}
     nodes = [
         {
             "id": row["id"],
@@ -356,6 +369,16 @@ def _graph_data(
             "status": row["status"],
             "priority": row["priority"],
             "assignee": row["assignee"],
+            "claimed_by": (
+                str(claims_by_id[str(row["id"])]["agent_id"])
+                if str(row["id"]) in claims_by_id
+                else None
+            ),
+            "claimed_at": (
+                str(claims_by_id[str(row["id"])]["claimed_at"])
+                if str(row["id"]) in claims_by_id
+                else None
+            ),
         }
         for row in rows
     ]
