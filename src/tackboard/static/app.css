@@ -812,6 +812,11 @@ button:hover,
   scroll-snap-type: x proximity;
   padding: var(--space-2) 0 var(--space-4);
   overscroll-behavior-x: contain;
+  /* The columns are viewport-relative (88vw on a phone), so the board's
+   * scrollable overflow would otherwise count toward the document's scroll
+   * area and make the whole page scroll sideways. Containment keeps that
+   * overflow inside the board's own scroll container. */
+  contain: layout;
 }
 
 .column {
@@ -1965,6 +1970,12 @@ text.tooltip__title {
   .button,
   .column__more {
     min-height: var(--touch-target);
+  }
+
+  .count {
+    min-width: var(--touch-target);
+    justify-content: center;
+    align-items: center;
   }
 
   .nav a {

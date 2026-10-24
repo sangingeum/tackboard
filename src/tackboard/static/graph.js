@@ -1231,6 +1231,13 @@
     if (tooLarge) { clearPathMarks(); }
     else { applyPathMarks(closure); }
     renderSelectionPanel(node, tooLarge);
+    /* Selecting a node also makes it the active descendant so arrow keys move
+     * from it instead of panning; the canvas takes focus so the ARIA
+     * active-descendant relationship applies. */
+    setActive(id);
+    if (svg && typeof svg.focus === "function") {
+      try { svg.focus({ preventScroll: true }); } catch (e) { svg.focus(); }
+    }
   }
 
   function clearSelection() {
