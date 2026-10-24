@@ -1,11 +1,16 @@
-<li class="card card-$status">
-  <a class="card-id" href="/task/$id">$id</a>
-  <span class="card-title">$title</span>
-  <span class="card-meta">
-    <span class="badge badge-status">$status</span>
-    <span class="badge badge-priority priority-$priority">$priority</span>
-    <span class="card-assignee">$assignee</span>
-  </span>
-  <span class="card-labels">$labels</span>
-  <span class="card-flags">$flags</span>
+<li class="card" data-task="$id" data-status="$status" data-priority="$priority"
+    data-blocked="$blocked_flag" data-claimed="$claimed_flag" tabindex="-1">
+  <div class="card__head">
+    <span class="card__glyph" data-status="$status" aria-hidden="true">$glyph</span>
+    <a class="card__id" href="/task/$id">$id</a>
+    <span class="card__title" title="$title">$title</span>
+  </div>
+  <div class="card__meta">
+    <span class="priority" data-priority="$priority"><span class="priority__pips" aria-hidden="true">$pips</span> $priority</span>
+    <span class="card__assignee">$assignee</span>
+    $state_chips
+  </div>
+  $labels
+  $blocked
+  $claim
 </li>

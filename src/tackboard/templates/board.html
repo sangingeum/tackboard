@@ -1,14 +1,20 @@
 $memo
-<section class="panel summary">
-  <p class="counts-line">$counts_line</p>
-  <p class="autorefresh">
-    <label for="autorefresh">
-      <input type="checkbox" id="autorefresh" checked>
-      auto-refresh every $interval s
-    </label>
-  </p>
-</section>
+$summary
 $filters
 <div class="board" id="board">
 $columns
 </div>
+<div class="refresh" id="refresh" role="group" aria-label="Live updates" data-paused="false">
+  <button type="button" class="refresh__toggle" id="poll-toggle" aria-pressed="false">Pause updates</button>
+  <button type="button" class="refresh__now" id="poll-refresh">Refresh now</button>
+  <p class="refresh__stamp" aria-live="off">
+    <span id="last-updated">updated just now</span>
+    <span class="refresh__dot" aria-hidden="true"> &#9679;</span>
+  </p>
+  <p class="refresh__error" id="poll-error" hidden>
+    <span class="refresh__error-text"></span>
+    <button type="button" class="refresh__retry" id="poll-retry">Retry</button>
+  </p>
+</div>
+<p class="sr-only" id="live-region" role="status" aria-live="polite"></p>
+<p class="counts-line">$counts_line</p>

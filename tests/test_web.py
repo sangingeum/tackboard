@@ -117,9 +117,12 @@ class WebClient:
         method: str = "GET",
         host: str | None = None,
         skip_host: bool = False,
+        extra_headers: dict[str, str] | None = None,
     ) -> Response:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=20)
-        headers = {"Host": host} if host is not None else {}
+        headers = dict(extra_headers or {})
+        if host is not None:
+            headers["Host"] = host
         try:
             if skip_host:
                 connection.putrequest(method, path, skip_host=True)
@@ -368,12 +371,12 @@ def test_terminal_columns_truncate_to_twenty_with_a_show_all_link(
         conn.close()
 
     page = server.request("/board").text
-    assert page.count('class="card card-done"') == 20
+    assert len(re.findall(r'<li class="card"[^>]*data-status="done"', page)) == 20
     assert "show all (5 more)" in page
     assert 'href="/board?status=done"' in page
 
     expanded = server.request("/board?status=done").text
-    assert expanded.count('class="card card-done"') == 25
+    assert len(re.findall(r'<li class="card"[^>]*data-status="done"', expanded)) == 25
     assert "show all" not in expanded
 
 
@@ -909,3 +912,105 @@ def test_a_corrupt_memo_table_answers_on_the_api_and_the_board(
     board = client.request("/board")
     assert board.status == 500
     assert "memo revision table is not usable" in board.text
+
+
+# --------------------------------------------------------------------------- #
+# ETag, 304 and header discipline
+# --------------------------------------------------------------------------- #
+
+
+def test_json_endpoints_carry_an_etag_and_honour_if_none_match(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    """A matching If-None-Match is answered 304 with no body and full headers."""
+    for path in (
+        "/api/board",
+        "/api/graph",
+        "/api/memo",
+        f"/api/tasks/{board['done']}",
+    ):
+        first = server.request(path)
+        assert first.status == 200
+        etag = first.headers.get("ETag")
+        assert etag is not None, f"{path} carries no ETag"
+        assert etag.startswith('"') and etag.endswith('"')
+        assert first.headers.get("Cache-Control") == "no-cache"
+
+        second = server.request(path, extra_headers={"If-None-Match": etag})
+        assert second.status == 304
+        assert second.body == b""
+        assert second.headers.get("ETag") == etag
+        assert second.headers.get("Cache-Control") == "no-cache"
+        assert second.headers.get("Content-Security-Policy") == "default-src 'self'"
+        assert second.headers.get("X-Content-Type-Options") == "nosniff"
+
+        weak = server.request(path, extra_headers={"If-None-Match": f"W/{etag}"})
+        assert weak.status == 304
+
+        other = server.request(path, extra_headers={"If-None-Match": '"stale"'})
+        assert other.status == 200
+        assert other.headers.get("ETag") == etag
+
+
+def test_head_returns_the_same_headers_as_get_without_a_body(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    for path in ("/api/board", "/api/graph", "/api/memo"):
+        get = server.request(path)
+        head = server.request(path, method="HEAD")
+        assert head.status == 200
+        assert head.body == b""
+        assert head.headers.get("ETag") == get.headers.get("ETag")
+        assert head.headers.get("Cache-Control") == "no-cache"
+        assert head.headers.get("Content-Security-Policy") == "default-src 'self'"
+        assert head.headers.get("X-Content-Type-Options") == "nosniff"
+
+
+def test_html_pages_are_served_no_store(server: WebClient) -> None:
+    for path in ("/", "/board", "/graph"):
+        headers = server.request(path).headers
+        assert headers.get("Cache-Control") == "no-store"
+
+
+def test_static_assets_carry_the_security_headers(server: WebClient) -> None:
+    for name in ("app.css", "theme.js", "board.js", "graph.js"):
+        response = server.request(f"/static/{name}")
+        assert response.status == 200
+        assert response.headers.get("Content-Security-Policy") == "default-src 'self'"
+        assert response.headers.get("X-Content-Type-Options") == "nosniff"
+
+
+def test_rendered_pages_have_no_inline_script_style_or_external_hosts(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    """The CSP is only honest if the pages contain no inline or foreign code."""
+    for path in ("/", "/board", "/graph", f"/task/{board['done']}"):
+        page = server.request(path).text
+        assert "<script>" not in page
+        assert "<style" not in page
+        assert ' style="' not in page
+        assert "style='" not in page
+        assert "http://" not in page
+        assert "https://" not in page
+
+
+def test_board_renders_and_filters_without_javascript(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    """The server-rendered board is complete: tasks, columns and GET filters."""
+    page = server.request("/board").text
+    assert 'class="board"' in page
+    assert 'data-status="backlog"' in page
+    assert "Done prerequisite" in page
+    assert "Claimed work" in page
+    assert "Backlog idea" in page
+    assert 'method="get"' in page
+    assert 'action="/board"' in page
+
+    backlog = server.request("/board?status=backlog").text
+    assert "Backlog idea" in backlog
+    assert "Done prerequisite" not in backlog
+
+    eligible = server.request("/board?eligible=1").text
+    assert "Eligible work" in eligible
+    assert "Blocked work" not in eligible

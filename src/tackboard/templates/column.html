@@ -1,10 +1,11 @@
-<section class="column column-$status">
-  <h2 class="column-title">
-    <span class="column-status">$status</span>
-    <span class="column-count">($total)</span>
+<section class="column" data-status="$status" aria-labelledby="col-$status">
+  <h2 class="column__title" id="col-$status">
+    <span class="status-chip" data-status="$status"><span class="status-chip__glyph" aria-hidden="true">$glyph</span> $status_label</span>
+    <span class="column__count"><span class="column__number">$total</span><span class="sr-only"> tasks</span></span>
   </h2>
   <ul class="cards">
 $cards
   </ul>
+$empty
   $show_all
 </section>

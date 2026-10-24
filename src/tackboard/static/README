@@ -2,18 +2,23 @@ static assets for the read-only web view
 =========================================
 
 Everything here is committed as-is and served from this package; the page
-never requests an external host, and there is no build step.
+never requests an external host, a web font or a third-party script. There is
+no build step. The server sends Content-Security-Policy: default-src 'self',
+so full inline scripts and inline styles are impossible by design.
 
-- app.css     the whole stylesheet (no external fonts, no inline styles)
-- graph.js    hand-written SVG dependency-graph renderer (no vendored library)
-- refresh.js  the board's pausable auto-refresh
+- app.css    one stylesheet: design tokens (light and dark), components,
+             responsive layout and the reduced-motion policy.
+- theme.js   synchronous bootstrap in <head>: reads the stored theme, sets
+             data-theme on <html> before first paint, and owns the
+             auto -> light -> dark cycle. localStorage access is wrapped.
+- board.js   polls /api/board on an interval, honours ETag/304, and diffs the
+             board in place (keyed cards, FLIP movement, change highlight,
+             pause/resume, last-updated stamp, polite live region).
+- graph.js   the dependency graph renderer and the server-rendered fallback's
+             client-side counterpart. The indented outline under the canvas
+             stays readable with JavaScript disabled.
 
-graph.js is written for this project and carries no third-party code, so there
-is no vendor blob to audit and no license to track. It draws plain SVG shapes:
-done/backlog/blocked are squares (solid, dashed, thick-bordered), eligible is a
-circle, in progress a diamond, review a hexagon, cancelled a dotted square — so
-the server's status is readable without relying on colour. If it cannot fetch or
-render, the server-rendered indented dependency outline stays on the page.
-
-Full inline scripts and inline styles are impossible here on purpose: the server
-sends Content-Security-Policy: default-src 'self'.
+Status is encoded in shape, glyph and text as well as colour: backlog is a
+dashed rounded rectangle, ready a circle, in progress a diamond, review a
+hexagon, done a square, cancelled a dotted square. A theme change only swaps
+CSS custom properties, so the graph's pan and zoom are untouched.

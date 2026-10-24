@@ -19,6 +19,7 @@ and the CLI all describe the same snapshot with the same shapes.
 
 from __future__ import annotations
 
+import hashlib
 import html
 import ipaddress
 import json
@@ -26,6 +27,7 @@ import sqlite3
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -65,8 +67,34 @@ WEB_TERMINAL_LIMIT = 20
 #: The fallback dependency list indents at most this many levels.
 MAX_INDENT_DEPTH = 12
 
-#: Auto-refresh interval, in seconds (spec 11.2).
-AUTO_REFRESH_SECONDS = 5
+#: Status glyphs and labels: the one visual language shared by board, graph
+#: and task page. The glyph is aria-hidden wherever it is rendered; the label
+#: carries the meaning for assistive technology.
+STATUS_GLYPHS: dict[str, str] = {
+    "backlog": "…",
+    "ready": "▷",
+    "in_progress": "▶",
+    "review": "◐",
+    "done": "✓",
+    "cancelled": "✕",
+}
+
+STATUS_LABELS: dict[str, str] = {
+    "backlog": "backlog",
+    "ready": "ready",
+    "in_progress": "in progress",
+    "review": "review",
+    "done": "done",
+    "cancelled": "cancelled",
+}
+
+#: Filled pips encode priority without relying on colour.
+PRIORITY_PIPS: dict[str, str] = {
+    "low": "▁",
+    "normal": "▁▁",
+    "high": "▁▁▁",
+    "urgent": "▁▁▁▁",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -195,62 +223,204 @@ def _counts_line(counts: Mapping[str, Any]) -> str:
     return " ".join(f"{key}={counts[key]}" for key in counts)
 
 
-def _flags_for(task: Mapping[str, Any]) -> list[tuple[str, str]]:
-    flags: list[tuple[str, str]] = []
-    if task["eligible"]:
-        flags.append(("flag-eligible", "eligible"))
-    if task["reviewable"]:
-        flags.append(("flag-reviewable", "reviewable"))
-    if task["blocked"]:
-        flags.append(("flag-blocked", "blocked"))
-    if task["claimed_by"]:
-        flags.append(("flag-claimed", f"claimed by {task['claimed_by']}"))
-    return flags
+def _etag(body: bytes) -> str:
+    """A strong validator: sha256 truncated to 16 bytes, hex, quoted (design 6.1)."""
+    return f'"{hashlib.sha256(body).hexdigest()[:32]}"'
 
 
-def _card(task: Mapping[str, Any]) -> str:
-    labels = "".join(
-        f'<span class="tag">{_esc(label)}</span>' for label in task["labels"]
+def _if_none_match_matches(header: str | None, etag: str) -> bool:
+    """True when an ``If-None-Match`` value names this validator."""
+    if not header:
+        return False
+    for candidate in header.split(","):
+        value = candidate.strip()
+        if value.startswith("W/"):
+            value = value[2:].strip()
+        if value in {"*", etag}:
+            return True
+    return False
+
+
+def _status_glyph(status: str) -> str:
+    return STATUS_GLYPHS.get(status, "•")
+
+
+def _status_label(status: str) -> str:
+    return STATUS_LABELS.get(status, status)
+
+
+def _relative_age(iso: str | None, now: datetime) -> str:
+    """Compact relative age for a claim badge (``12m``); empty when unparseable."""
+    if not iso:
+        return ""
+    try:
+        stamp = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return ""
+    seconds = max(0, int((now - stamp).total_seconds()))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h"
+    return f"{hours // 24}d"
+
+
+def _labels_html(task: Mapping[str, Any]) -> str:
+    labels = task.get("labels") or []
+    if not labels:
+        return ""
+    items = "".join(f'<li class="tag">{_esc(label)}</li>' for label in labels)
+    return f'<ul class="card__labels" aria-label="Labels">{items}</ul>'
+
+
+def _state_chips(task: Mapping[str, Any]) -> str:
+    chips: list[str] = []
+    if task.get("eligible"):
+        chips.append('<span class="state-chip" data-state="eligible">▷ eligible</span>')
+    if task.get("reviewable"):
+        chips.append('<span class="state-chip" data-state="reviewable">◐ reviewable</span>')
+    return "".join(chips)
+
+
+def _blocked_html(task: Mapping[str, Any]) -> str:
+    if not task.get("blocked"):
+        return ""
+    reason = str(task.get("blocked_reason") or "").strip()
+    if not reason:
+        blockers = task.get("blockers") or []
+        if blockers:
+            first = blockers[0]
+            code = str(first.get("code") or "blocked").replace("_", " ")
+            detail = first.get("task_id") or first.get("reason") or ""
+            reason = f"{code} {detail}".strip()
+    if not reason:
+        reason = "prerequisite unfinished"
+    return f'<p class="card__blocked">blocked: {_esc(reason)}</p>'
+
+
+def _claim_html(task: Mapping[str, Any], now: datetime) -> str:
+    holder = task.get("claimed_by")
+    claimed_at = task.get("claimed_at")
+    if not holder:
+        return ""
+    age = _relative_age(str(claimed_at) if claimed_at else None, now)
+    title = (
+        f"{holder} — claimed {age} ago ({claimed_at})"
+        if age
+        else f"{holder} ({claimed_at})"
     )
-    flags = "".join(
-        f'<span class="flag {css}">{_esc(text)}</span>' for css, text in _flags_for(task)
+    return (
+        '<p class="card__claim">'
+        f'<span class="claim-badge" title="{_esc(title)}">@{_esc(holder)}</span> '
+        f'<time class="card__claim-age" datetime="{_esc(claimed_at)}" '
+        f'title="{_esc(claimed_at)}">{_esc(age)}</time>'
+        "</p>"
     )
-    assignee = task["assignee"] or "-"
+
+
+def _card(task: Mapping[str, Any], now: datetime) -> str:
+    status = str(task["status"])
     return _render(
         "card.html",
         id=_esc(task["id"]),
         title=_esc(task["title"]),
-        status=_esc(task["status"]),
+        status=_esc(status),
+        status_label=_esc(_status_label(status)),
+        glyph=_esc(_status_glyph(status)),
         priority=_esc(task["priority"]),
-        assignee=_esc(assignee),
-        labels=labels,
-        flags=flags,
+        pips=_esc(PRIORITY_PIPS.get(str(task["priority"]), "")),
+        assignee=_esc(task["assignee"] or "-"),
+        labels=_labels_html(task),
+        state_chips=_state_chips(task),
+        blocked=_blocked_html(task),
+        claim=_claim_html(task, now),
+        blocked_flag="true" if task.get("blocked") else "false",
+        claimed_flag="true" if task.get("claimed_by") else "false",
     )
 
 
+def _without(query: Mapping[str, list[str]], key: str) -> str:
+    """The board URL with one filter removed; other filters survive."""
+    params = {name: values[0] for name, values in query.items() if values and name != key}
+    return _url(**params)
+
+
+def _active_chips(query: Mapping[str, list[str]]) -> str:
+    """One removable chip per active filter; each chip is a plain GET link."""
+    chips: list[str] = []
+    status = _first(query, "status")
+    if status:
+        chip = (
+            f'<span class="status-chip" data-status="{_esc(status)}">'
+            f'<span class="status-chip__glyph" aria-hidden="true">'
+            f"{_esc(_status_glyph(status))}</span> {_esc(_status_label(status))}</span>"
+        )
+        chips.append(
+            f'<a class="chip" href="{_esc(_without(query, "status"))}" '
+            f'aria-label="Remove status filter: {_esc(_status_label(status))}">'
+            f'{chip}<span class="chip__x" aria-hidden="true">✕</span></a>'
+        )
+    for key, label in (
+        ("assignee", "assignee"),
+        ("priority", "priority"),
+        ("label", "label"),
+    ):
+        value = _first(query, key)
+        if value:
+            chips.append(
+                f'<a class="chip" href="{_esc(_without(query, key))}" '
+                f'aria-label="Remove {label} filter: {_esc(value)}">'
+                f'{_esc(label)}: <strong>{_esc(value)}</strong>'
+                f'<span class="chip__x" aria-hidden="true">✕</span></a>'
+            )
+    for key, label in (("blocked", "blocked"), ("eligible", "eligible")):
+        if query.get(key):
+            chips.append(
+                f'<a class="chip" href="{_esc(_without(query, key))}" '
+                f'aria-label="Remove {label} filter">'
+                f'{_esc(label)}<span class="chip__x" aria-hidden="true">✕</span></a>'
+            )
+    if not chips:
+        return '<p class="filters__none">No filters — showing everything.</p>'
+    return "".join(chips)
+
+
 def _filter_form(query: Mapping[str, list[str]]) -> str:
+    """Filter chips plus a native disclosure holding the full GET form.
+
+    Active filters are plain links so removing one works without JavaScript;
+    the disclosure submits as a normal GET when scripts are absent. Status is a
+    radio group, not checkboxes: the existing contract accepts one status value
+    and two ticked boxes would silently drop one.
+    """
+
     def selected(key: str, option: str) -> str:
-        values = query.get(key)
-        return " selected" if values and values[0] == option else ""
+        return " selected" if _first(query, key) == option else ""
 
     def checked(key: str) -> str:
         return " checked" if query.get(key) else ""
 
-    status_options = "".join(
-        f'<option value="{_esc(status)}"{selected("status", status)}>{_esc(status)}</option>'
+    def value_of(key: str) -> str:
+        return _first(query, key)
+
+    status_radios = "".join(
+        f'<label class="inline"><input type="radio" name="status" '
+        f'value="{_esc(status)}"{" checked" if _first(query, "status") == status else ""}>'
+        f" {_esc(_status_label(status))}</label>"
         for status in STATUSES
     )
     priority_options = "".join(
         f'<option value="{_esc(pri)}"{selected("priority", pri)}>{_esc(pri)}</option>'
         for pri in PRIORITIES
     )
-    def value_of(key: str) -> str:
-        values = query.get(key)
-        return values[0] if values else ""
-
     return _render(
         "filters.html",
-        status_options=status_options,
+        chips=_active_chips(query),
+        status_radios=status_radios,
         priority_options=priority_options,
         assignee=_esc(value_of("assignee")),
         label=_esc(value_of("label")),
@@ -259,11 +429,94 @@ def _filter_form(query: Mapping[str, list[str]]) -> str:
     )
 
 
+def _count_anchor(
+    *,
+    href: str,
+    value: int,
+    key: str,
+    active: bool,
+    suffix: str,
+    inner: str = "",
+) -> str:
+    """A summary count as one tab stop; the suffix completes the accessible name."""
+    current = ' aria-current="true"' if active else ""
+    return (
+        f'<a class="count" href="{_esc(href)}" data-filter="{_esc(key)}"{current}>'
+        f"{inner}"
+        f'<span class="count__value">{value}</span>'
+        f'<span class="sr-only"> {_esc(suffix)}</span></a>'
+    )
+
+
+def _summary_bar(document: Mapping[str, Any], query: Mapping[str, list[str]]) -> str:
+    """The design 4.2 summary: headline four as a ``dl``, statuses as a ``ul``.
+
+    Claimed is rendered as static text rather than a link: this leg keeps the
+    existing six filter dimensions and the read models have no claimed filter,
+    so a claimed link would be a dead control.
+    """
+    counts = document["counts"]
+    active_status = _first(query, "status")
+    headline = "".join(
+        [
+            "<div class=\"summary__item\"><dt>total</dt><dd>"
+            + _count_anchor(
+                href="/board", value=int(counts["tasks"]), key="all",
+                active=False, suffix="tasks in total",
+            )
+            + "</dd></div>",
+            "<div class=\"summary__item\"><dt>eligible</dt><dd>"
+            + _count_anchor(
+                href="/board?eligible=1", value=int(counts["eligible"]),
+                key="eligible", active=bool(query.get("eligible")),
+                suffix="eligible tasks",
+            )
+            + "</dd></div>",
+            "<div class=\"summary__item\"><dt>blocked</dt><dd>"
+            + _count_anchor(
+                href="/board?blocked=1", value=int(counts["blocked"]),
+                key="blocked", active=bool(query.get("blocked")),
+                suffix="blocked tasks",
+            )
+            + "</dd></div>",
+            "<div class=\"summary__item\"><dt>claimed</dt><dd>"
+            f'<span class="count count--static" title="Claimed tasks are not '
+            f'filterable in this view">{int(counts["claimed"])}</span>'
+            '<span class="sr-only"> claimed tasks</span></dd></div>',
+        ]
+    )
+    status_items = "".join(
+        "<li>"
+        + _count_anchor(
+            href=f"/board?status={status}",
+            value=int(counts[status]),
+            key=f"status:{status}",
+            active=active_status == status,
+            suffix=f"{_status_label(status)} tasks",
+            inner=(
+                f'<span class="status-chip" data-status="{_esc(status)}">'
+                f'<span class="status-chip__glyph" aria-hidden="true">'
+                f"{_esc(_status_glyph(status))}</span> {_esc(_status_label(status))}</span>"
+            ),
+        )
+        + "</li>"
+        for status in STATUSES
+    )
+    return (
+        '<section class="summary" aria-labelledby="summary-heading">'
+        '<h2 id="summary-heading" class="sr-only">Board summary</h2>'
+        f'<dl class="summary__counts">{headline}</dl>'
+        f'<ul class="summary__status" aria-label="Counts by status">{status_items}</ul>'
+        "</section>"
+    )
+
+
 def _board_columns(
     tasks: Sequence[Mapping[str, Any]],
     *,
     status_selected: bool,
     query: Mapping[str, list[str]],
+    now: datetime,
 ) -> str:
     columns: list[str] = []
     for status in STATUSES:
@@ -274,7 +527,7 @@ def _board_columns(
             recent = sorted(group, key=lambda item: str(item["updated_at"]), reverse=True)
             shown = recent[:WEB_TERMINAL_LIMIT]
             hidden = len(recent) - len(shown)
-        cards = "".join(_card(task) for task in shown)
+        cards = "".join(_card(task, now) for task in shown)
         show_all = ""
         if hidden:
             params = {key: values[0] for key, values in query.items() if values}
@@ -288,8 +541,11 @@ def _board_columns(
             _render(
                 "column.html",
                 status=_esc(status),
+                status_label=_esc(_status_label(status)),
+                glyph=_esc(_status_glyph(status)),
                 total=str(len(group)),
                 cards=cards,
+                empty='<p class="column__empty">No tasks</p>' if not group else "",
                 show_all=show_all,
             )
         )
@@ -358,10 +614,10 @@ def _topological_depths(
     return depth
 
 
-def _badge_list(items: Sequence[Mapping[str, Any]]) -> str:
+def _badge_list(items: Sequence[Mapping[str, Any]], now: datetime) -> str:
     if not items:
         return '<p class="empty">None.</p>'
-    rows = "".join(_card(task) for task in items)
+    rows = "".join(_card(task, now) for task in items)
     return f'<ul class="cards">{rows}</ul>'
 
 
@@ -633,16 +889,38 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
 
         status, content_type, body = self._respond(path, query)
 
+        request_etag = self.headers.get("If-None-Match")
+        headers: dict[str, str] = {}
+        if content_type == JSON_CONTENT_TYPE:
+            # Strong validator over the canonical JSON body (design 6.1).
+            response_etag = _etag(body)
+            headers["ETag"] = response_etag
+            headers["Cache-Control"] = "no-cache"
+            if _if_none_match_matches(request_etag, response_etag):
+                self._send(
+                    HTTPStatus.NOT_MODIFIED,
+                    content_type,
+                    b"",
+                    include_body=False,
+                    extra_headers=headers,
+                )
+                return
+        else:
+            # HTML and static assets are never cached by the browser.
+            headers["Cache-Control"] = "no-store"
+
         if status == HTTPStatus.METHOD_NOT_ALLOWED:
             self._send(
                 status,
                 content_type,
                 body,
                 include_body=include_body,
-                extra_headers={"Allow": "GET, HEAD"},
+                extra_headers={**headers, "Allow": "GET, HEAD"},
             )
             return
-        self._send(status, content_type, body, include_body=include_body)
+        self._send(
+            status, content_type, body, include_body=include_body, extra_headers=headers
+        )
 
     def _respond(
         self, path: str, query: Mapping[str, list[str]]
@@ -743,25 +1021,26 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
     ) -> str:
         filters = _board_filters(query)
         document = views.board_document(conn, **filters)
+        now = datetime.now(UTC)
         content = _render(
             "board.html",
             memo=_memo_panel(conn),
+            summary=_summary_bar(document, query),
             filters=_filter_form(query),
             counts_line=_esc(_counts_line(document["counts"])),
-            project=_esc(document["project"]),
-            database=_esc(str(self._config.database_path)),
             columns=_board_columns(
                 document["tasks"],
                 status_selected=filters["status"] is not None,
                 query=query,
+                now=now,
             ),
-            interval=str(AUTO_REFRESH_SECONDS),
         )
         return self._shell(
             title="Board",
             project=document["project"],
+            current="board",
             content=content,
-            scripts='<script src="/static/refresh.js" defer></script>',
+            scripts='<script src="/static/board.js" defer></script>',
         )
 
     def _graph_page(
@@ -781,6 +1060,7 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
         return self._shell(
             title="Dependency graph",
             project=project,
+            current="graph",
             content=content,
             scripts='<script src="/static/graph.js" defer></script>',
         )
@@ -788,6 +1068,7 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
     def _task_page(self, conn: sqlite3.Connection, task_id: str) -> str:
         document = views.task_document(conn, task_id)
         task = document["task"]
+        now = datetime.now(UTC)
         claim = document["claim"]
         claim_text = "none"
         if claim is not None:
@@ -815,24 +1096,37 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
             updated=_esc(task["updated_at"]),
             completed=_esc(task["completed_at"] or "-"),
             version=_esc(str(task["version"])),
-            prerequisites=_badge_list(document["prerequisites"]),
-            dependents=_badge_list(document["dependents"]),
+            prerequisites=_badge_list(document["prerequisites"], now),
+            dependents=_badge_list(document["dependents"], now),
             notes=_note_list(document["notes"]),
             history=_history_list(document["history"]),
         )
         return self._shell(
             title=f"{task['id']} {task['title']}",
             project=schema.database_label(conn),
+            current="board",
             content=content,
             scripts="",
         )
 
-    def _shell(self, *, title: str, project: str, content: str, scripts: str) -> str:
+    def _shell(
+        self, *, title: str, project: str, current: str, content: str, scripts: str
+    ) -> str:
+        nav = "".join(
+            f'<a href="{href}"'
+            + (' aria-current="page"' if name == current else "")
+            + f">{label}</a>"
+            for name, label, href in (
+                ("board", "Board", "/board"),
+                ("graph", "Graph", "/graph"),
+            )
+        )
         return _render(
             "base.html",
             title=_esc(title),
             project=_esc(project),
             database=_esc(str(self._config.database_path)),
+            nav=nav,
             content=content,
             scripts=scripts,
         )
@@ -858,8 +1152,9 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
         extra_headers: Mapping[str, str] | None = None,
     ) -> None:
         self.send_response(int(status))
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        if int(status) != HTTPStatus.NOT_MODIFIED:
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
         self.send_header("X-Content-Type-Options", NOSNIFF)
         for key, value in (extra_headers or {}).items():
@@ -975,7 +1270,6 @@ def serve(
 
 
 __all__ = [
-    "AUTO_REFRESH_SECONDS",
     "CONTENT_SECURITY_POLICY",
     "DEFAULT_HOST",
     "DEFAULT_PORT",

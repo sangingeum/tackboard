@@ -1,24 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="auto">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff">
 <title>$title &#8212; tackboard</title>
+<script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">tackboard</div>
-  <nav class="nav">
-    <a href="/board">Board</a>
-    <a href="/graph">Graph</a>
+  <a class="brand" href="/board">tackboard</a>
+  <nav class="nav" aria-label="Views">
+$nav
   </nav>
   <p class="identity">
-    <span class="identity-label">project</span>
-    <strong>$project</strong>
-    <span class="identity-label">database</span>
+    <span class="identity__label">project</span>
+    <strong class="identity__value">$project</strong>
+    <span class="identity__label">database</span>
     <code>$database</code>
   </p>
+  <button type="button" class="theme-toggle" id="theme-toggle"
+          aria-label="Theme: auto (follows system)" title="Theme: auto (follows system)">
+    <span class="theme-toggle__glyph" aria-hidden="true">&#9686;</span>
+    <span class="theme-toggle__label">auto</span>
+  </button>
 </header>
 <main id="content">
 $content
