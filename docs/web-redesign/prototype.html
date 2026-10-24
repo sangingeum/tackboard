@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<!--
+  tackboard web redesign — review-only prototype (board card T-000041).
+
+  HOW TO REVIEW
+    1. Open this file directly: file:///…/docs/web-redesign/prototype.html
+       or serve the directory:  cd docs/web-redesign && python3 -m http.server 8000
+       then open http://localhost:8000/prototype.html
+    2. Try the theme button (auto → light → dark), the summary counts, the
+       filter chips, "Highlight claimed", "Focus claimed", "Hide done &
+       cancelled", the graph pan/zoom, and press "?" for shortcuts.
+
+  This file is a static artifact. It is never served by `tack`, never
+  referenced from a production template, and makes no network requests.
+  No inline scripts, no inline styles, no style attributes, no external hosts.
+-->
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f7f8fa">
+  <title>tackboard web redesign — component gallery</title>
+  <script src="prototype-theme.js"></script>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="#main-content">tackboard</a>
+  <nav class="nav" aria-label="Views">
+    <a href="#board" aria-current="page">Board</a>
+    <a href="#task">Task</a>
+    <a href="#graph">Graph</a>
+  </nav>
+  <p class="identity">
+    <span class="identity__label">project</span>
+    <strong class="identity__value">agent-a</strong>
+    <span class="identity__label">database</span>
+    <code>~/.hermes/state/tackboard/tackboard.sqlite3</code>
+  </p>
+  <button type="button" class="theme-toggle" id="theme-toggle"
+          aria-label="Theme: auto (follows system)" title="Theme: auto (follows system)">
+    <span class="theme-toggle__glyph" aria-hidden="true">&#9680;</span>
+    <span class="theme-toggle__label">auto</span>
+  </button>
+  <button type="button" class="tool-button" id="help-open"
+          aria-haspopup="dialog" aria-controls="help">Keyboard shortcuts</button>
+</header>
+
+<main id="main-content">
+
+  <p class="section__note">
+    Review artifact — a static gallery of the design system in
+    <code>design-system.md</code>. Sample data is invented; nothing here talks to
+    a server. Every component below is the production vocabulary.
+  </p>
+
+  <!-- ------------------------------------------------------------ board -->
+  <section class="section" id="board" aria-labelledby="board-heading">
+    <h2 class="section__heading" id="board-heading">Board — summary, filters, cards</h2>
+
+    <div class="panel">
+      <section class="summary" aria-labelledby="summary-heading">
+        <h3 class="sr-only" id="summary-heading">Board summary</h3>
+        <dl class="summary__counts">
+          <div class="summary__item"><dt>total</dt>
+            <dd><a class="count" href="#board" data-filter="all">14</a></dd></div>
+          <div class="summary__item"><dt>eligible</dt>
+            <dd><a class="count" href="#board" data-filter="eligible">2</a></dd></div>
+          <div class="summary__item"><dt>blocked</dt>
+            <dd><a class="count" href="#board" data-filter="blocked">3</a></dd></div>
+          <div class="summary__item"><dt>claimed</dt>
+            <dd><a class="count" href="#board" data-filter="claimed">3</a></dd></div>
+        </dl>
+        <ul class="summary__status" aria-label="Counts by status">
+          <li><a class="count" href="#board" data-filter="status:backlog">
+            <span class="status-chip" data-status="backlog"><span class="status-chip__glyph"
+              aria-hidden="true">&#8230;</span> backlog</span>
+            <span class="count__value">3</span></a></li>
+          <li><a class="count" href="#board" data-filter="status:ready">
+            <span class="status-chip" data-status="ready"><span class="status-chip__glyph"
+              aria-hidden="true">&#9655;</span> ready</span>
+            <span class="count__value">2</span></a></li>
+          <li><a class="count" href="#board" data-filter="status:in_progress">
+            <span class="status-chip" data-status="in_progress"><span class="status-chip__glyph"
+              aria-hidden="true">&#9654;</span> in progress</span>
+            <span class="count__value">3</span></a></li>
+          <li><a class="count" href="#board" data-filter="status:review">
+            <span class="status-chip" data-status="review"><span class="status-chip__glyph"
+              aria-hidden="true">&#9680;</span> review</span>
+            <span class="count__value">1</span></a></li>
+          <li><a class="count" href="#board" data-filter="status:done">
+            <span class="status-chip" data-status="done"><span class="status-chip__glyph"
+              aria-hidden="true">&#10003;</span> done</span>
+            <span class="count__value">3</span></a></li>
+          <li><a class="count" href="#board" data-filter="status:cancelled">
+            <span class="status-chip" data-status="cancelled"><span class="status-chip__glyph"
+              aria-hidden="true">&#10005;</span> cancelled</span>
+            <span class="count__value">2</span></a></li>
+        </ul>
+        <p class="refresh" id="filter-status-line">
+          <span id="filter-summary">Showing all 14 tasks</span>
+        </p>
+      </section>
+    </div>
+
+    <div class="panel filters">
+      <form method="get" action="#board" role="search" aria-label="Filter tasks"
+            id="filter-form">
+        <div class="filters__chips" id="active-filters" role="group"
+             aria-label="Active filters"></div>
+        <details class="filters__more" id="filters-more">
+          <summary class="chip chip--add">Add filter</summary>
+          <fieldset class="filters__panel">
+            <legend>Filters</legend>
+            <label for="filter-assignee">assignee</label>
+            <input id="filter-assignee" type="text" name="assignee" value="">
+            <label for="filter-label">label</label>
+            <input id="filter-label" type="text" name="label" value="">
+            <label><input type="checkbox" name="blocked" value="1"> blocked</label>
+            <label><input type="checkbox" name="eligible" value="1"> eligible</label>
+            <button type="submit">Apply</button>
+            <a class="reset" href="#board" id="reset-filters">Reset all</a>
+          </fieldset>
+        </details>
+      </form>
+    </div>
+
+    <div class="board" id="board-columns">
+      <section class="column" data-status="backlog" aria-labelledby="col-backlog">
+        <h3 class="column__title" id="col-backlog">
+          <span class="status-chip" data-status="backlog"><span class="status-chip__glyph"
+            aria-hidden="true">&#8230;</span> backlog</span>
+          <span class="column__count">3</span>
+        </h3>
+        <ol class="cards">
+          <li class="card" data-task="T-000043" data-status="backlog" data-priority="low"
+              data-blocked="true" data-eligible="false" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#8230;</span>
+              <a class="card__id" href="#task">T-000043</a>
+              <span class="card__title">Drop the legacy export column</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="low"><span class="priority__pips"
+                aria-hidden="true">&#9601;</span> low</span>
+              <span>unassigned</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">schema</li></ul>
+            <p class="card__blocked">blocked: prerequisite T-000038 was cancelled</p>
+          </li>
+          <li class="card" data-task="T-000048" data-status="backlog" data-priority="normal"
+              data-blocked="false" data-eligible="false" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#8230;</span>
+              <a class="card__id" href="#task">T-000048</a>
+              <span class="card__title">Markdown renderer for task notes</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="normal"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;</span> normal</span>
+              <span>unassigned</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">web-redesign</li></ul>
+          </li>
+          <li class="card" data-task="T-000051" data-status="backlog" data-priority="normal"
+              data-blocked="true" data-eligible="false" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#8230;</span>
+              <a class="card__id" href="#task">T-000051</a>
+              <span class="card__title">Remove the legacy export column from the API</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="normal"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;</span> normal</span>
+              <span>unassigned</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels">
+              <li class="tag">schema</li><li class="tag">api</li></ul>
+            <p class="card__blocked">blocked: prerequisite T-000043 is not done</p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="column" data-status="ready" aria-labelledby="col-ready">
+        <h3 class="column__title" id="col-ready">
+          <span class="status-chip" data-status="ready"><span class="status-chip__glyph"
+            aria-hidden="true">&#9655;</span> ready</span>
+          <span class="column__count">2</span>
+        </h3>
+        <ol class="cards">
+          <li class="card" data-task="T-000042" data-status="ready" data-priority="high"
+              data-blocked="false" data-eligible="true" data-claimed="true" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#9655;</span>
+              <a class="card__id" href="#task">T-000042</a>
+              <span class="card__title">Theme bootstrap without a flash of wrong theme</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="high"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;&#9601;</span> high</span>
+              <span>agent-a</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">web-redesign</li></ul>
+            <p class="card__claim">
+              <span class="claim-badge" title="agent-a (claimed 2026-10-24T09:40:00Z)">@agent-a</span>
+              <span>claimed 12m ago</span>
+            </p>
+          </li>
+          <li class="card" data-task="T-000049" data-status="ready" data-priority="normal"
+              data-blocked="false" data-eligible="true" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#9655;</span>
+              <a class="card__id" href="#task">T-000049</a>
+              <span class="card__title">Keyboard shortcut layer and help overlay</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="normal"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;</span> normal</span>
+              <span>agent-c</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels">
+              <li class="tag">web-redesign</li><li class="tag">accessibility</li></ul>
+            <p class="card__meta"><span class="state-chip" data-state="eligible">&#9655; eligible</span></p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="column" data-status="in_progress" aria-labelledby="col-in-progress">
+        <h3 class="column__title" id="col-in-progress">
+          <span class="status-chip" data-status="in_progress"><span class="status-chip__glyph"
+            aria-hidden="true">&#9654;</span> in progress</span>
+          <span class="column__count">3</span>
+        </h3>
+        <ol class="cards">
+          <li class="card" data-task="T-000040" data-status="in_progress" data-priority="high"
+              data-blocked="false" data-eligible="false" data-claimed="true" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#9654;</span>
+              <a class="card__id" href="#task">T-000040</a>
+              <span class="card__title">Claim table indexes</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="high"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;&#9601;</span> high</span>
+              <span>agent-e</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels">
+              <li class="tag">schema</li><li class="tag">performance</li></ul>
+            <p class="card__claim">
+              <span class="claim-badge" title="agent-e (claimed 2026-10-24T07:12:00Z)">@agent-e</span>
+              <span>claimed 2h ago</span>
+            </p>
+          </li>
+          <li class="card" data-task="T-000041" data-status="in_progress" data-priority="high"
+              data-blocked="false" data-eligible="false" data-claimed="true" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#9654;</span>
+              <a class="card__id" href="#task">T-000041</a>
+              <span class="card__title">Design system and UX specification for the read-only web view</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="high"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;&#9601;</span> high</span>
+              <span>agent-a</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">web-redesign</li></ul>
+            <p class="card__claim">
+              <span class="claim-badge" title="agent-a (claimed 2026-10-24T09:37:06Z)">@agent-a</span>
+              <span>claimed 15m ago</span>
+            </p>
+          </li>
+          <li class="card" data-task="T-000045" data-status="in_progress" data-priority="urgent"
+              data-blocked="true" data-eligible="false" data-claimed="true" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#9654;</span>
+              <a class="card__id" href="#task">T-000045</a>
+              <span class="card__title">Graph pointer navigation overhaul</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="urgent"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;&#9601;&#9601;</span> urgent</span>
+              <span>agent-e</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels">
+              <li class="tag">web-redesign</li><li class="tag">graph</li></ul>
+            <p class="card__blocked">blocked: prerequisite T-000040 is not done</p>
+            <p class="card__claim">
+              <span class="claim-badge" title="agent-e (claimed 2026-10-24T06:30:00Z)">@agent-e</span>
+              <span>claimed 2h ago</span>
+            </p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="column" data-status="review" aria-labelledby="col-review">
+        <h3 class="column__title" id="col-review">
+          <span class="status-chip" data-status="review"><span class="status-chip__glyph"
+            aria-hidden="true">&#9680;</span> review</span>
+          <span class="column__count">1</span>
+        </h3>
+        <ol class="cards">
+          <li class="card" data-task="T-000044" data-status="review" data-priority="normal"
+              data-blocked="false" data-eligible="false" data-claimed="true" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#9680;</span>
+              <a class="card__id" href="#task">T-000044</a>
+              <span class="card__title">Polling and ETag refresh for the board</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="normal"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;</span> normal</span>
+              <span>agent-b</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels">
+              <li class="tag">web-redesign</li><li class="tag">performance</li></ul>
+            <p class="card__claim">
+              <span class="claim-badge" title="agent-b (claimed 2026-10-24T08:05:00Z)">@agent-b</span>
+              <span>claimed 1h ago</span>
+            </p>
+            <p class="card__meta"><span class="state-chip" data-state="reviewable">&#9680; reviewable</span></p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="column" data-status="done" aria-labelledby="col-done">
+        <h3 class="column__title" id="col-done">
+          <span class="status-chip" data-status="done"><span class="status-chip__glyph"
+            aria-hidden="true">&#10003;</span> done</span>
+          <span class="column__count">3</span>
+        </h3>
+        <ol class="cards">
+          <li class="card" data-task="T-000039" data-status="done" data-priority="normal"
+              data-blocked="false" data-eligible="false" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#10003;</span>
+              <a class="card__id" href="#task">T-000039</a>
+              <span class="card__title">Schema migration for claim timestamps</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="normal"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;</span> normal</span>
+              <span>agent-c</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">schema</li></ul>
+          </li>
+          <li class="card" data-task="T-000047" data-status="done" data-priority="normal"
+              data-blocked="false" data-eligible="false" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#10003;</span>
+              <a class="card__id" href="#task">T-000047</a>
+              <span class="card__title">Export script test coverage</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="normal"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;</span> normal</span>
+              <span>agent-d</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">tests</li></ul>
+          </li>
+          <li class="card" data-task="T-000050" data-status="done" data-priority="low"
+              data-blocked="false" data-eligible="false" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#10003;</span>
+              <a class="card__id" href="#task">T-000050</a>
+              <span class="card__title">Retire the old refresh script</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="low"><span class="priority__pips"
+                aria-hidden="true">&#9601;</span> low</span>
+              <span>unassigned</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">web-redesign</li></ul>
+          </li>
+        </ol>
+      </section>
+
+      <section class="column" data-status="cancelled" aria-labelledby="col-cancelled">
+        <h3 class="column__title" id="col-cancelled">
+          <span class="status-chip" data-status="cancelled"><span class="status-chip__glyph"
+            aria-hidden="true">&#10005;</span> cancelled</span>
+          <span class="column__count">2</span>
+        </h3>
+        <ol class="cards">
+          <li class="card" data-task="T-000038" data-status="cancelled" data-priority="low"
+              data-blocked="false" data-eligible="false" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#10005;</span>
+              <a class="card__id" href="#task">T-000038</a>
+              <span class="card__title">Retire the legacy export script</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="low"><span class="priority__pips"
+                aria-hidden="true">&#9601;</span> low</span>
+              <span>unassigned</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">tooling</li></ul>
+          </li>
+          <li class="card" data-task="T-000046" data-status="cancelled" data-priority="normal"
+              data-blocked="false" data-eligible="false" data-claimed="false" tabindex="-1">
+            <div class="card__head">
+              <span class="card__glyph" aria-hidden="true">&#10005;</span>
+              <a class="card__id" href="#task">T-000046</a>
+              <span class="card__title">Old dashboard layout</span>
+            </div>
+            <div class="card__meta">
+              <span class="priority" data-priority="normal"><span class="priority__pips"
+                aria-hidden="true">&#9601;&#9601;</span> normal</span>
+              <span>unassigned</span>
+            </div>
+            <ul class="card__labels" aria-label="Labels"><li class="tag">web-redesign</li></ul>
+          </li>
+        </ol>
+      </section>
+    </div>
+
+    <p class="refresh">
+      <button type="button" class="tool-button" id="poll-toggle" aria-pressed="false">Pause updates</button>
+      <span id="last-updated">updated just now</span>
+      <span class="refresh__dot" aria-hidden="true">&#9679;</span>
+    </p>
+  </section>
+
+  <!-- ------------------------------------------------------------- task -->
+  <section class="section" id="task" aria-labelledby="task-heading">
+    <h2 class="section__heading" id="task-heading">Task page — header, facts, timeline</h2>
+
+    <div class="panel">
+      <header class="task-header">
+        <p class="task-header__eyebrow">
+          <span class="status-chip" data-status="in_progress"><span class="status-chip__glyph"
+            aria-hidden="true">&#9654;</span> in progress</span>
+          <span class="priority" data-priority="high"><span class="priority__pips"
+            aria-hidden="true">&#9601;&#9601;&#9601;</span> high</span>
+        </p>
+        <h3 class="task-header__title">
+          <span class="task-header__id">T-000041</span>
+          Design system and UX specification for the read-only web view
+        </h3>
+        <ul class="readiness" aria-label="Readiness">
+          <li><span class="state-chip" data-state="claimed">&#9678; claimed by agent-a</span></li>
+          <li><span class="state-chip" data-state="eligible">&#9655; eligible</span></li>
+        </ul>
+      </header>
+
+      <dl class="facts">
+        <dt>status</dt><dd><span class="status-chip" data-status="in_progress">
+          <span class="status-chip__glyph" aria-hidden="true">&#9654;</span> in progress</span></dd>
+        <dt>priority</dt><dd><span class="priority" data-priority="high">
+          <span class="priority__pips" aria-hidden="true">&#9601;&#9601;&#9601;</span> high</span></dd>
+        <dt>assignee</dt><dd>agent-a</dd>
+        <dt>labels</dt><dd><span class="tag">web-redesign</span></dd>
+        <dt>claim</dt><dd>agent-a, claimed <time datetime="2026-10-24T09:37:06Z">15m ago</time></dd>
+        <dt>dependency ready</dt><dd>yes</dd>
+        <dt>created</dt><dd><time datetime="2026-10-24T09:30:54Z">24 Oct 09:30</time></dd>
+        <dt>updated</dt><dd><time datetime="2026-10-24T09:37:06Z">24 Oct 09:37</time></dd>
+        <dt>version</dt><dd>2</dd>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <h3 class="section__heading">Derived blockers</h3>
+      <p class="section__note">No derived blockers.</p>
+    </div>
+
+    <div class="panel">
+      <nav class="links" aria-labelledby="prereq-heading">
+        <h3 class="section__heading" id="prereq-heading">Prerequisites</h3>
+        <p class="section__note">These must finish before this task can start.</p>
+        <ul class="link-list">
+          <li class="link-list__item" data-status="done">
+            <a href="#task">T-000039</a>
+            <span class="link-list__title">Schema migration for claim timestamps</span>
+            <span class="status-chip" data-status="done"><span class="status-chip__glyph"
+              aria-hidden="true">&#10003;</span> done</span>
+          </li>
+        </ul>
+      </nav>
+      <nav class="links" aria-labelledby="dependents-heading">
+        <h3 class="section__heading" id="dependents-heading">Dependents</h3>
+        <p class="section__note">These wait for this task.</p>
+        <ul class="link-list">
+          <li class="link-list__item" data-status="review">
+            <a href="#task">T-000044</a>
+            <span class="link-list__title">Polling and ETag refresh for the board</span>
+            <span class="status-chip" data-status="review"><span class="status-chip__glyph"
+              aria-hidden="true">&#9680;</span> review</span>
+          </li>
+          <li class="link-list__item" data-status="done">
+            <a href="#task">T-000050</a>
+            <span class="link-list__title">Retire the old refresh script</span>
+            <span class="status-chip" data-status="done"><span class="status-chip__glyph"
+              aria-hidden="true">&#10003;</span> done</span>
+          </li>
+        </ul>
+      </nav>
+    </div>
+
+    <div class="panel">
+      <h3 class="section__heading">Description</h3>
+      <div class="prose" id="description-prose"></div>
+      <pre class="description" id="description-fallback">## What this leg delivers
+
+A design system and a UX specification for the read-only web view, plus a
+static review prototype. **No production code changes.**
+
+The status language must work without colour:
+
+- six shapes, six glyphs, six words
+- claimed is an overlay, not a status
+- *blocked* and *reviewable* are derived flags
+
+Read the full document for the measured contrast pairs. See the
+[WCAG 2.2 quick reference](https://www.w3.org/WAI/WCAG22/quickref/) and the
+[MDN custom properties guide](https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties).
+
+```text
+A -> B   means B depends on A
+```
+
+That is the only direction rule in the whole view.</pre>
+    </div>
+
+    <div class="panel">
+      <h3 class="section__heading">Notes and history</h3>
+      <ol class="timeline" aria-label="Notes and history, newest first">
+        <li class="timeline__item" data-kind="note">
+          <p class="timeline__meta">
+            <time datetime="2026-10-24T09:31:00Z">24 Oct 09:31</time>
+            <span class="timeline__actor">agent-a</span>
+            <span class="timeline__kind">note</span>
+          </p>
+          <div class="prose">
+            <p>Read the owner brief and the current web layer. The graph already carries
+              <code>claimed_by</code> but not <code>claimed_at</code>, so the design proposes
+              one additive field on the shared projection.</p>
+            <ul>
+              <li>no inline scripts or style attributes</li>
+              <li>every response keeps the CSP and <code>nosniff</code></li>
+              <li>never rely on colour alone</li>
+            </ul>
+          </div>
+        </li>
+        <li class="timeline__item" data-kind="event">
+          <p class="timeline__meta">
+            <time datetime="2026-10-24T09:37:06Z">24 Oct 09:37</time>
+            <span class="timeline__actor">agent-a</span>
+            <span class="timeline__kind">status</span>
+          </p>
+          <p class="timeline__payload">ready &#8594; in_progress</p>
+        </li>
+        <li class="timeline__item" data-kind="event">
+          <p class="timeline__meta">
+            <time datetime="2026-10-24T09:30:54Z">24 Oct 09:30</time>
+            <span class="timeline__actor">orchestrator</span>
+            <span class="timeline__kind">created</span>
+          </p>
+          <p class="timeline__payload">task created, priority high</p>
+        </li>
+      </ol>
+      <p class="section__note">Earlier history is available through <code>tack history</code>.</p>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------ graph -->
+  <section class="section" id="graph" aria-labelledby="graph-heading">
+    <h2 class="section__heading" id="graph-heading">Dependency graph — shapes, claimed, hide-closed</h2>
+
+    <div class="graph-toolbar" role="toolbar" aria-label="Graph controls"
+         aria-orientation="horizontal">
+      <div class="graph-toolbar__group">
+        <button type="button" class="tool-button" data-graph-action="zoom-in"
+                aria-label="Zoom in">+</button>
+        <button type="button" class="tool-button" data-graph-action="zoom-out"
+                aria-label="Zoom out">&#8722;</button>
+        <button type="button" class="tool-button" data-graph-action="fit-all">Fit all</button>
+        <button type="button" class="tool-button" data-graph-action="zoom-reset">100%</button>
+      </div>
+      <button type="button" class="tool-button" id="highlight-claimed"
+              aria-pressed="true">Highlight claimed</button>
+      <button type="button" class="tool-button" id="focus-claimed"
+              aria-pressed="false">Focus claimed</button>
+      <button type="button" class="tool-button" id="hide-closed"
+              aria-pressed="false">Hide done &amp; cancelled</button>
+      <span class="graph-toolbar__count" id="graph-count">14 nodes &#183; 9 edges</span>
+      <span class="graph-toolbar__count" id="hidden-count" role="status"></span>
+    </div>
+
+    <div class="graph" id="graph-root" data-claim-highlight="true"
+         data-focus-claimed="false" data-dimmed="false" data-lod="full">
+      <svg class="graph__svg" id="graph-svg" role="group"
+           aria-roledescription="dependency graph"
+           aria-label="Dependency graph: 14 tasks, 9 links. Press question mark for shortcuts."
+           tabindex="0" focusable="true">
+        <defs>
+          <pattern id="hatch-blocked" width="8" height="8"
+                   patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line class="hatch-line" x1="0" y1="0" x2="0" y2="8" stroke-width="2"></line>
+          </pattern>
+        </defs>
+        <g class="viewport" id="graph-viewport"></g>
+        <g class="tooltip" id="graph-tooltip" role="tooltip" hidden>
+          <rect class="tooltip__bg" x="0" y="0" width="264" height="86" rx="6"></rect>
+          <text class="tooltip__id" x="12" y="20"></text>
+          <text class="tooltip__title" x="12" y="38"></text>
+          <text class="tooltip__row" x="12" y="56"></text>
+          <text class="tooltip__row" x="12" y="72"></text>
+        </g>
+      </svg>
+      <div class="minimap" id="minimap" hidden>
+        <svg class="minimap__svg" id="minimap-svg" role="img"
+             aria-label="Overview of the whole graph"></svg>
+      </div>
+    </div>
+
+    <div class="selection-panel" id="selection-panel" hidden>
+      <p><strong id="selection-title"></strong></p>
+      <p class="section__note" id="selection-meta"></p>
+      <p><a id="selection-link" href="#task">Open task page</a></p>
+    </div>
+
+    <section class="legend" aria-labelledby="legend-heading">
+      <h3 class="section__heading" id="legend-heading">Legend</h3>
+      <ul class="legend__items">
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            data-status="backlog" aria-hidden="true"><rect class="lg-shape" x="1" y="1"
+            width="18" height="12" rx="2" stroke-dasharray="4 3"></rect></svg>backlog</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            data-status="ready" aria-hidden="true"><circle class="lg-shape" cx="10" cy="7"
+            r="6"></circle></svg>ready</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            data-status="in_progress" aria-hidden="true"><polygon class="lg-shape"
+            points="10,1 19,7 10,13 1,7"></polygon></svg>in progress</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            data-status="review" aria-hidden="true"><polygon class="lg-shape"
+            points="4,1 16,1 19,7 16,13 4,13 1,7"></polygon></svg>review</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            data-status="done" aria-hidden="true"><rect class="lg-shape" x="2" y="2"
+            width="16" height="10"></rect></svg>done</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            data-status="cancelled" aria-hidden="true"><polygon class="lg-shape"
+            points="6,1 14,1 19,4 19,10 14,13 6,13 1,10 1,4"
+            stroke-dasharray="2 2"></polygon></svg>cancelled</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            aria-hidden="true"><rect x="1" y="1" width="18" height="12" rx="3"
+            fill="none" stroke="currentColor" stroke-width="2"></rect>
+            <rect x="4" y="4" width="12" height="6" rx="2" fill="none"
+            stroke="currentColor" stroke-width="1"></rect></svg>claimed &#8212; double ring + holder badge</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            aria-hidden="true"><rect x="1" y="1" width="18" height="12" rx="2"
+            fill="url(#hatch-blocked)" stroke="currentColor" stroke-width="2"></rect></svg>blocked &#8212; hatched</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            aria-hidden="true"><rect x="1" y="1" width="18" height="12" rx="2"
+            fill="none" stroke="currentColor" stroke-width="1"></rect>
+            <polygon points="19,1 13,1 19,7" fill="currentColor"></polygon></svg>eligible &#8212; corner tab</li>
+        <li class="legend__item"><svg class="legend__shape" viewBox="0 0 20 14"
+            aria-hidden="true"><rect x="1" y="1" width="18" height="12" rx="2"
+            fill="none" stroke="currentColor" stroke-width="1"></rect>
+            <line x1="1" y1="4" x2="19" y2="4" stroke="currentColor"
+            stroke-width="2"></line></svg>reviewable &#8212; double top edge</li>
+        <li class="legend__item legend__direction">A &#8594; B means B depends on A</li>
+      </ul>
+    </section>
+
+    <details class="outline" id="outline" open>
+      <summary>Dependency outline (server-rendered in production; works without JavaScript)</summary>
+      <ul class="outline__list" id="outline-list"></ul>
+    </details>
+  </section>
+
+  <p class="sr-only" id="board-live" role="status" aria-live="polite" aria-atomic="true"></p>
+</main>
+
+<footer class="footer">
+  <p>Read-only view. Every change goes through the <code>tack</code> CLI.
+     Static review artifact — not a production page.</p>
+</footer>
+
+<dialog class="help" id="help" aria-labelledby="help-heading">
+  <h2 id="help-heading">Keyboard shortcuts</h2>
+  <table class="help__table">
+    <thead><tr><th scope="col">Key</th><th scope="col">Action</th></tr></thead>
+    <tbody>
+      <tr><th><span class="help__keys">g</span> then <span class="help__keys">b</span></th>
+        <td>Go to board</td></tr>
+      <tr><th><span class="help__keys">g</span> then <span class="help__keys">g</span></th>
+        <td>Go to graph</td></tr>
+      <tr><th><span class="help__keys">/</span></th><td>Focus the filter input</td></tr>
+      <tr><th><span class="help__keys">f</span></th><td>Open filters</td></tr>
+      <tr><th><span class="help__keys">j</span> / <span class="help__keys">k</span></th>
+        <td>Next / previous card</td></tr>
+      <tr><th><span class="help__keys">Enter</span></th>
+        <td>Open the focused card or the selected node's task page</td></tr>
+      <tr><th><span class="help__keys">t</span></th><td>Cycle theme</td></tr>
+      <tr><th><span class="help__keys">c</span></th><td>Toggle "Highlight claimed"</td></tr>
+      <tr><th><span class="help__keys">h</span></th><td>Toggle "Hide done &amp; cancelled"</td></tr>
+      <tr><th><span class="help__keys">+</span> / <span class="help__keys">&#8722;</span> /
+        <span class="help__keys">0</span></th><td>Zoom in / out / fit</td></tr>
+      <tr><th>Arrow keys</th><td>Pan the graph; move along edges when a node is active</td></tr>
+      <tr><th><span class="help__keys">?</span></th><td>Show this help</td></tr>
+      <tr><th><span class="help__keys">Esc</span></th>
+        <td>Close this overlay / clear selection</td></tr>
+    </tbody>
+  </table>
+  <button type="button" class="help__close" id="help-close">Close</button>
+</dialog>
+
+<script src="prototype-data.js"></script>
+<script src="prototype.js" defer></script>
+</body>
+</html>
