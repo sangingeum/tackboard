@@ -17,6 +17,11 @@ so full inline scripts and inline styles are impossible by design.
 - graph.js   the dependency graph renderer and the server-rendered fallback's
              client-side counterpart. The indented outline under the canvas
              stays readable with JavaScript disabled.
+- markdown.js the in-house task-text renderer: builds DOM nodes with
+             createElement and textContent, supports a small Markdown subset
+             (paragraphs, headings, lists, fenced/inline code, bold, italic and
+             http(s)-only links), and replaces the server-rendered
+             <pre class="description"> fallback only after a successful build.
 
 Status is encoded in shape, glyph and text as well as colour: backlog is a
 dashed rounded rectangle, ready a circle, in progress a diamond, review a

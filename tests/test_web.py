@@ -591,6 +591,83 @@ def test_task_text_round_trips_intact_through_json(
 
 
 # --------------------------------------------------------------------------- #
+# task page redesign and in-house Markdown renderer
+# --------------------------------------------------------------------------- #
+
+FORBIDDEN_JS_APIS = (
+    "innerHTML",
+    "outerHTML",
+    "insertAdjacentHTML",
+    "document.write",
+    "eval",
+    "new Function",
+)
+
+
+def test_markdown_asset_is_served_with_security_headers(server: WebClient) -> None:
+    response = server.request("/static/markdown.js")
+    assert response.status == 200
+    assert response.headers["Content-Type"].startswith("text/javascript")
+    assert response.headers.get("Content-Security-Policy") == "default-src 'self'"
+    assert response.headers.get("X-Content-Type-Options") == "nosniff"
+
+
+def test_served_web_assets_avoid_forbidden_html_injection_apis(
+    server: WebClient,
+) -> None:
+    for name in ("app.css", "theme.js", "board.js", "graph.js", "markdown.js"):
+        text = server.request(f"/static/{name}").text
+        for api in FORBIDDEN_JS_APIS:
+            assert api not in text, f"{name} contains forbidden API {api!r}"
+
+
+def test_the_task_page_uses_the_design_markup(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    page = server.request(f"/task/{board['blocked']}").text
+    assert 'class="task-header"' in page
+    assert 'class="task-header__title"' in page
+    assert 'class="facts"' in page
+    assert 'class="blockers"' in page
+    assert 'class="link-list"' in page
+    assert 'class="timeline"' in page
+    assert 'class="status-chip"' in page
+    assert 'class="description"' in page
+    assert "A \u2192 B means B depends on A." in page
+
+
+def test_the_description_fallback_is_a_pre_and_escaped(
+    server: WebClient, hostile: dict[str, str]
+) -> None:
+    page = server.request(f"/task/{hostile['id']}").text
+    assert '<pre class="description">' in page
+    assert "&lt;b&gt;bold&lt;/b&gt;" in page
+    assert "<b>bold</b>" not in page
+    assert "&quot;" in page
+
+
+def test_a_rejected_link_destination_is_not_emitted_as_href(
+    server: WebClient, db_file: Path
+) -> None:
+    connection = schema.open_database(db_file)
+    try:
+        task = service.create_task(
+            connection,
+            actor=DEFAULT_ACTOR,
+            title="Link safety",
+            description="[click](javascript:alert(1))",
+        )["task"]
+    finally:
+        connection.close()
+
+    page = server.request(f"/task/{task['id']}").text
+    assert 'href="javascript:' not in page
+    assert "javascript:alert(1)" in page
+    script = server.request("/static/markdown.js").text
+    assert "isHttpUrl" in script
+
+
+# --------------------------------------------------------------------------- #
 # empty database, large graph, and the no-JavaScript fallback
 # --------------------------------------------------------------------------- #
 

@@ -269,6 +269,248 @@ def _relative_age(iso: str | None, now: datetime) -> str:
     return f"{hours // 24}d"
 
 
+def _display_time(iso: str | None) -> str:
+    """Short human time for the eye; the ISO value stays in ``datetime``."""
+    if not iso:
+        return "—"
+    try:
+        stamp = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return iso
+    return stamp.strftime("%d %b %H:%M")
+
+
+def _time_html(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    return f'<time datetime="{_esc(iso)}">{_esc(_display_time(iso))}</time>'
+
+
+def _fact_labels_html(task: Mapping[str, Any]) -> str:
+    labels = task.get("labels") or []
+    if not labels:
+        return "—"
+    return " ".join(f'<span class="tag">{_esc(label)}</span>' for label in labels)
+
+
+def _claim_fact_html(claim: Mapping[str, Any] | None, now: datetime) -> str:
+    if claim is None:
+        return "none"
+    holder = _esc(claim["agent_id"])
+    claimed_at = _esc(claim["claimed_at"])
+    age = _relative_age(str(claim["claimed_at"]), now)
+    return (
+        f"{holder}, claimed "
+        f'<time datetime="{claimed_at}" title="{claimed_at}">{_esc(age)} ago</time>'
+    )
+
+
+def _readiness_chips_html(
+    task: Mapping[str, Any], claim: Mapping[str, Any] | None
+) -> str:
+    chips: list[str] = []
+    if claim is not None:
+        chips.append(
+            '<li><span class="state-chip" data-state="claimed">'
+            f"◎ claimed by {_esc(claim['agent_id'])}</span></li>"
+        )
+    if task.get("eligible"):
+        chips.append(
+            '<li><span class="state-chip" data-state="eligible">'
+            "▷ eligible</span></li>"
+        )
+    if task.get("reviewable"):
+        chips.append(
+            '<li><span class="state-chip" data-state="reviewable">'
+            "◐ reviewable</span></li>"
+        )
+    if task.get("blocked"):
+        chips.append(
+            '<li><span class="state-chip" data-state="blocked">'
+            "⊘ blocked</span></li>"
+        )
+    if not chips:
+        return ""
+    return f'<ul class="readiness" aria-label="Readiness">{"".join(chips)}</ul>'
+
+
+def _readiness_sentence(
+    task: Mapping[str, Any], claim: Mapping[str, Any] | None
+) -> str:
+    states = [
+        "eligible" if task.get("eligible") else "not eligible",
+        "reviewable" if task.get("reviewable") else "not reviewable",
+        "blocked" if task.get("blocked") else "not blocked",
+    ]
+    if claim is not None:
+        states.append(f"claimed by {claim['agent_id']}")
+    return "Readiness: " + ", ".join(states) + "."
+
+
+def _blocker_text(entry: Mapping[str, Any]) -> str:
+    code = str(entry.get("code") or "blocked")
+    task_id = entry.get("task_id")
+    reason = entry.get("reason")
+    if code == "prerequisite_unfinished" and task_id:
+        return f"{task_id} is not done"
+    if code == "prerequisite_cancelled" and task_id:
+        return f"{task_id} is cancelled"
+    if reason:
+        return str(reason)
+    return code.replace("_", " ")
+
+
+def _blocked_reason_text(task: Mapping[str, Any]) -> str:
+    reason = str(task.get("blocked_reason") or "").strip()
+    if reason:
+        return reason
+    blockers = task.get("blockers") or []
+    if blockers:
+        return _blocker_text(blockers[0])
+    return "prerequisite unfinished"
+
+
+def _blocked_summary_html(task: Mapping[str, Any]) -> str:
+    if not task.get("blocked"):
+        return ""
+    return (
+        '<p class="task-blocked-summary">Blocked by: '
+        f"{_esc(_blocked_reason_text(task))}</p>"
+    )
+
+
+def _dependency_links(
+    items: Sequence[Mapping[str, Any]],
+    now: datetime,
+    *,
+    prerequisite: bool,
+) -> str:
+    if not items:
+        return '<p class="empty">None.</p>'
+    rows: list[str] = []
+    for item in items:
+        status = str(item["status"])
+        not_done = ""
+        if prerequisite and status != "done":
+            not_done = ' <span class="link-list__warn">not done</span>'
+        rows.append(
+            _render(
+                "dep_line.html",
+                id=_esc(item["id"]),
+                title=_esc(item["title"]),
+                status=_esc(status),
+                glyph=_esc(_status_glyph(status)),
+                status_label=_esc(_status_label(status)),
+                not_done=not_done,
+            )
+        )
+    return f'<ul class="link-list">{"".join(rows)}</ul>'
+
+
+def _event_kind(event_type: str) -> str:
+    kinds = {
+        "task.created": "created",
+        "task.updated": "updated",
+        "task.status_changed": "status",
+        "task.completed": "completed",
+        "task.reopened": "reopened",
+        "task.cancelled": "cancelled",
+        "task.restored": "restored",
+        "task.claimed": "claimed",
+        "task.released": "released",
+        "dependency.added": "dependency",
+        "dependency.removed": "dependency",
+        "note": "note",
+    }
+    return kinds.get(event_type, event_type)
+
+
+def _event_payload_text(event: Mapping[str, Any]) -> str:
+    event_type = str(event.get("event_type") or "")
+    payload = event.get("payload") or {}
+    if event_type == "task.status_changed":
+        return f"{payload.get('from', '?')} → {payload.get('to', '?')}"
+    if event_type == "task.created":
+        parts = ["task created"]
+        if payload.get("priority"):
+            parts.append(f"priority {payload['priority']}")
+        return ", ".join(parts)
+    if event_type == "task.updated":
+        fields = payload.get("fields") or []
+        if fields:
+            return "updated: " + ", ".join(str(field) for field in fields)
+        return "task updated"
+    if event_type == "task.claimed":
+        holder = payload.get("agent") or payload.get("agent_id") or "agent"
+        return f"claimed by {holder}"
+    if event_type == "task.released":
+        return "claim released"
+    if event_type == "task.completed":
+        reason = payload.get("reason")
+        return "completed" + (f": {reason}" if reason else "")
+    if event_type == "task.cancelled":
+        reason = payload.get("reason")
+        return "cancelled" + (f": {reason}" if reason else "")
+    if event_type == "task.reopened":
+        return "reopened"
+    if event_type == "task.restored":
+        return "restored"
+    if event_type == "dependency.added":
+        return f"dependency added: {payload.get('prerequisite_id', '?')}"
+    if event_type == "dependency.removed":
+        return f"dependency removed: {payload.get('prerequisite_id', '?')}"
+    if not payload:
+        return event_type
+    pairs = ", ".join(
+        f"{key}: {value}" for key, value in sorted(payload.items())
+    )
+    return f"{event_type}: {pairs}"
+
+
+def _timeline(
+    notes: Sequence[Mapping[str, Any]],
+    events: Sequence[Mapping[str, Any]],
+) -> str:
+    items: list[tuple[str, str]] = []
+    for note in notes:
+        items.append(
+            (
+                str(note["timestamp"]),
+                _render(
+                    "note.html",
+                    timestamp=_esc(note["timestamp"]),
+                    timestamp_display=_esc(_display_time(note["timestamp"])),
+                    actor=_esc(note["actor"]),
+                    text=_esc(note["payload"].get("text", "")),
+                ),
+            )
+        )
+    for event in events:
+        if event.get("event_type") == "note":
+            continue
+        items.append(
+            (
+                str(event["timestamp"]),
+                _render(
+                    "history.html",
+                    timestamp=_esc(event["timestamp"]),
+                    timestamp_display=_esc(_display_time(event["timestamp"])),
+                    actor=_esc(event["actor"]),
+                    event_type=_esc(_event_kind(str(event["event_type"]))),
+                    payload=_esc(_event_payload_text(event)),
+                ),
+            )
+        )
+    if not items:
+        return '<p class="empty">No notes or history.</p>'
+    items.sort(key=lambda pair: pair[0], reverse=True)
+    return (
+        '<ol class="timeline" aria-label="Notes and history, newest first">'
+        + "".join(item for _, item in items)
+        + "</ol>"
+    )
+
+
 def _labels_html(task: Mapping[str, Any]) -> str:
     labels = task.get("labels") or []
     if not labels:
@@ -568,13 +810,16 @@ def _dependency_list(graph: Mapping[str, Any]) -> str:
         node_id = str(node["id"])
         depth = min(depths.get(node_id, 0), MAX_INDENT_DEPTH)
         needs = ", ".join(prereqs.get(node_id, [])) or "none"
+        status = str(node["status"])
         lines.append(
             _render(
-                "dep_line.html",
+                "dep_outline.html",
                 depth=str(depth),
                 id=_esc(node_id),
                 title=_esc(node["title"]),
-                status=_esc(node["status"]),
+                status=_esc(status),
+                glyph=_esc(_status_glyph(status)),
+                status_label=_esc(_status_label(status)),
                 needs=_esc(needs),
             )
         )
@@ -626,42 +871,12 @@ def _blocker_list(task: Mapping[str, Any]) -> str:
     if not entries:
         return '<p class="empty">No derived blockers.</p>'
     rows = "".join(
-        f'<li class="blocker"><code>{_esc(entry.get("code"))}</code>'
-        f' {_esc(entry.get("task_id") or entry.get("reason") or "")}</li>'
+        f'<li class="blocker" data-kind="{_esc(entry.get("code"))}">'
+        f'<span class="blocker__code">{_esc(entry.get("code"))}</span> '
+        f'<span class="blocker__text">{_esc(_blocker_text(entry))}</span></li>'
         for entry in entries
     )
     return f'<ul class="blockers">{rows}</ul>'
-
-
-def _note_list(notes: Sequence[Mapping[str, Any]]) -> str:
-    if not notes:
-        return '<p class="empty">No notes.</p>'
-    rows = "".join(
-        _render(
-            "note.html",
-            timestamp=_esc(note["timestamp"]),
-            actor=_esc(note["actor"]),
-            text=_esc(note["payload"].get("text", "")),
-        )
-        for note in notes
-    )
-    return f'<ul class="notes">{rows}</ul>'
-
-
-def _history_list(events: Sequence[Mapping[str, Any]]) -> str:
-    if not events:
-        return '<p class="empty">No history.</p>'
-    rows = "".join(
-        _render(
-            "history.html",
-            timestamp=_esc(event["timestamp"]),
-            actor=_esc(event["actor"]),
-            event_type=_esc(event["event_type"]),
-            payload=_esc(json.dumps(event["payload"], sort_keys=True)),
-        )
-        for event in events
-    )
-    return f'<ul class="history">{rows}</ul>'
 
 
 def _memo_panel(conn: sqlite3.Connection) -> str:
@@ -1070,43 +1285,44 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
         task = document["task"]
         now = datetime.now(UTC)
         claim = document["claim"]
-        claim_text = "none"
-        if claim is not None:
-            claim_text = (
-                f"{claim['agent_id']} (since {claim['claimed_at']}, "
-                f"{claim['age_seconds']}s ago)"
-            )
+        status = str(task["status"])
         content = _render(
             "task.html",
             id=_esc(task["id"]),
             title=_esc(task["title"]),
             description=_esc(task["description"]) or "&#8212;",
-            status=_esc(task["status"]),
+            status=_esc(status),
+            glyph=_esc(_status_glyph(status)),
+            status_label=_esc(_status_label(status)),
             priority=_esc(task["priority"]),
+            priority_pips=_esc(PRIORITY_PIPS.get(str(task["priority"]), "")),
             assignee=_esc(task["assignee"] or "-"),
-            labels=_esc(", ".join(task["labels"]) or "-"),
-            claim=_esc(claim_text),
-            ready=_esc(str(task["dependency_ready"])),
-            eligible=_esc(str(task["eligible"])),
-            reviewable=_esc(str(task["reviewable"])),
-            blocked=_esc(str(task["blocked"])),
+            labels_html=_fact_labels_html(task),
+            claim_html=_claim_fact_html(claim, now),
+            readiness_chips=_readiness_chips_html(task, claim),
+            readiness_sentence=_readiness_sentence(task, claim),
+            blocked_summary=_blocked_summary_html(task),
             blocked_reason=_esc(task["blocked_reason"] or "-"),
             blockers=_blocker_list(task),
-            created=_esc(task["created_at"]),
-            updated=_esc(task["updated_at"]),
-            completed=_esc(task["completed_at"] or "-"),
+            ready=_esc(str(task["dependency_ready"])),
+            created_html=_time_html(task["created_at"]),
+            updated_html=_time_html(task["updated_at"]),
+            completed_html=_time_html(task["completed_at"]),
             version=_esc(str(task["version"])),
-            prerequisites=_badge_list(document["prerequisites"], now),
-            dependents=_badge_list(document["dependents"], now),
-            notes=_note_list(document["notes"]),
-            history=_history_list(document["history"]),
+            prerequisites=_dependency_links(
+                document["prerequisites"], now, prerequisite=True
+            ),
+            dependents=_dependency_links(
+                document["dependents"], now, prerequisite=False
+            ),
+            timeline=_timeline(document["notes"], document["history"]),
         )
         return self._shell(
             title=f"{task['id']} {task['title']}",
             project=schema.database_label(conn),
             current="board",
             content=content,
-            scripts="",
+            scripts='<script src="/static/markdown.js" defer></script>',
         )
 
     def _shell(

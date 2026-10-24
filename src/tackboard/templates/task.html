@@ -1,34 +1,58 @@
-<section class="panel task-detail">
-  <h1><a class="task-id" href="/task/$id">$id</a> <span class="task-title">$title</span></h1>
+<section class="panel">
+  <header class="task-header">
+    <p class="task-header__eyebrow">
+      <span class="status-chip" data-status="$status"><span class="status-chip__glyph" aria-hidden="true">$glyph</span> $status_label</span>
+      <span class="priority" data-priority="$priority"><span class="priority__pips" aria-hidden="true">$priority_pips</span> <span class="priority__word">$priority</span></span>
+    </p>
+    <h1 class="task-header__title"><span class="task-header__id">$id</span> $title</h1>
+    $readiness_chips
+    $blocked_summary
+  </header>
+
+  <h2 id="facts-heading" class="sr-only">Facts</h2>
   <dl class="facts">
-    <dt>status</dt><dd class="badge badge-status" data-status="$status">$status</dd>
-    <dt>priority</dt><dd class="badge badge-priority priority-$priority">$priority</dd>
+    <dt>ID</dt><dd>$id</dd>
+    <dt>status</dt><dd><span class="status-chip" data-status="$status"><span class="status-chip__glyph" aria-hidden="true">$glyph</span> $status_label</span></dd>
+    <dt>priority</dt><dd><span class="priority" data-priority="$priority"><span class="priority__pips" aria-hidden="true">$priority_pips</span> <span class="priority__word">$priority</span></span></dd>
     <dt>assignee</dt><dd>$assignee</dd>
-    <dt>labels</dt><dd>$labels</dd>
-    <dt>claim</dt><dd>$claim</dd>
-    <dt>readiness</dt><dd>dependency_ready=$ready eligible=$eligible reviewable=$reviewable blocked=$blocked</dd>
+    <dt>labels</dt><dd>$labels_html</dd>
+    <dt>claim</dt><dd>$claim_html</dd>
+    <dt>dependency ready</dt><dd>$ready</dd>
     <dt>blocked reason</dt><dd>$blocked_reason</dd>
-    <dt>created</dt><dd>$created</dd>
-    <dt>updated</dt><dd>$updated</dd>
-    <dt>completed</dt><dd>$completed</dd>
+    <dt>created</dt><dd>$created_html</dd>
+    <dt>updated</dt><dd>$updated_html</dd>
+    <dt>completed</dt><dd>$completed_html</dd>
     <dt>version</dt><dd>$version</dd>
   </dl>
-  <h2>Derived blockers</h2>
+  <p class="task-readiness">$readiness_sentence</p>
+</section>
+
+<section class="panel" aria-labelledby="blockers-heading">
+  <h2 id="blockers-heading">Derived blockers</h2>
   $blockers
-  <h2>Description</h2>
+</section>
+
+<section class="panel">
+  <nav class="links" aria-labelledby="prereq-heading">
+    <h2 id="prereq-heading">Prerequisites</h2>
+    <p class="section__note">These must finish before this task can start.</p>
+    $prerequisites
+  </nav>
+  <nav class="links" aria-labelledby="dependents-heading">
+    <h2 id="dependents-heading">Dependents</h2>
+    <p class="section__note">These wait for this task.</p>
+    $dependents
+  </nav>
+  <p class="section__note">A → B means B depends on A.</p>
+</section>
+
+<section class="panel" aria-labelledby="description-heading">
+  <h2 id="description-heading">Description</h2>
   <pre class="description">$description</pre>
 </section>
 
-<section class="panel">
-  <h2>Prerequisites</h2>
-  $prerequisites
-  <h2>Dependents</h2>
-  $dependents
-</section>
-
-<section class="panel">
-  <h2>Notes</h2>
-  $notes
-  <h2>Recent history</h2>
-  $history
+<section class="panel" aria-labelledby="timeline-heading">
+  <h2 id="timeline-heading">Notes and history</h2>
+  $timeline
+  <p class="section__note">Earlier history is available through <code>tack history</code>.</p>
 </section>

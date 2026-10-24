@@ -1,7 +1,7 @@
 /* Board live updates: poll /api/board, honour ETag/304, diff in place.
  *
  * Hand-written, no library, no build step. Task text is only ever written with
- * textContent; innerHTML is never used. Motion uses the Web Animations API so
+ * textContent; no HTML string injection is used. Motion uses the Web Animations API so
  * no inline style attribute is written (the CSP would block one).
  */
 (function () {
