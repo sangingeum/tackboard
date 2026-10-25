@@ -1,7 +1,7 @@
 ---
 name: tackboard
 description: Use for agent task coordination on a per-project board via the `tack` CLI — create, claim, note and complete tasks, model dependency DAGs, read derived readiness, and select work atomically with `next --claim`. Use when several agents share one project's work and need a stable machine-readable contract; do NOT use for note-taking, file search (use rg) or git history.
-version: 0.4.1
+version: 0.4.2
 author: sangingeum
 license: MIT
 platforms: [linux, macos, windows]

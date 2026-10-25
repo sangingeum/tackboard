@@ -319,6 +319,7 @@
   function nodeLabel(node) {
     var label = STATUS_LABEL[node.status] || node.status;
     var parts = [node.id + ", " + node.title + ", " + label];
+    if (node.reviewable) { parts.push("reviewable"); }
     if (node.priority) { parts.push("priority " + node.priority); }
     if (node.assignee) { parts.push("assignee " + node.assignee); }
     if (node.claimed_by) {
@@ -337,6 +338,7 @@
   function nodeTitleText(node) {
     var label = STATUS_LABEL[node.status] || node.status;
     var text = node.id + " \u2014 " + node.title + " (" + label;
+    if (node.reviewable) { text += ", reviewable"; }
     if (node.claimed_by) {
       text += ", claimed by " + node.claimed_by;
       if (node.claimed_at) { text += " since " + node.claimed_at; }
@@ -547,9 +549,14 @@
       }
 
       if (node.reviewable) {
-        group.appendChild(el("path", {
+        /* Design: "second parallel line 3 px inside the top edge". The card is
+         * a full rectangle, so the top edge is y=0 and the marker sits at y=3. */
+        group.appendChild(el("line", {
           "class": "node__double-edge",
-          d: "M 14 " + (NODE_H - 2) + " L " + (NODE_W - 14) + " " + (NODE_H - 2),
+          x1: 14,
+          y1: 3,
+          x2: NODE_W - 14,
+          y2: 3,
           "aria-hidden": "true"
         }));
       }

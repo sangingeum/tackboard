@@ -6,8 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-25
+
 ### Fixed
 
+- Web graph: a `reviewable` node now carries its marker as a second parallel
+  line 3 px inside the card's top edge, in the reviewable colour, instead of an
+  unnamed blue bar near the bottom edge. The marker is named in the legend
+  ("reviewable — double top edge"), in each node's accessible name and title,
+  and in the server-rendered dependency outline.
 - Web graph: every node is now one uniform rounded rectangular card, so the ID,
   title, status label and holder badge always stay inside the node outline. A
   corner glyph plus colour carry the stored status; only `backlog` (dashed)

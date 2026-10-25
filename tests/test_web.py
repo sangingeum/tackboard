@@ -771,6 +771,57 @@ def test_graph_legend_uses_the_drawn_status_glyphs(
     assert "blocked \u2014 thick border" in page
 
 
+def test_graph_legend_names_the_reviewable_marker(
+    server: WebClient,
+) -> None:
+    """The line above a review node is the reviewable marker, named here."""
+    page = server.request("/graph").text
+    assert "reviewable \u2014 double top edge" in page
+    assert "legend-item shape-reviewable" in page
+
+
+def test_dependency_outline_marks_reviewable_nodes() -> None:
+    """A reviewable node carries its marker in the no-JavaScript outline too."""
+    graph = {
+        "nodes": [
+            {
+                "id": "T-000001",
+                "title": "Review me",
+                "status": "review",
+                "reviewable": True,
+            }
+        ],
+        "edges": [],
+    }
+    outline = web._dependency_list(graph)
+    assert "reviewable" in outline
+    assert 'data-state="reviewable"' in outline
+
+
+def test_double_edge_sits_inside_the_top_edge() -> None:
+    """The reviewable line is drawn 3 px inside the card's top edge."""
+    source = (REPO_ROOT / "src" / "tackboard" / "static" / "graph.js").read_text(
+        encoding="utf-8"
+    )
+    index = source.index("node__double-edge")
+    body = source[index - 40 : index + 220]
+    assert 'el("line"' in body
+    assert "y1: 3" in body
+    assert "y2: 3" in body
+    assert "NODE_H - 2" not in body
+
+
+def test_double_edge_uses_the_reviewable_token() -> None:
+    """The reviewable line uses its own token, not the generic accent blue."""
+    css = (REPO_ROOT / "src" / "tackboard" / "static" / "app.css").read_text(
+        encoding="utf-8"
+    )
+    start = css.index(".node__double-edge")
+    body = css[start : start + 120]
+    assert "var(--state-reviewable-fg)" in body
+    assert "var(--accent)" not in body
+
+
 def test_graph_cards_are_one_uniform_rectangle() -> None:
     """Pin the chosen design: one rectangular card, status in a corner glyph."""
     source = (REPO_ROOT / "src" / "tackboard" / "static" / "graph.js").read_text(

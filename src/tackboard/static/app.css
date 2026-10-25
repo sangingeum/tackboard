@@ -1613,7 +1613,7 @@ button:hover,
 
 .node__double-edge {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--state-reviewable-fg);
   stroke-width: 2;
 }
 
@@ -1960,6 +1960,21 @@ text.tooltip__title {
   border-width: 4px;
   border-color: var(--state-blocked-line);
   background: var(--state-blocked-bg);
+}
+
+.shape-reviewable .legend-shape {
+  position: relative;
+  border-color: var(--state-reviewable-fg);
+}
+
+.shape-reviewable .legend-shape::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 2px;
+  background: var(--state-reviewable-fg);
 }
 
 .hint {

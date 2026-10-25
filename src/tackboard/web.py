@@ -887,6 +887,12 @@ def _dependency_list(
                 glyph=_esc(_status_glyph(status)),
                 status_label=_esc(_status_label(status)),
                 needs=_esc(needs),
+                reviewable_marker=(
+                    '<span class="state-chip" data-state="reviewable">'
+                    "\u25d0 reviewable</span>"
+                    if node.get("reviewable")
+                    else ""
+                ),
                 claimed=_esc(_claimed_suffix(node)),
                 blocked_flag="true" if node.get("blocked") else "false",
                 blocked_marker="\u2298 blocked" if node.get("blocked") else "",
@@ -1004,9 +1010,10 @@ def _legend() -> str:
         for status, label in statuses
     )
     overlays = (
-        ("shape-crossed", "blocked — thick border"),
-        ("shape-eligible", "eligible — corner mark"),
-        ("shape-claimed", "claimed — double ring + holder badge"),
+        ("shape-crossed", "blocked \u2014 thick border"),
+        ("shape-eligible", "eligible \u2014 corner mark"),
+        ("shape-reviewable", "reviewable \u2014 double top edge"),
+        ("shape-claimed", "claimed \u2014 double ring + holder badge"),
     )
     items += "".join(
         f'<li class="legend-item {css}"><span class="legend-shape"></span>'

@@ -559,7 +559,8 @@ stored status at a glance: `▷` for `ready`, `▶` for `in_progress`, `◐` for
 `review`, `✓` for `done`, `…` for `backlog`, and `✕` for `cancelled`; only
 `backlog` (dashed) and `cancelled` (dotted) also change the border style.
 Derived states add an overlay rather than a status colour: `blocked` carries a
-45° hatch fill and a 3 px border. Claimed nodes gain a double ring, a holder
+45° hatch fill and a 3 px border, and `reviewable` carries a second parallel
+line 3 px inside its top edge. Claimed nodes gain a double ring, a holder
 badge on its own row and the claim age.
 
 | Full graph (`nodes=12`) | Active tasks only — "Hide done & cancelled" |
