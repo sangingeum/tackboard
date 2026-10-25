@@ -10,10 +10,10 @@
  * zooms. The camera lives in module state and is written to the viewport
  * transform at most once per animation frame.
  *
- * Nodes are distinguished by shape as well as colour: backlog is a dashed
- * rounded rectangle, ready a circle, in progress a diamond, review a hexagon,
- * done a square and cancelled a dotted square. A claimed node carries a double
- * ring and a holder badge; blocked and eligible nodes carry additional,
+ * Every node is one uniform rounded rectangle so the text always stays inside
+ * its container. Status is carried by a corner glyph, the border style and the
+ * colour; the label stays as text. A claimed node carries a double ring and a
+ * holder badge on its own row; blocked and eligible nodes carry additional,
  * non-colour cues in their text and corner marks.
  */
 (function () {
@@ -35,7 +35,7 @@
   var taskId = root.getAttribute("data-task") || "";
 
   var NODE_W = 176;
-  var NODE_H = 56;
+  var NODE_H = 72;
   var GAP_X = 76;
   var GAP_Y = 26;
   var MIN_SCALE = 0.15;
@@ -351,31 +351,26 @@
   /* ----------------------------------------------------------------------- */
 
   function shapeElement(status) {
-    var attrs = { "class": "node__shape" };
-    if (status === "ready") {
-      attrs.cx = NODE_W / 2;
-      attrs.cy = NODE_H / 2;
-      attrs.r = Math.min(NODE_W, NODE_H) / 2;
-      return el("circle", attrs);
-    }
-    if (status === "in_progress") {
-      attrs.points = [[NODE_W / 2, 0], [NODE_W, NODE_H / 2],
-        [NODE_W / 2, NODE_H], [0, NODE_H / 2]]
-        .map(function (point) { return point.join(","); }).join(" ");
-      return el("polygon", attrs);
-    }
-    if (status === "review") {
-      attrs.points = [[NODE_W * 0.22, 0], [NODE_W * 0.78, 0], [NODE_W, NODE_H / 2],
-        [NODE_W * 0.78, NODE_H], [NODE_W * 0.22, NODE_H], [0, NODE_H / 2]]
-        .map(function (point) { return point.join(","); }).join(" ");
-      return el("polygon", attrs);
-    }
-    attrs.x = 0;
-    attrs.y = 0;
-    attrs.width = NODE_W;
-    attrs.height = NODE_H;
-    attrs.rx = status === "done" || status === "cancelled" ? 2 : 6;
-    return el("rect", attrs);
+    /* One uniform card for every status: the text container is always a full
+     * rectangle, so no title or label can cross the outline. Status is carried
+     * by the corner glyph, the border style and the colour applied by CSS. */
+    return el("rect", {
+      "class": "node__shape",
+      x: 0,
+      y: 0,
+      width: NODE_W,
+      height: NODE_H,
+      rx: 8
+    });
+  }
+
+  function glyphElement(status) {
+    /* A small status glyph in the card's top-left corner. It is decorative:
+     * the status label and the node's aria-label carry the meaning. */
+    return textEl(
+      { "class": "node__glyph", x: 8, y: 22, "aria-hidden": "true" },
+      STATUS_GLYPH[status] || "\u2022"
+    );
   }
 
   /* ----------------------------------------------------------------------- */
@@ -482,11 +477,12 @@
       }
 
       group.appendChild(shapeElement(node.status));
+      group.appendChild(glyphElement(node.status));
 
-      group.appendChild(textEl({ "class": "node__id", x: 10, y: 20 }, node.id));
+      group.appendChild(textEl({ "class": "node__id", x: 28, y: 20 }, node.id));
       group.appendChild(textEl(
         { "class": "node__title", x: 10, y: 36 },
-        truncate(node.title, 26)
+        truncate(node.title, 22)
       ));
       var statusText = STATUS_LABEL[node.status] || node.status;
       if (node.blocked) { statusText += " \u00b7 blocked"; }
@@ -496,8 +492,8 @@
       if (hiddenLinks) {
         var markText = "+" + hiddenLinks;
         var markWidth = Math.max(22, markText.length * 7 + 8);
-        var markX = NODE_W - markWidth - 4;
-        var markY = node.claimed_by ? NODE_H - 30 : NODE_H - 16;
+        var markX = NODE_W - markWidth - 6;
+        var markY = 6;
         group.appendChild(el("rect", {
           "class": "node__elided",
           x: markX,
@@ -518,7 +514,7 @@
         var holder = clipHolder(fullHolder);
         var age = relativeAge(node.claimed_at);
         var badgeText = "@" + holder + (age ? " \u00b7 " + age : "");
-        var badgeWidth = Math.max(52, badgeText.length * 6.2 + 10);
+        var badgeWidth = Math.min(NODE_W - 20, Math.max(52, badgeText.length * 6.6 + 10));
         var badgeX = NODE_W - badgeWidth - 4;
         var badge = el("g", { "class": "node__claim-badge-group" });
         badge.appendChild(el("title", {}));
@@ -543,7 +539,7 @@
       if (node.eligible) {
         group.appendChild(el("path", {
           "class": "node__corner-mark",
-          d: "M " + (NODE_W - 12) + " 0 L " + NODE_W + " 0 L " + NODE_W + " 12 Z",
+          d: "M 0 " + NODE_H + " L 12 " + NODE_H + " L 0 " + (NODE_H - 12) + " Z",
           "aria-hidden": "true"
         }));
       }
@@ -551,7 +547,7 @@
       if (node.reviewable) {
         group.appendChild(el("path", {
           "class": "node__double-edge",
-          d: "M 6 4 L " + (NODE_W - 6) + " 4",
+          d: "M 14 " + (NODE_H - 2) + " L " + (NODE_W - 14) + " " + (NODE_H - 2),
           "aria-hidden": "true"
         }));
       }

@@ -553,12 +553,13 @@ without a reload.
 
 ### Dependency graph (`/graph`)
 
-The full dependency DAG. Node shapes and colours encode the stored status at a
-glance: a circle for `ready`, an amber diamond for `in_progress`, a hexagon for
-`review`, a green square for `done`, a dashed rounded rectangle for `backlog`,
-and an octagon for `cancelled`. Derived states add an overlay rather than a
-status colour: `blocked` carries a 45° hatch fill and a 3 px border. Claimed
-nodes gain a double ring, a holder badge and the claim age.
+The full dependency DAG. Every node is the same rounded rectangular card, so the
+text always stays inside its outline; a corner glyph and the border style and
+colour encode the stored status at a glance: `▷` for `ready`, `▶` for
+`in_progress`, `◐` for `review`, `✓` for `done`, `…` for `backlog`,
+and `✕` for `cancelled`. Derived states add an overlay rather than a status
+colour: `blocked` carries a 45° hatch fill and a 3 px border. Claimed nodes
+gain a double ring, a holder badge on its own row and the claim age.
 
 | Full graph (`nodes=12`) | Active tasks only — "Hide done & cancelled" |
 |:---:|:---:|

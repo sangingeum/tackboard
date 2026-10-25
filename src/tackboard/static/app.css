@@ -1504,6 +1504,35 @@ button:hover,
   text-transform: uppercase;
 }
 
+.node__glyph {
+  font: var(--text-xs) var(--font-sans);
+  fill: var(--fg-muted);
+}
+
+.node[data-status="backlog"] .node__glyph {
+  fill: var(--status-backlog-line);
+}
+
+.node[data-status="ready"] .node__glyph {
+  fill: var(--status-ready-line);
+}
+
+.node[data-status="in_progress"] .node__glyph {
+  fill: var(--status-in-progress-line);
+}
+
+.node[data-status="review"] .node__glyph {
+  fill: var(--status-review-line);
+}
+
+.node[data-status="done"] .node__glyph {
+  fill: var(--status-done-line);
+}
+
+.node[data-status="cancelled"] .node__glyph {
+  fill: var(--status-cancelled-line);
+}
+
 .node[data-status="backlog"] .node__shape {
   fill: var(--bg-surface);
   stroke: var(--border-strong);
@@ -1856,6 +1885,52 @@ text.tooltip__title {
   width: 14px;
   height: 14px;
   border: 2px solid var(--border-strong);
+}
+
+.legend-glyph {
+  display: inline-block;
+  min-width: 14px;
+  font: var(--text-xs) var(--font-mono);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.legend-item--status[data-status="backlog"] .legend-glyph {
+  color: var(--status-backlog-line);
+}
+
+.legend-item--status[data-status="ready"] .legend-glyph {
+  color: var(--status-ready-line);
+}
+
+.legend-item--status[data-status="in_progress"] .legend-glyph {
+  color: var(--status-in-progress-line);
+}
+
+.legend-item--status[data-status="review"] .legend-glyph {
+  color: var(--status-review-line);
+}
+
+.legend-item--status[data-status="done"] .legend-glyph {
+  color: var(--status-done-line);
+}
+
+.legend-item--status[data-status="cancelled"] .legend-glyph {
+  color: var(--status-cancelled-line);
+}
+
+.shape-eligible .legend-shape {
+  border: none;
+  background: var(--accent);
+  clip-path: polygon(0 100%, 100% 100%, 0 0);
+}
+
+.shape-claimed .legend-shape {
+  border-color: var(--state-claimed-line);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 2px var(--bg-surface),
+    inset 0 0 0 4px var(--state-claimed-line);
 }
 
 .shape-square .legend-shape {

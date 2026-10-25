@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Web graph: every node is now one uniform rounded rectangular card, so the ID,
+  title, status label and holder badge always stay inside the node outline. A
+  corner glyph plus the border style and colour carry the stored status, and
+  the legend and README describe that glyph language. A claimed node's holder
+  badge sits on its own row below the status label, so the two never overlap.
+  The `+N` elided-link marker is anchored at a fixed top-right corner and no
+  longer collides with titles. Edges render beneath the opaque cards and are
+  no longer visible across node text.
+
 ## [0.4.1] - 2026-10-25
 
 ### Added

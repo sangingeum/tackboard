@@ -962,20 +962,36 @@ def _memo_panel(conn: sqlite3.Connection) -> str:
 
 
 def _legend() -> str:
-    shapes = (
-        ("shape-square", "done"),
-        ("shape-circle", "eligible"),
-        ("shape-diamond", "in progress"),
-        ("shape-hexagon", "review"),
-        ("shape-crossed", "blocked"),
-        ("shape-octagon", "cancelled"),
-        ("shape-dashed", "backlog / ready"),
-        ("shape-claimed", "claimed — double ring + holder badge"),
+    """The legend mirrors the drawn card: a status glyph plus its border/colour.
+
+    Derived states stay as overlays: ``blocked`` thickens the border,
+    ``eligible`` adds the corner mark and ``claimed`` adds the double ring and
+    the holder badge. Labels carry the meaning; glyphs are decorative.
+    """
+    statuses = (
+        ("backlog", "backlog"),
+        ("ready", "ready"),
+        ("in_progress", "in progress"),
+        ("review", "review"),
+        ("done", "done"),
+        ("cancelled", "cancelled"),
     )
     items = "".join(
+        f'<li class="legend-item legend-item--status" data-status="{_esc(status)}">'
+        f'<span class="legend-glyph" aria-hidden="true">'
+        f"{_esc(STATUS_GLYPHS[status])}</span>"
+        f"<span>{_esc(label)}</span></li>"
+        for status, label in statuses
+    )
+    overlays = (
+        ("shape-crossed", "blocked — thick border"),
+        ("shape-eligible", "eligible — corner mark"),
+        ("shape-claimed", "claimed — double ring + holder badge"),
+    )
+    items += "".join(
         f'<li class="legend-item {css}"><span class="legend-shape"></span>'
         f"<span>{_esc(label)}</span></li>"
-        for css, label in shapes
+        for css, label in overlays
     )
     return f'<ul class="legend">{items}</ul>'
 

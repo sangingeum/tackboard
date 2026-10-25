@@ -760,6 +760,35 @@ def test_graph_page_marks_claim_holders_in_the_outline(
     assert "holder badge" in page
 
 
+def test_graph_legend_uses_the_drawn_status_glyphs(
+    server: WebClient,
+) -> None:
+    """The legend must name the glyphs the uniform cards actually draw."""
+    page = server.request("/graph").text
+    for glyph in ("\u2026", "\u25b7", "\u25b6", "\u25d0", "\u2713", "\u2715"):
+        assert glyph in page
+    assert "eligible \u2014 corner mark" in page
+    assert "blocked \u2014 thick border" in page
+
+
+def test_graph_cards_are_one_uniform_rectangle() -> None:
+    """Pin the chosen design: one rectangular card, status in a corner glyph."""
+    source = (REPO_ROOT / "src" / "tackboard" / "static" / "graph.js").read_text(
+        encoding="utf-8"
+    )
+    shape_start = source.index("function shapeElement(")
+    shape_end = source.index("function glyphElement(")
+    shape_body = source[shape_start:shape_end]
+    assert 'el("rect"' in shape_body
+    assert "circle" not in shape_body
+    assert "polygon" not in shape_body
+    glyph_start = source.index("function glyphElement(")
+    glyph_end = source.index("/* -----", glyph_start)
+    glyph_body = source[glyph_start:glyph_end]
+    assert "node__glyph" in glyph_body
+    assert "STATUS_GLYPH" in glyph_body
+
+
 def test_graph_page_carries_keyboard_and_accessibility_hooks(
     server: WebClient, board: dict[str, str]
 ) -> None:
