@@ -336,10 +336,13 @@ claims, completes or blocks it, it never appears in `board`, `list`, `next` or
 id, leaving `tack history <TASK_ID>` and `show` untouched. It is a standing
 note, distinct from the per-session narrative. A board created by an earlier
 release has no memo table and is refused with exit 6 until `tack migrate` runs.
+A board that claims schema version 2 but whose `memo_revisions` table is missing
+or unusable is refused the same way, with error code `memo_table_invalid`.
 
 **Attribution is per revision** — the author and timestamp live on the revision,
-never inline in the text. To see who added which line, run `tack memo --diff`
-or `tack memo --history`.
+never inline in the text. `tack memo --history` shows who wrote each revision and
+why; `tack memo --diff` shows what changed between two revisions. Neither
+attributes individual lines to an author.
 
 ## Status, readiness and claims
 
@@ -359,6 +362,7 @@ trusted from a caller.
 
 A claim is a short-lived lock: `tack claim T-000123 --agent my-agent` records
 the holder and moves a `ready` task to `in_progress` in the same transaction.
+A claim on a `review` task takes the review without changing its status.
 `tack release` gives it back. `tack next --claim` selects the highest-priority
 eligible task and claims it in **one** transaction, so concurrent agents never
 receive the same task; without `--claim` it only reports what is available.
@@ -384,7 +388,7 @@ acting agent as `claimed_by`. Leaving `in_progress` — to `review`, `done`, or
 held, not free. None of these paths writes the assignment.
 
 An agent's identity is `--agent AGENT_ID`, falling back to `TACKBOARD_AGENT`.
-Every mutating command needs one; without either, it exits 2. Identifiers are
+Every task or memo mutation needs one; without either, it exits 2. Identifiers are
 advisory labels and are not authenticated — the board prevents accidents, not
 malice.
 
@@ -431,12 +435,16 @@ are also JSON — on **stdout**, matching:
 
 Error codes are `usage`, `not_found`, `validation`, `invalid_transition`,
 `cycle`, `claim_conflict`, `stale_version`, `stale_rev`, `locked`, `schema`,
-`internal`.
+`memo_table_invalid`, `internal`.
 A length-limit violation fills `details` with `field`, `max`, `unit` and
 `actual` (see [Field limits](#field-limits)). `stale_version` and `stale_rev`
 both carry `details: {"expected": N, "current": M}` — the version or revision
 the caller held and the one now stored — so a caller never has to read the
-numbers out of the message. Other errors document their own keys.
+numbers out of the message. Other errors document their own keys. `doctor`
+also reports its own diagnostic codes in `errors[]` and `warnings[]` — for
+example `memo_table_invalid`, `memo_revision_gap`, `claim_on_inactive_task`
+and `in_progress_without_claim` — so read those codes rather than matching
+messages.
 Without `--json`, errors go to stderr as `error: <message>`. Tracebacks appear
 only with `--verbose`, and output is UTF-8 with no color codes.
 
@@ -477,7 +485,7 @@ tack — a project-scoped task board for coordinating agents
 Setup
   tack init --db PATH                  create the board (creates parent dirs)
   export TACKBOARD_DB=PATH             or pass --db PATH on every command
-  export TACKBOARD_AGENT=my-agent      every mutating command needs an actor
+  export TACKBOARD_AGENT=my-agent      every task or memo mutation needs an actor
   tack guide                           print this summary
 
 The work loop
@@ -545,19 +553,22 @@ without a reload.
 
 ### Dependency graph (`/graph`)
 
-The full dependency DAG. Node shapes and colours encode status at a glance:
-solid green squares for `done`, cyan diamonds for `in_progress`, a hexagon for
-`review`, pink dashed rectangles for `blocked`. Claimed nodes gain a double
-ring and a holder badge with the claim age.
+The full dependency DAG. Node shapes and colours encode the stored status at a
+glance: a circle for `ready`, an amber diamond for `in_progress`, a hexagon for
+`review`, a green square for `done`, a dashed rounded rectangle for `backlog`,
+and an octagon for `cancelled`. Derived states add an overlay rather than a
+status colour: `blocked` carries a 45° hatch fill and a 3 px border. Claimed
+nodes gain a double ring, a holder badge and the claim age.
 
 | Full graph (`nodes=12`) | Active tasks only — "Hide done & cancelled" |
 |:---:|:---:|
 | ![Full dependency graph](images/demo-graph.png) | ![Graph with done nodes hidden — 3 hidden, +N elision markers visible](images/demo-graph-active.png) |
 
 "Hide done & cancelled" removes completed nodes and counts the elided edges as
-`+N` markers on visible nodes. "Focus claimed" dims unclaimed nodes to 35 %
-without removing them. Both toggles keep the derived `blocked`, `eligible` and
-`dependency_ready` flags computed from the full graph.
+`+N` markers on visible nodes. "Focus claimed" dims non-claimed nodes and edges
+to 35 % without removing them. Both toggles keep the derived `blocked`,
+`eligible`, `reviewable` and `dependency_ready` flags computed from the full
+graph.
 
 ### Task detail (`/task/<id>`)
 
@@ -583,13 +594,10 @@ leaves the derived `blocked`, `eligible`, `reviewable` and `dependency_ready`
 flags computed from the full graph. The URL parameter `?hide_closed=1` wins
 over the `localStorage` preference (`tackboard.hideClosed`); the default is
 off. `?hide_closed=0` forces the full view. The outline shows `nodes=X of Y ·
-edges=A of B` when filtering is on. Every graph action has a keyboard
-equivalent; press `?` for the shortcut table. A skip link precedes the top bar,
-and the canvas is a single tab stop with `aria-activedescendant` tracking the
-active node.
-
-
-`tack serve` starts a **read-only** browser view of one board:
+edges=A of B · N hidden` when filtering is on. Every graph action except the
+toolbar-only "Focus claimed" sub-mode has a keyboard equivalent; press `?` for
+the shortcut table. A skip link precedes the top bar, and the canvas is a single
+tab stop with `aria-activedescendant` tracking the active node.
 
 ## Backup, migration and diagnostics
 
@@ -604,10 +612,11 @@ active node.
   migrates; opening an older schema fails with exit 6 and tells you to run it.
 - `tack doctor` checks readability, the application id, the schema version,
   foreign-key consistency, dangling dependencies, cycles, claims on inactive
-  tasks, `in_progress` tasks without a claim, and metadata integrity. Errors
-  exit 6; warnings are listed and exit 0. `ok: true` therefore means only that
-  no errors were found — it does not mean the board is clean, so read the
-  `warnings` array rather than `ok`.
+  tasks, `in_progress` tasks without a claim, metadata integrity, and — on
+  schema version 2 — the memo revision table (a missing or unusable table, or
+  non-monotonic revisions). Errors exit 6; warnings are listed and exit 0.
+  `ok: true` therefore means only that no errors were found — it does not mean
+  the board is clean, so read the `warnings` array rather than `ok`.
 
 ## Troubleshooting
 

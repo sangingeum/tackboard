@@ -108,7 +108,7 @@ tack — a project-scoped task board for coordinating agents
 Setup
   tack init --db PATH                  create the board (creates parent dirs)
   export TACKBOARD_DB=PATH             or pass --db PATH on every command
-  export TACKBOARD_AGENT=my-agent      every mutating command needs an actor
+  export TACKBOARD_AGENT=my-agent      every task or memo mutation needs an actor
   tack guide                           print this summary
 
 The work loop

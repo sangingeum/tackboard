@@ -49,7 +49,7 @@ commit, issue, or document; capturing anything that does not need to be
 ```bash
 tack init --db .board/project.sqlite3     # creates parent directories
 export TACKBOARD_DB=.board/project.sqlite3
-export TACKBOARD_AGENT=my-agent           # every mutating command needs an actor
+export TACKBOARD_AGENT=my-agent           # every task or memo mutation needs an actor
 tack guide                                # the agent-oriented usage summary
 ```
 
@@ -144,7 +144,7 @@ tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
 tack guide
 ```
 
-Every mutating command takes `--agent` or falls back to `TACKBOARD_AGENT`
+Every task or memo mutation takes `--agent` or falls back to `TACKBOARD_AGENT`
 (the explicit option wins). Read-only commands (`board`, `list`, `show`,
 `deps`, `dependents`, `graph`, `history`, `claims`, `doctor`) need no actor, and
 so do the memo's reads (`memo`, `memo --rev`, `memo --history`, `memo --diff`)
@@ -165,11 +165,14 @@ to the status it already has is a **no-op success** (`"changed": false`, no
 version bump); the shortcuts behave the same way (`complete` on `done`,
 `reopen` on `ready`, `cancel` on `cancelled`, `restore` on `backlog`).
 
-Be aware that `claim` only works on a **`ready`** task. A task created in
+Be aware that `claim` works on a **`ready`**, **`review`** or
+**`in_progress`** task. On `ready` it also moves the task to `in_progress`;
+on `review` it takes the review without changing its status; on
+`in_progress` it recovers a task whose claim was lost. A task created in
 `backlog` (the default) must be moved to `ready` before anyone can claim it —
-this is deliberate: `ready` is the decision that work may start. Claiming does
-not require being the assignee: the assignment is a routing note, so any agent
-may claim a `ready` task, and the claim names whoever takes it.
+this is deliberate: `ready` is the decision that work may start. Claiming
+does not require being the assignee: the assignment is a routing note, so any
+agent may claim a claimable task, and the claim names whoever takes it.
 
 **Entering `in_progress` claims the task; leaving it releases the claim.** A
 transition to `in_progress` sets `claimed_by`/`claimed_at` to the acting agent —
@@ -238,8 +241,9 @@ tack memo --file big.md --reason "draft" --dry-run --json
 ```
 
 **Attribution is per revision** — the author and timestamp live on the revision,
-never inline in the text. To see who added which line, run `tack memo --diff`
-or `--history`.
+never inline in the text. `--history` shows who wrote each revision and why;
+`--diff` shows what changed between two revisions. Neither attributes
+individual lines to an author.
 
 **`--edit`** needs a terminal: without one it exits 2 immediately, naming
 `--file` and `-`, rather than blocking on an editor prompt. An editor that
@@ -307,7 +311,7 @@ array; `{...}` is an object whose inner keys are described below the table.
 | `board` / `list` | `{schema_version, project, counts:{...}, tasks:[...]}` |
 | `board` / `list` with `--brief` or `--count` | `{schema_version, project, counts:{...}}` (no `tasks`) |
 | `deps <id>` / `dependents <id>` | `{schema_version, task_id, tasks:[...]}` |
-| `graph --format json` | `{schema_version, nodes:[{id,title,status,priority,assignee}], edges:[{source,target}]}` |
+| `graph --format json` | `{schema_version, nodes:[{id,title,status,priority,assignee,claimed_by,claimed_at}], edges:[{source,target}]}` |
 | `graph --format dot` | Graphviz text, not JSON |
 | `history [<id>]` | `{schema_version, task_id, items:[{id,timestamp,actor,event_type,task_id,payload}]}` |
 | `claims` | `{schema_version, items:[{task_id,agent_id,claimed_at,age_seconds,task:{...}}]}` |
@@ -333,7 +337,7 @@ The **task projection** (the `task` object, and each entry of `tasks`) carries
 `eligible`, `reviewable`, `blocked`, `blocked_reason`, `blockers`,
 `claimed_by`, `claimed_at`, `created_at`, `updated_at`, `completed_at`,
 `version`. A `graph --format json` node is a reduced subset of it
-(`id`, `title`, `status`, `priority`, `assignee`).
+(`id`, `title`, `status`, `priority`, `assignee`, `claimed_by`, `claimed_at`).
 
 - **`show` is a container, not the task.** The task object is under `task`;
   `notes` holds the task's notes (newest first, at most five). Read
@@ -347,8 +351,9 @@ The **task projection** (the `task` object, and each entry of `tasks`) carries
   `next --claim` would take them in: priority high to low, then `created_at`,
   then the task's sequence (its creation order on the board). `next --claim`
   returns a **single-task document instead**: `{"schema_version":1,"task":{...}}`,
-  the same `task` object a mutation returns, with `task` equal to `null` when
-  nothing is eligible. It has no `tasks` key; read `document["task"]`.
+  the same task projection the candidates use (so without `--full` it omits
+  `description`), with `task` equal to `null` when nothing is eligible. It has
+  no `tasks` key; read `document["task"]`.
 - **`init`, `migrate` and `backup` carry the operation's own `ok`, not
   `doctor`'s.** Each emits `{schema_version, ok, database, operation, ...}`.
   Here `ok: true` means *the operation succeeded* — the board was created,
@@ -514,8 +519,8 @@ same filtered set.
     board's operating premise, not a log of what a session did; a project's
     history belongs in its commits, its issues and its handoff record. Append a
     line when the premise genuinely changes, and say why in `--reason`.
-    Attribution is per revision: to see who added which line, run
-    `tack memo --diff` or `tack memo --history`.
+    Attribution is per revision: `--history` shows who wrote each revision
+    and why; `--diff` shows what changed between two revisions.
 
 ## Pitfalls (things that look broken but are not)
 
