@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `tack next --assignee AGENT_ID` selects only work routed to that agent, and
+  `next --assignee ""` selects only unassigned work. The default (unassigned
+  or the acting agent's route) and `--all-assignees` are unchanged; the two
+  selector forms cannot be combined. The selector applies to plain `next` and
+  `next --claim`; a claim still records the acting agent and leaves the
+  assignment as routed.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added

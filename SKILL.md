@@ -86,6 +86,11 @@ This is the whole discipline; the command reference below exists to support it.
    `tack next --json` is the other form: `{"schema_version":1,"tasks":[...]}`,
    where the empty result is an **empty `tasks` array** — never a bare task and
    never `null`. See *The JSON contract*.
+   The default selection already covers "assigned to me": it takes unassigned
+   work and work routed to the acting agent. `--assignee AGENT_ID` narrows that
+   to exactly one route with no unassigned fallback; `--assignee ""` selects
+   unassigned work only. It applies to plain `next` and `next --claim`, and
+   cannot be combined with `--all-assignees`.
 2. **Read before you act.** `tack show <id> --json` — confirm the status,
    prerequisites, description and any prior notes.
 3. **Record intent while working.** `tack note <id> "..."` for handoff context,
@@ -128,7 +133,8 @@ tack claim TASK_ID [--force --reason TEXT] [--if-version N]
 tack release TASK_ID [--force --reason TEXT] [--if-version N]
 tack claims [--agent A] [--older-than 2h]
 tack next [--agent A] [--claim] [--stage work|review] [--label L]
-          [--min-priority P] [--all-assignees] [--full] [--force --reason TEXT]
+          [--min-priority P] [--assignee A|--all-assignees] [--full]
+          [--force --reason TEXT]
 tack depend add TASK_ID --on PREREQUISITE_ID [--force --reason TEXT] [--if-version N]
 tack depend remove TASK_ID --on PREREQUISITE_ID [--if-version N]
 tack deps TASK_ID | tack dependents TASK_ID

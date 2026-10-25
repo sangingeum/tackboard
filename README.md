@@ -145,7 +145,8 @@ tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
 tack claim TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
 tack release TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
 tack claims [--agent ID] [--older-than DURATION]
-tack next [--agent ID] [--claim] [--stage work|review] [--force --reason TEXT] [filters]
+tack next [--agent ID] [--claim] [--stage work|review] [--force --reason TEXT]
+          [--assignee AGENT_ID|--all-assignees] [filters]
 tack depend add TASK_ID --on PREREQUISITE_ID [--agent ID] [--if-version N] [--force --reason TEXT]
 tack depend remove TASK_ID --on PREREQUISITE_ID [--agent ID] [--if-version N]
 tack deps TASK_ID
@@ -366,6 +367,13 @@ for" — and no claim path writes it: a claim on an unassigned task leaves it
 unassigned, and any agent may claim a task routed to another agent, the claim
 recording the caller while the routing stands. Only `create --assignee` and
 `update --assignee` write it.
+
+The default `next` selection already covers "assigned to me": it considers
+unassigned work and work routed to the acting agent. For stricter selection,
+`next --assignee AGENT_ID` restricts the candidates to exactly that route, with
+no unassigned fallback, and `next --assignee ""` selects unassigned work only.
+The selector applies to plain `next` and to `next --claim`, and cannot be
+combined with `--all-assignees`.
 
 Entering `in_progress` is what takes the claim, however you got there —
 `claim`, `next --claim`, or `status T-000123 in_progress` (including the
