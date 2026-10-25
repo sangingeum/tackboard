@@ -350,7 +350,7 @@
   /* shapes                                                                  */
   /* ----------------------------------------------------------------------- */
 
-  function shapeElement(status) {
+  function shapeElement() {
     /* One uniform card for every status: the text container is always a full
      * rectangle, so no title or label can cross the outline. Status is carried
      * by the corner glyph, the border style and the colour applied by CSS. */
@@ -476,7 +476,7 @@
         }));
       }
 
-      group.appendChild(shapeElement(node.status));
+      group.appendChild(shapeElement());
       group.appendChild(glyphElement(node.status));
 
       group.appendChild(textEl({ "class": "node__id", x: 28, y: 20 }, node.id));
@@ -705,7 +705,7 @@
           "aria-hidden": "true"
         }));
       }
-      group.appendChild(shapeElement(node.status));
+      group.appendChild(shapeElement());
       minimapSvg.appendChild(group);
     });
 
