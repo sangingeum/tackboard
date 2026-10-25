@@ -1210,3 +1210,118 @@ def test_board_renders_and_filters_without_javascript(
     eligible = server.request("/board?eligible=1").text
     assert "Eligible work" in eligible
     assert "Blocked work" not in eligible
+
+
+# --------------------------------------------------------------------------- #
+# Round 2 presentation fixes
+# --------------------------------------------------------------------------- #
+
+
+def _extract_js_map(path: Path, name: str) -> dict[str, str]:
+    source = path.read_text(encoding="utf-8")
+    start = source.index(name)
+    brace = source.index("{", start)
+    depth = 0
+    block = ""
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                block = source[brace + 1 : index]
+                break
+    if not block:
+        raise AssertionError(f"unclosed map for {name}")
+    pairs = re.findall(r'(\w+)\s*:\s*"([^"]*)"', block)
+    result: dict[str, str] = {}
+    for key, value in pairs:
+        value = re.sub(
+            r"\\u([0-9a-fA-F]{4})", lambda match: chr(int(match.group(1), 16)), value
+        )
+        result[key] = value
+    return result
+
+
+def _extract_python_map(path: Path, name: str) -> dict[str, str]:
+    import ast
+
+    source = path.read_text(encoding="utf-8")
+    start = source.index(name)
+    brace = source.index("{", start)
+    depth = 0
+    block = ""
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                block = source[brace + 1 : index]
+                break
+    if not block:
+        raise AssertionError(f"unclosed map for {name}")
+    return ast.literal_eval("{" + block + "}")
+
+
+def test_status_glyph_maps_agree() -> None:
+    """The server, graph and board glyph maps must not drift."""
+    python_map = _extract_python_map(
+        REPO_ROOT / "src" / "tackboard" / "web.py", "STATUS_GLYPHS"
+    )
+    graph_map = _extract_js_map(
+        REPO_ROOT / "src" / "tackboard" / "static" / "graph.js", "STATUS_GLYPH"
+    )
+    board_map = _extract_js_map(
+        REPO_ROOT / "src" / "tackboard" / "static" / "board.js", "GLYPHS"
+    )
+    assert python_map == graph_map == board_map
+
+
+def test_blocked_card_wraps_before_the_task_id(
+    server: WebClient, board: dict[str, str]
+) -> None:
+    """Blocked prose wraps before an ID, never inside the hyphen."""
+    page = server.request("/board").text
+    pattern = (
+        r'<p class="card__blocked">[^<]*<span class="nowrap">'
+        + re.escape(board["eligible"])
+        + r"</span>"
+    )
+    assert re.search(pattern, page) is not None
+
+
+def test_round_two_styles_are_present() -> None:
+    """Items 5, 6 and 8 and the Round 1 CSS cleanup are in the stylesheet."""
+    css = (REPO_ROOT / "src" / "tackboard" / "static" / "app.css").read_text(
+        encoding="utf-8"
+    )
+    # Item 5: a pressed toggle changes more than colour alone.
+    pressed_start = css.index('.graph-toolbar button[aria-pressed="true"]')
+    pressed_block = css[pressed_start : css.index("}", pressed_start)]
+    assert "border-width: 2px" in pressed_block
+
+    # Item 6: the minimap is a column, so the toggle cannot cover the drawing.
+    minimap_start = css.index(".minimap {")
+    minimap_block = css[minimap_start : css.index("}", minimap_start)]
+    assert "display: flex" in minimap_block
+    assert "flex-direction: column" in minimap_block
+    svg_start = css.index(".minimap__svg {")
+    svg_block = css[svg_start : css.index("}", svg_start)]
+    assert "flex: 1 1 auto" in svg_block
+
+    # Item 8: sibling navs keep the panel rhythm.
+    assert ".links + .links" in css
+
+    # Round 1 cleanup: the six retired legend shapes are gone.
+    for dead in (
+        ".shape-square",
+        ".shape-circle",
+        ".shape-diamond",
+        ".shape-hexagon",
+        ".shape-octagon",
+        ".shape-dashed",
+    ):
+        assert dead not in css

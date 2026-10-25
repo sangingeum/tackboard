@@ -10,12 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Web graph: every node is now one uniform rounded rectangular card, so the ID,
   title, status label and holder badge always stay inside the node outline. A
-  corner glyph plus the border style and colour carry the stored status, and
-  the legend and README describe that glyph language. A claimed node's holder
+  corner glyph plus colour carry the stored status; only `backlog` (dashed)
+  and `cancelled` (dotted) also change the border style. The legend and README
+  describe that glyph language. A claimed node's holder
   badge sits on its own row below the status label, so the two never overlap.
   The `+N` elided-link marker is anchored at a fixed top-right corner and no
   longer collides with titles. Edges render beneath the opaque cards and are
   no longer visible across node text.
+
+### Changed
+
+- Web view (Round 2, UI state and layout): the graph toolbar toggles now have a
+  visible on-state that does not rely on colour alone — a pressed button gains
+  a 2 px border and a bolder label, so "Highlight claimed", "Focus claimed" and
+  "Hide done & cancelled" read as on or off. The minimap's "Collapse minimap"
+  control sits in its own row below the drawing instead of on top of it, so it
+  no longer covers minimap content. Blocked sentences on board cards keep a
+  task ID whole: the ID is wrapped in a `nowrap` span, so a narrow card wraps
+  before the ID rather than at its hyphen. The Prerequisites and Dependents
+  sections on `/task/<id>` are separated by the same 16 px rhythm the other
+  panels use. Removed six unreferenced `.shape-*` legend rules left over from
+  the pre-uniform-card design, and documented the glyph map so `web.py`,
+  `graph.js` and `board.js` stay in sync. README corrected: only `backlog` and
+  `cancelled` nodes change border style.
 
 ## [0.4.1] - 2026-10-25
 

@@ -64,6 +64,8 @@
     cancelled: "cancelled"
   };
 
+  /* Status glyphs. Keep in sync with STATUS_GLYPHS in web.py and GLYPHS in
+   * board.js; the test suite asserts all three maps agree. */
   var STATUS_GLYPH = {
     backlog: "\u2026",
     ready: "\u25b7",

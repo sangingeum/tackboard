@@ -23,6 +23,7 @@ import hashlib
 import html
 import ipaddress
 import json
+import re
 import sqlite3
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -69,7 +70,9 @@ MAX_INDENT_DEPTH = 12
 
 #: Status glyphs and labels: the one visual language shared by board, graph
 #: and task page. The glyph is aria-hidden wherever it is rendered; the label
-#: carries the meaning for assistive technology.
+#: carries the meaning for assistive technology. Keep this map in sync with
+#: ``STATUS_GLYPH`` in static/graph.js and ``GLYPHS`` in static/board.js; the
+#: test suite asserts all three agree.
 STATUS_GLYPHS: dict[str, str] = {
     "backlog": "…",
     "ready": "▷",
@@ -207,6 +210,23 @@ def resolve_allowed_hosts(
 def _esc(value: object) -> str:
     """HTML-escape untrusted text; the only path task text takes to a page."""
     return html.escape("" if value is None else str(value), quote=True)
+
+
+_TASK_ID_RE = re.compile(r"(?<![A-Za-z0-9_-])([A-Z]{1,4}-\d+)(?![A-Za-z0-9_-])")
+
+
+def _nowrap_task_ids_html(text: str) -> str:
+    """Escape text and keep task IDs unbroken in narrow layouts.
+
+    A hyphen is a valid line-break point, so a plain sentence such as
+    ``blocked: prerequisite unfinished T-000052`` can split the ID across two
+    lines. Wrapping the ID in ``.nowrap`` lets the sentence wrap *before* the
+    ID while keeping the ID itself atomic.
+    """
+    return _TASK_ID_RE.sub(
+        lambda match: f'<span class="nowrap">{match.group(1)}</span>',
+        _esc(text),
+    )
 
 
 def _render(template_name: str, **values: str) -> str:
@@ -375,7 +395,7 @@ def _blocked_summary_html(task: Mapping[str, Any]) -> str:
         return ""
     return (
         '<p class="task-blocked-summary">Blocked by: '
-        f"{_esc(_blocked_reason_text(task))}</p>"
+        f"{_nowrap_task_ids_html(_blocked_reason_text(task))}</p>"
     )
 
 
@@ -541,7 +561,7 @@ def _blocked_html(task: Mapping[str, Any]) -> str:
             reason = f"{code} {detail}".strip()
     if not reason:
         reason = "prerequisite unfinished"
-    return f'<p class="card__blocked">blocked: {_esc(reason)}</p>'
+    return f'<p class="card__blocked">blocked: {_nowrap_task_ids_html(reason)}</p>'
 
 
 def _claim_html(task: Mapping[str, Any], now: datetime) -> str:

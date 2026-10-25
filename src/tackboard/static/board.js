@@ -12,6 +12,8 @@
   var LIMIT = 20;
   var STATUS_ORDER = ["backlog", "ready", "in_progress", "review", "done", "cancelled"];
   var TERMINAL = { done: true, cancelled: true };
+  /* Status glyphs. Keep in sync with STATUS_GLYPHS in web.py and
+   * STATUS_GLYPH in graph.js; the test suite asserts all three maps agree. */
   var GLYPHS = {
     backlog: "…",
     ready: "▷",
