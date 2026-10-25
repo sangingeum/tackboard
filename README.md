@@ -1,7 +1,4 @@
-# tackboard
-
-
-![tackboard banner image](images/tackboard-banner.svg)
+﻿# tackboard
 
 A small, reliable, project-scoped task board for coordinating multiple AI
 agents — one SQLite database per project, a predictable CLI (`tack`) as the
@@ -526,13 +523,52 @@ Status and readiness
 
 ## Web view
 
+`tack serve` starts a **read-only** browser view of one board — Kanban columns,
+a dependency graph, and per-task detail pages — that updates live while agents
+work.
+
+### Board (`/board`)
+
+The project memo sits at the top (collapsible), followed by Kanban columns per
+stored status. Filters, live counts, and auto-polling keep the view current
+without a reload.
+
+![Board view — project memo and Kanban columns](images/demo-board.png)
+
+### Dependency graph (`/graph`)
+
+The full dependency DAG. Node shapes and colours encode status at a glance:
+solid green squares for `done`, cyan diamonds for `in_progress`, a hexagon for
+`review`, pink dashed rectangles for `blocked`. Claimed nodes gain a double
+ring and a holder badge with the claim age.
+
+| Full graph (`nodes=12`) | Active tasks only — "Hide done & cancelled" |
+|:---:|:---:|
+| ![Full dependency graph](images/demo-graph.png) | ![Graph with done nodes hidden — 3 hidden, +N elision markers visible](images/demo-graph-active.png) |
+
+"Hide done & cancelled" removes completed nodes and counts the elided edges as
+`+N` markers on visible nodes. "Focus claimed" dims unclaimed nodes to 35 %
+without removing them. Both toggles keep the derived `blocked`, `eligible` and
+`dependency_ready` flags computed from the full graph.
+
+### Task detail (`/task/<id>`)
+
+Every task page shows metadata, derived readiness, prerequisites and dependents
+with live statuses, the claim holder and its age, derived blockers, the
+description (rendered as Markdown), and a newest-first timeline of notes and
+history events.
+
+| In progress — claimed | Blocked — explicit + prerequisite blockers |
+|:---:|:---:|
+| ![Task T-000004 IN PROGRESS, claimed by backend-agent](images/demo-task-inprogress.png) | ![Task T-000010 BLOCKED — explicit blocker and two unfinished prerequisites](images/demo-task-blocked.png) |
+
 The interactive graph implements the claimed overlay and the hide-closed
 toggle from the web redesign. A claimed node keeps its status shape and gains
 a double ring and a holder badge; "Highlight claimed" (on by default) shows the
 emphasis, and turning it off hides only the ring and badge — the claim stays in
-the tooltip, the node's `aria-label`, and the server-rendered outline. "Focus
-claimed" dims non-claimed nodes and edges to 35 % without hiding them. "Hide
-done & cancelled" (off by default) removes `done` and `cancelled` nodes and
+the tooltip, the node’s `aria-label`, and the server-rendered outline. “Focus
+claimed” dims non-claimed nodes and edges to 35 % without hiding them. “Hide
+done & cancelled” (off by default) removes `done` and `cancelled` nodes and
 every edge touching them from the canvas and the outline, counts the hidden
 nodes, marks visible nodes whose links were elided with a `+N` marker, and
 leaves the derived `blocked`, `eligible`, `reviewable` and `dependency_ready`
@@ -546,70 +582,6 @@ active node.
 
 
 `tack serve` starts a **read-only** browser view of one board:
-
-```bash
-tack serve                          # 127.0.0.1:8765, the selected database
-tack serve --port 8080
-tack serve --json                   # exactly one startup record on stdout
-```
-
-It serves the same database as every other command (`--db`, then
-`TACKBOARD_DB`, then the nearest `.tackboard.toml`) through the same service
-layer, and shows the project name and database path on every page so the
-operator can confirm which board is on screen.
-
-| Path | What it shows |
-|---|---|
-| `/board` | The project memo at the top of the page (escaped, collapsible, never truncated), then Kanban columns per stored status, with filters (status, assignee, priority, label, blocked, eligible) and the same counts as `board --count`, computed over those filters. `done` and `cancelled` show their 20 most recently updated cards behind a "show all" link. The page polls `/api/board` every 5 seconds, honours `ETag`/`If-None-Match` (a 304 keeps the DOM untouched), and diffs changes in place so filters, scroll position and selection survive an update. Polling pauses when the tab is hidden and can be paused or resumed by hand; a "last updated" stamp and a polite live region report significant count changes. |
-| `/graph` | The dependency DAG — edge `A -> B` means B depends on A — with zoom, pan, fit-to-screen and a one-task neighbourhood. Nodes show ID, title, status, priority and assignee. Done, eligible, in-progress, review, blocked and cancelled are distinguished by shape and label as well as colour, and a server-rendered indented outline sits underneath the canvas, so the dependency structure is readable with JavaScript disabled or if the drawing fails. |
-| `/task/<id>` | Description rendered as Markdown prose (headings, lists, inline code, bold, italic and http(s) links; a plain-text fallback without JavaScript), status, priority, assignee, labels, the claim holder and its age, prerequisites and dependents with their statuses, derived blockers and readiness, timestamps, and a newest-first timeline of notes and recent history. |
-
-The JSON API publishes the CLI's own documents — same `schema_version`, same
-task projection, same counts object:
-
-| Endpoint | Equivalent CLI document |
-|---|---|
-| `/api/board` | `tack board --json` |
-| `/api/graph` (add `?task=T-000123` for one neighbourhood) | `tack graph --json` |
-| `/api/memo` | `tack memo --json` |
-| `/api/tasks/<id>` | the `task` from `tack show --json`, plus its claim, prerequisites, dependents, notes and history |
-
-### Read-only, loopback-only, no authentication
-
-- **Read-only.** The server accepts `GET` and `HEAD` and answers **405** to
-  everything else, including any attempt to mutate. Every change goes through
-  the CLI.
-- **Loopback by default.** `--host` defaults to `127.0.0.1`.
-- **Host validation.** The hostname *and* port from the `Host` header are
-  checked against an allowlist — `localhost`, `127.0.0.1`, `::1` and the bind
-  host for a loopback bind; only the explicitly configured values for a remote
-  one. This is the DNS-rebinding guard. A refused request is answered with a
-  single `403` whose body names the received value (or says the header was
-  absent or unparseable), lists the accepted host names, states that a
-  `host:port` value must carry the bound port, and points at `--allowed-host`
-  (a non-loopback bind also needs `--allow-remote`).
-- **Headers.** Every response carries
-  `Content-Security-Policy: default-src 'self'` and
-  `X-Content-Type-Options: nosniff`. There are no inline scripts or styles, the
-  page never requests another host, and the JavaScript is committed as-is
-  (hand-written SVG for the graph, no vendored library, no build step).
-- **Selected database only.** Connections are opened per request with
-  `PRAGMA query_only=ON`, and every page renders task text escaped.
-
-> **There is no authentication.** Anyone who can reach the port can read the
-> whole board. Keep it on loopback unless you accept that. Exposing it
-> deliberately takes both options:
-
-```bash
-tack serve --host 100.64.0.10 --allow-remote --allowed-host 100.64.0.10
-```
-
-A non-loopback `--host` without `--allow-remote` *and* at least one
-`--allowed-host` is refused with exit 2, and a warning that the board has no
-authentication is printed when remote access is enabled. `--json` writes
-exactly one startup record to stdout (so a supervisor can parse the first
-line) while the banner and every ongoing server log go to stderr; `--quiet`
-silences the banner but never the record.
 
 ## Backup, migration and diagnostics
 
