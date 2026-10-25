@@ -887,6 +887,77 @@ def test_claim_takes_a_card_assigned_to_another_agent(run: RunCli, db_file: Path
     assert claimed["assignee"] == "other"
 
 
+def test_next_assignee_filters_by_route(run: RunCli, db_file: Path) -> None:
+    _create(run, db_file, "routed to alice", "--status", "ready", "--assignee", "alice")
+    _create(run, db_file, "unassigned", "--status", "ready")
+
+    code, out, err = run(
+        "next", "--json", "--agent", "bob", "--assignee", "alice", "--db", str(db_file)
+    )
+    assert code == 0, err
+    document = _json_document(out)
+    assert set(document) == {"schema_version", "tasks"}
+    assert [task["title"] for task in document["tasks"]] == ["routed to alice"]
+
+    code, out, err = run(
+        "next", "--json", "--agent", "bob", "--assignee", "", "--db", str(db_file)
+    )
+    assert code == 0, err
+    assert [task["title"] for task in _json_document(out)["tasks"]] == ["unassigned"]
+
+
+def test_next_assignee_with_all_assignees_exits_two(run: RunCli, db_file: Path) -> None:
+    _create(run, db_file, "any", "--status", "ready", "--assignee", "alice")
+
+    code, out, _err = run(
+        "next",
+        "--json",
+        "--agent",
+        "bob",
+        "--assignee",
+        "alice",
+        "--all-assignees",
+        "--db",
+        str(db_file),
+    )
+    assert code == 2
+    document = _json_document(out)
+    assert document["error"]["code"] == "usage"
+    message = document["error"]["message"]
+    assert "--assignee" in message
+    assert "--all-assignees" in message
+
+
+def test_next_assignee_claim_records_holder_and_keeps_route(
+    run: RunCli, db_file: Path
+) -> None:
+    task = _create(
+        run, db_file, "routed to alice", "--status", "ready", "--assignee", "alice"
+    )
+
+    code, out, err = run(
+        "next",
+        "--json",
+        "--agent",
+        "bob",
+        "--assignee",
+        "alice",
+        "--claim",
+        "--db",
+        str(db_file),
+    )
+    assert code == 0, err
+    claimed = _json_document(out)
+    assert set(claimed) == {"schema_version", "task"}
+    assert claimed["task"]["id"] == task["id"]
+    assert claimed["task"]["assignee"] == "alice"
+    assert claimed["task"]["claimed_by"] == "bob"
+
+    shown = _json_document(run("show", task["id"], "--json", "--db", str(db_file))[1])
+    assert shown["task"]["assignee"] == "alice"
+    assert shown["task"]["claimed_by"] == "bob"
+
+
 def test_next_all_assignees_claim_takes_a_card_assigned_to_another_agent(
     run: RunCli, db_file: Path
 ) -> None:

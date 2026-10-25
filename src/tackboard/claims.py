@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 
 from .config import validate_agent_id
 from .db import read_transaction, write_transaction
@@ -24,6 +24,23 @@ from .service import (
 )
 
 STAGES: tuple[str, ...] = ("work", "review")
+
+
+class _Unset:
+    """Sentinel type for "no assignee selector was given".
+
+    ``None`` cannot serve as the default: an explicit empty-string selector
+    (``--assignee ""``) means "unassigned work only", so the absence of the
+    option needs its own marker to keep today's routing behaviour intact.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+        return "_UNSET"
+
+
+_UNSET: Final = _Unset()
 
 _DURATION_RE = re.compile(r"\s*(\d+)\s*([smhd])\s*\Z")
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
@@ -166,6 +183,7 @@ def _candidates(
     label: str | None,
     min_priority: str | None,
     all_assignees: bool,
+    assignee: str | None | _Unset = _UNSET,
     full: bool,
 ) -> list[dict[str, Any]]:
     sql = "SELECT t.* FROM tasks t"
@@ -180,8 +198,15 @@ def _candidates(
     tasks = _project_rows(conn, rows, full=full)
     flag = "eligible" if stage == "work" else "reviewable"
     tasks = [task for task in tasks if task[flag]]
-    if not all_assignees:
-        tasks = [task for task in tasks if task["assignee"] in (None, actor)]
+    if assignee is _UNSET:
+        if not all_assignees:
+            tasks = [task for task in tasks if task["assignee"] in (None, actor)]
+    else:
+        # An explicit selector replaces the default "unassigned or mine"
+        # disjunction: "" means the unassigned pool only; any other value means
+        # exactly that route, with no unassigned fallback.
+        selector = None if assignee == "" else assignee
+        tasks = [task for task in tasks if task["assignee"] == selector]
     if min_priority is not None:
         floor = PRIORITY_RANK[min_priority]
         tasks = [
@@ -207,6 +232,7 @@ def next_task(
     label: str | None = None,
     min_priority: str | None = None,
     all_assignees: bool = False,
+    assignee: str | None | _Unset = _UNSET,
     full: bool = False,
 ) -> dict[str, Any]:
     """Select the next task for ``actor``; ``claim=True`` selects and claims in
@@ -220,6 +246,19 @@ def next_task(
         raise UsageError("--force is only meaningful together with --claim.")
     if min_priority is not None:
         _check_priority(min_priority)
+    if assignee is not _UNSET and assignee is not None:
+        if assignee != "":
+            try:
+                validate_agent_id(str(assignee))
+            except UsageError as exc:
+                # A malformed route is a value error (exit 4), unlike the
+                # usage-error class the validator raises for --agent.
+                raise ValidationError(str(exc)) from None
+        if all_assignees:
+            raise UsageError(
+                "--assignee cannot be combined with --all-assignees; "
+                "choose one selection policy."
+            )
 
     arguments: dict[str, Any] = {
         "actor": actor,
@@ -227,6 +266,7 @@ def next_task(
         "label": label,
         "min_priority": min_priority,
         "all_assignees": all_assignees,
+        "assignee": assignee,
         "full": full,
     }
 

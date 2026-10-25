@@ -623,6 +623,15 @@ def _build_parser() -> _Parser:
     next_parser.add_argument("--label", metavar="LABEL")
     next_parser.add_argument("--min-priority", choices=PRIORITIES, metavar="PRIORITY")
     next_parser.add_argument("--all-assignees", action="store_true")
+    next_parser.add_argument(
+        "--assignee",
+        metavar="AGENT_ID",
+        default=claims._UNSET,
+        help=(
+            "select only work routed to AGENT_ID; \"\" selects unassigned work "
+            "only (cannot be combined with --all-assignees)"
+        ),
+    )
     next_parser.add_argument("--full", action="store_true")
     _add_force(next_parser)
     next_parser.set_defaults(handler="next")
@@ -1066,6 +1075,7 @@ def _run_next(ctx: _Context, args: argparse.Namespace) -> int:
             label=args.label,
             min_priority=args.min_priority,
             all_assignees=args.all_assignees,
+            assignee=args.assignee,
             full=args.full,
         )
         task = result["task"]

@@ -385,6 +385,111 @@ def test_next_hides_other_agents_assignments_unless_asked(
     assert widened["task"]["assignee"] == "qa"
 
 
+def test_next_assignee_selector_restricts_to_one_route(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """An explicit selector means exactly that route, with no unassigned fallback."""
+    routed = make_task(title="Routed to alice", status="ready", assignee="alice")
+    make_task(title="Unassigned", status="ready")
+    make_task(title="Routed to qa", status="ready", assignee="qa")
+
+    result = claims.next_task(conn, actor="dev", assignee="alice")
+
+    assert [task["id"] for task in result["tasks"]] == [routed["id"]]
+    assert result["task"]["id"] == routed["id"]
+
+
+def test_next_assignee_empty_string_selects_unassigned_work_only(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """An empty selector is the unassigned pool, not "no selector"."""
+    unassigned = make_task(title="Unassigned", status="ready")
+    make_task(title="Routed to alice", status="ready", assignee="alice")
+
+    result = claims.next_task(conn, actor="dev", assignee="")
+
+    assert [task["id"] for task in result["tasks"]] == [unassigned["id"]]
+
+
+def test_next_assignee_claim_keeps_the_route_and_records_the_holder(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    """Selection and claim stay atomic; the assignment is not rewritten."""
+    task = make_task(title="Routed to alice", status="ready", assignee="alice")
+
+    result = claims.next_task(conn, actor="bob", assignee="alice", claim=True)
+
+    assert result["task"]["id"] == task["id"]
+    assert result["task"]["assignee"] == "alice"
+    assert result["task"]["claimed_by"] == "bob"
+    assert result["task"]["status"] == "in_progress"
+
+    shown = service.get_task(conn, task["id"])
+    assert shown["assignee"] == "alice"
+    assert shown["claimed_by"] == "bob"
+
+
+def test_next_assignee_with_all_assignees_is_a_usage_error(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    make_task(title="Any", status="ready", assignee="alice")
+
+    with pytest.raises(UsageError) as caught:
+        claims.next_task(conn, actor="dev", assignee="alice", all_assignees=True)
+
+    message = str(caught.value)
+    assert "--assignee" in message
+    assert "--all-assignees" in message
+
+
+def test_next_assignee_composes_with_label_and_minimum_priority(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    wanted = make_task(
+        title="Alice urgent api",
+        status="ready",
+        assignee="alice",
+        labels=["api"],
+        priority="urgent",
+    )
+    make_task(
+        title="Alice low api",
+        status="ready",
+        assignee="alice",
+        labels=["api"],
+        priority="low",
+    )
+    make_task(
+        title="Bob urgent api",
+        status="ready",
+        assignee="bob",
+        labels=["api"],
+        priority="urgent",
+    )
+    make_task(
+        title="Alice urgent net",
+        status="ready",
+        assignee="alice",
+        labels=["net"],
+        priority="urgent",
+    )
+
+    result = claims.next_task(
+        conn, actor="dev", assignee="alice", label="api", min_priority="high"
+    )
+
+    assert [task["id"] for task in result["tasks"]] == [wanted["id"]]
+
+
+def test_next_assignee_rejects_an_invalid_agent_id(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    make_task(title="Any", status="ready")
+
+    with pytest.raises(ValidationError):
+        claims.next_task(conn, actor="dev", assignee="bad id!")
+
+
 def test_next_filters_by_label_and_minimum_priority(
     conn: sqlite3.Connection, make_task: MakeTask
 ) -> None:
