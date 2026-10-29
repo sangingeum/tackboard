@@ -295,6 +295,17 @@ Two habits are worth keeping:
 - The CLI is exercised both in process (fast, for the bulk of the matrix) and
   once through the installed console script and the `python -m` form, so a
   packaging regression cannot hide behind an importable module.
+- Property tests (`hypothesis`, dev-group only) exercise the parts of the
+  contract that examples cannot enumerate: every status command lands or
+  refuses, cycle detection agrees with a reachability oracle, and the derived
+  flags and counts agree with a fresh derivation from raw rows.
+- A state-machine model test drives a plain dict/set model and a real board
+  through the same random command sequence (including the audited `--force`
+  paths), comparing the observable projection after each step and requiring a
+  clean `doctor` at the end.
+- The scale benchmark (`scripts/benchmark_scale.py`) is tracked but ungated: a
+  smoke test runs it on a small board and publishes p50/p95 numbers for
+  `next --claim`, `board --brief` and `graph --json` at 1k and 10k tasks.
 
 ## 11. The board-level memo
 

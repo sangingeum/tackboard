@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Contract-hardening test surfaces. `hypothesis` is a dev-group dependency
+  only: property tests cover the transition table (every command lands or
+  refuses), cycle detection against an independent reachability oracle, and
+  the derived flags and counts against a fresh derivation from raw rows. A
+  state-machine model test drives an in-memory model and a real board through
+  one random command sequence, including the audited `release --force`,
+  `claim --force` and `recover` paths, and compares the observable projection
+  at every step. Core runtime dependencies stay empty.
+- `scripts/benchmark_scale.py` publishes a tracked, ungated scale benchmark:
+  deterministic 1k/10k-task boards, 50 agents claiming through `next --claim`,
+  and p50/p95 timings for `next --claim`, `board --brief` and `graph --json`.
+  A smoke test runs it on a 100-task board; no timing threshold gates CI.
+- `doctor` warns about the stored event surfaces the CLI validates on write:
+  note refs over kind limits or the 20-ref cap, a memo event whose `rev` is
+  missing or lags the current revision, and a `plan.applied` event naming a
+  missing task. Every one is a warning; exit 6 stays reserved for an unusable
+  board. The stale-claim warning now reads the same derived `claim_stale` flag
+  as the projection.
+- CI gains a migration matrix over schema versions 1 and 2. A small generator
+  builds each legacy board (version 1 drops the memo table and triggers, so
+  `tack migrate` genuinely runs 1 -> 2), then the job migrates and requires a
+  clean `tack doctor` report.
+- `reject` now explicitly documents and tests that it inherits the claim
+  policy: rejecting a task claimed by another agent is a claim conflict until
+  the claim is taken over or released with `release --force --reason`.
 - Published JSON Schemas for every `--json` document shape, and
   `tack schema [DOCUMENT] [--json]` to read them. `tack schema --json` lists
   each schema's name, `$id` (a `urn:tackboard:schema:<name>` URN — no hosted
