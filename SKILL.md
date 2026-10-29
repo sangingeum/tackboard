@@ -337,7 +337,7 @@ array; `{...}` is an object whose inner keys are described below the table.
 | `history [<id>] --follow [--since EVENT_ID]` | NDJSON: one `{schema_version, id, timestamp, actor, event_type, task_id, payload}` per line |
 | `claims` | `{schema_version, items:[{task_id,agent_id,claimed_at,age_seconds,task:{...}}]}` |
 | `agents` | `{schema_version, agents:[{agent_id,claimed_tasks,last_event_at,completed,released,forced}]}` |
-| `memo` / `memo --rev N` | `{schema_version, rev, text, author, created_at, bytes}` (rev 0 with no memo: `rev:0`, `text:"",`, `author:null`, `created_at:null`, `bytes:0`) |
+| `memo` / `memo --rev N` | `{schema_version, rev, text, author, created_at, bytes}` (rev 0 with no memo: `rev:0`, `text:""`, `author:null`, `created_at:null`, `bytes:0`) |
 | `memo --history` | `{schema_version, current_rev, items:[{rev, author, created_at, bytes, reason}]}` (newest first) |
 | `memo --diff [A [B]]` | `{schema_version, from, to, added, removed, unified}` (`unified` is the text a human sees) |
 | a memo write | `{schema_version, changed, memo:{rev, text, author, created_at, bytes}}`; `--dry-run` adds `dry_run:true`, `max`, `bytes`, `remaining` |
