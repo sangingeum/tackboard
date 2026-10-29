@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-30
+
+### Fixed
+
+- The release build job's schema-presence check counted matches with `rg`,
+  which is not installed on GitHub-hosted runners, so every CI run failed with
+  `rg: command not found` from the moment that step landed. The check now
+  counts with `grep -cE` and still fails when the wheel or sdist is missing the
+  packaged schemas.
+
 ## [0.7.0] - 2026-10-30
 
 ### Added
