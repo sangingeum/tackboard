@@ -738,6 +738,8 @@ Setup
   export TACKBOARD_DB=PATH             or pass --db PATH on every command
   export TACKBOARD_AGENT=my-agent      every task or memo mutation needs an actor
   tack guide                           print this summary
+  tack guide --topics                  list the reference topics
+  tack guide --topic NAME              print one topic (e.g. commands)
 
 The work loop
   tack memo --json                     read the project memo before you start

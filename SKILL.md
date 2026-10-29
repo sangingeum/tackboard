@@ -32,6 +32,38 @@ Three properties shape every command:
 - **CLI output is a contract.** Every command has a stable JSON document and
   stable exit codes. Agents must never scrape the human-formatted output.
 
+## What to load, and when
+
+**Start with the core.** `tack guide` prints it: setup, the work loop, the
+cheap board queries, the JSON rules in one breath, and the exit codes. It is
+one page and it is all an agent needs to begin work — do not read this file
+top to bottom to start a task.
+
+**Everything else is a reference topic, printed on demand.** Load the one the
+work actually needs:
+
+```bash
+tack guide --topics                  list every reference topic
+tack guide --topic commands          the full command reference and transitions
+tack guide --topic documents         document shapes, field limits, the contract
+tack guide --topic plans             `tack plan apply` and the plan file format
+tack guide --topic refs              typed note refs (commit / url / path / task)
+tack guide --topic reject            rejection, and reviewer separation
+tack guide --topic memo              the board memo: revisions, the guard, append
+tack guide --topic force             the audited `--force` cases, exhaustively
+tack guide --topic doctor            the health check and how to read findings
+tack guide --topic schemas           the published JSON Schemas
+tack guide --topic web               the read-only web view
+tack guide --topic practices         working practices worth internalising
+tack guide --topic pitfalls          things that look broken but are not
+tack guide --topic verification      an end-to-end smoke script
+```
+
+This file is the same reference in reading order: every reference section below
+is the text of exactly one topic from the table above (the topics list maps
+each name to its heading). Reading this whole file therefore loads every
+topic — which is precisely what an agent should avoid doing up front.
+
 ## When to use
 
 - Two or more agents (or one agent over many sessions) share one project's work.
@@ -174,35 +206,8 @@ no transition and no force case, so a claim the caller already holds is refused
 by the existing policy (use plain `release`), and a healthy unclaimed task is
 an idempotent no-op.
 
-`tack plan apply FILE` creates a whole dependency DAG in one command. The file
-is JSON with one top-level key, `tasks`, whose elements carry a local `key`
-(file-scoped handle, unique within the file), `title` (required),
-`description`, `status` (default `ready`), `priority` (default `normal`),
-`assignee`, `labels`, and `depends_on` (an array of keys from the same file).
-Unknown fields are a validation error. `-` reads stdin. The command is
-**create-only**: it never updates or adopts an existing task, and applying the
-same file twice creates a second set. The whole document is validated first;
-an accepted batch commits its rows, labels and edges in one `BEGIN IMMEDIATE`
-transaction, so any failure leaves the board exactly as it was. `--dry-run`
-validates and reports without writing anything (not even events). A cycle
-among the batch's own edges is a validation error (exit 4). A plan appends one
-`task.created` event per task and one board-level `plan.applied` event.
-
-A complete plan file — two keys, one edge, one element without a key:
-
-```json
-{"tasks": [
-  {"key": "parser", "title": "Ship the parser", "priority": "high",
-   "assignee": "cpp-dev", "labels": ["core"]},
-  {"key": "cli", "title": "Wire the CLI", "depends_on": ["parser"]},
-  {"title": "Document the plan", "depends_on": ["cli"], "priority": "low"}
-]}
-```
-
-Applying it returns one JSON document with `count: 3` and one
-`{id, key, title}` element per created task (the keyless element's `key` is
-`null`). Every mutating command needs an actor: pass `--agent ID` or set
-`TACKBOARD_AGENT`.
+`tack plan apply FILE` creates a whole dependency DAG in one command — the file
+format and its guarantees are in `tack guide --topic plans`.
 
 ### Statuses and transitions
 
@@ -234,6 +239,36 @@ to `ready`, and likewise `complete` from `in_progress` — clears them
 (`claimed_by: null`). So a task moved to `in_progress` by `status` is held, not
 free, and a claim is not always an explicit `claim` call. None of those paths
 touches the assignment: `assignee` is written only by a routing command.
+
+## Plans
+
+`tack plan apply FILE` creates a whole dependency DAG in one command. The file
+is JSON with one top-level key, `tasks`, whose elements carry a local `key`
+(file-scoped handle, unique within the file), `title` (required),
+`description`, `status` (default `ready`), `priority` (default `normal`),
+`assignee`, `labels`, and `depends_on` (an array of keys from the same file).
+Unknown fields are a validation error. `-` reads stdin. The command is
+**create-only**: it never updates or adopts an existing task, and applying the
+same file twice creates a second set. The whole document is validated first;
+an accepted batch commits its rows, labels and edges in one `BEGIN IMMEDIATE`
+transaction, so any failure leaves the board exactly as it was. `--dry-run`
+validates and reports without writing anything (not even events). A cycle
+among the batch's own edges is a validation error (exit 4). A plan appends one
+`task.created` event per task and one board-level `plan.applied` event.
+
+A complete plan file — two keys, one edge, one element without a key:
+
+    {"tasks": [
+      {"key": "parser", "title": "Ship the parser", "priority": "high",
+       "assignee": "cpp-dev", "labels": ["core"]},
+      {"key": "cli", "title": "Wire the CLI", "depends_on": ["parser"]},
+      {"title": "Document the plan", "depends_on": ["cli"], "priority": "low"}
+    ]}
+
+Applying it returns one JSON document with `count: 3` and one
+`{id, key, title}` element per created task (the keyless element's `key` is
+`null`). Every mutating command needs an actor: pass `--agent ID` or set
+`TACKBOARD_AGENT`.
 
 ## The project memo
 
@@ -361,7 +396,7 @@ fix is usually to shorten the title and move the full text into
   violation gives `field` / `max` / `unit` / `actual`; a claim conflict gives
   `claimed_by`) — read them instead of parsing the message text.
 
-### JSON Schemas
+## JSON Schemas
 
 The schemas are the source of truth for every document below: one JSON Schema
 (draft 2020-12) per shape, in the `schemas` directory of the repository and
@@ -389,7 +424,7 @@ both, `tasks` is optional), `deps`, `graph`, `history`, `history_since`,
 `memo_history`, `memo_diff`, `memo_write`, `doctor`, `task_mutation`, `note`,
 `init`, `migrate`, `backup`, `error`.
 
-### Document shapes
+## Document shapes
 
 The top-level keys of every `--json` document a consumer meets. `[...]` is an
 array; `{...}` is an object whose inner keys are described below the table.
@@ -440,28 +475,6 @@ derived read-only fields — nothing is stored, `schema_version` stays `1`, and
 the age is measured against one clock per read. A `graph --format json` node is
 a reduced subset of it
 (`id`, `title`, `status`, `priority`, `assignee`, `claimed_by`, `claimed_at`).
-
-- **Typed note refs.** A note event's payload is `{text, refs}`; `refs` is
-  always an array (empty `[]` when the note carried none, including notes
-  written before refs existed — the stored row is never rewritten). Each entry
-  is `{kind, value}` with `kind` one of `commit`, `url`, `path`, `task`. The
-  same array appears in `show`'s `notes[]` and in the `note` events of
-  `history`, so a consumer reads one shape. Refs are event-only: no table, no
-  column, no migration, and they never count toward the 2 KiB note text cap.
-- **Rejections are derived, never stored.** `tack reject <id> --reason TEXT`
-  moves a task from `review` back to `in_progress` through the ordinary
-  transition function and appends one `task.rejected` event whose payload is
-  `{from:"review", to:"in_progress", reason}`. It is **not** a forced
-  transition — there is no `forced` key and `--force` is not accepted. The
-  reason is mandatory. `rejections` (integer, `0` when never rejected) and
-  `last_rejection_reason` (string or `null`) are counted from those events on
-  every read, so they cost no column and cannot drift from history.
-- **Reviewer separation is opt-in.** `next --stage review --claim
-  --different-from-author` drops candidates whose most recent `in_progress`
-  entry was made by the calling agent. It is valid only with `--stage review`
-  and `--claim` (otherwise exit 2), runs inside the same `BEGIN IMMEDIATE`
-  select-and-claim transaction as the claim, and leaves the default selection
-  untouched.
 
 - **`show` is a container, not the task.** The task object is under `task`;
   `notes` holds the task's notes (newest first, at most five). Read
@@ -529,7 +542,45 @@ a reduced subset of it
   must decide about. See the matching pitfall, *Reopening a prerequisite does
   not rewrite anyone's status*.
 
-### The `counts` object
+## Typed note refs
+
+A note event's payload is `{text, refs}`; `refs` is always an array (empty
+`[]` when the note carried none, including notes written before refs existed —
+the stored row is never rewritten). Each entry is `{kind, value}` with `kind`
+one of `commit`, `url`, `path`, `task`. The same array appears in `show`'s
+`notes[]` and in the `note` events of `history`, so a consumer reads one shape.
+Refs are event-only: no table, no column, no migration, and they never count
+toward the 2 KiB note text cap.
+
+`tack note T-000001 "text" --ref commit:1a2b3c4 --ref path:src/parser.py` is how
+an agent hands the next one the evidence instead of a description of it. A ref
+is a pointer, not a claim: `task` must name an existing task on this board,
+`commit` must be a hexadecimal git object id, `url` an absolute `http`/`https`
+URL, and `path` a repository-relative path. Field limits and the per-kind
+grammar are in `tack guide --topic documents`.
+
+## Rejections and reviewer separation
+
+**Rejections are derived, never stored.** `tack reject <id> --reason TEXT`
+moves a task from `review` back to `in_progress` through the ordinary
+transition function and appends one `task.rejected` event whose payload is
+`{from:"review", to:"in_progress", reason}`. It is **not** a forced
+transition — there is no `forced` key and `--force` is not accepted. The
+reason is mandatory. `rejections` (integer, `0` when never rejected) and
+`last_rejection_reason` (string or `null`) are counted from those events on
+every read, so they cost no column and cannot drift from history.
+
+Rejecting moves the task to `in_progress`, which claims it for the rejecting
+agent: release it if the work goes back to the author.
+
+**Reviewer separation is opt-in.** `next --stage review --claim
+--different-from-author` drops candidates whose most recent `in_progress`
+entry was made by the calling agent. It is valid only with `--stage review`
+and `--claim` (otherwise exit 2), runs inside the same `BEGIN IMMEDIATE`
+select-and-claim transaction as the claim, and leaves the default selection
+untouched.
+
+## The `counts` object
 
 `board --json` and `list --json` carry a `counts` object: `tasks`, one key per
 status (`backlog`, `ready`, `in_progress`, `review`, `done`, `cancelled`), and
@@ -553,7 +604,7 @@ cheapest way to ask "what does this board look like?"; combining them is a
 usage error. Both accept the same filters as `board`, and their counts are the
 same filtered set.
 
-### The `doctor` document
+## The `doctor` document
 
 `doctor --json` returns
 `{"schema_version":1,"ok":<bool>,"errors":[...],"warnings":[...]}`:
@@ -601,7 +652,7 @@ same filtered set.
   task projection and `claims --stale` read — against the configured
   `stale_claim_after` threshold.
 
-### Exit codes
+## Exit codes
 
 | Code | Meaning |
 |---|---|
@@ -612,6 +663,56 @@ same filtered set.
 | 4 | validation error, invalid transition, or dependency cycle; over the memo cap, a missing or too long `--reason`, invalid UTF-8 |
 | 5 | concurrency conflict: claim held, stale version (`stale_version`), stale memo revision (`stale_rev`) — both carry `details: {expected, current}` — lock timeout (`locked` is the only `retryable: true`) |
 | 6 | database, schema, or migration error (including an unmigrated board), or a `doctor` run that found errors |
+
+## Forcing a transition (`--force`)
+
+`--force` is an audited, exhaustive list, not a general bypass. It requires
+`--reason TEXT` (at most 1024 characters) and is recorded as an event carrying
+`forced: true` and the reason. It is accepted only for these cases:
+
+- taking over or releasing another agent's claim (`claim --force`,
+  `release --force`);
+- starting work whose only unfinished blockers are cancelled prerequisites
+  (entering `in_progress`);
+- adding a prerequisite that is unfinished to a task already `in_progress` or
+  `review` (`depend add --force`);
+- recovering an `in_progress` task that lost its claim (`recover`, which is a
+  thin wrapper over `release --force`);
+- replacing, restoring or clearing a non-empty memo without `--if-rev`
+  (`memo --force --reason`).
+
+It is refused when `blocked_reason` is set, and it never permits entering
+`review` or `done` with an unfinished prerequisite — the unfinished-prerequisite
+override applies only to entering `in_progress`. If your case is not on the
+list, the answer is a different command, not a bigger hammer. `tack recover`
+adds no force case of its own: a claim the caller already holds is refused
+(use plain `release`), and a healthy unclaimed task is an idempotent no-op.
+
+## Web view
+
+`tack serve` starts a read-only browser view of one board: Kanban columns per
+stored status with the memo at the top, a dependency graph, and per-task detail
+pages. It binds to loopback by default, answers only `GET` and `HEAD` (405
+otherwise), sends `Content-Security-Policy: default-src 'self'`, and ships no
+inline script or style and no external host — safe to leave open for a human to
+watch.
+
+- `/board` — status columns, live counts and filters; a claimed card names the
+  holder and the claim age, and a stale claim appends `⚠ stale`.
+- `/graph` — the full DAG. Status is carried by a corner glyph and words, never
+  colour alone; `blocked` and `reviewable` are overlays on the stored status.
+  "Hide done & cancelled" counts elided edges as `+N` markers and "Focus
+  claimed" dims the rest without hiding it; `?hide_closed=1` / `0` overrides
+  the `localStorage` preference.
+- `/task/<id>` — metadata, derived readiness, prerequisites and dependents with
+  live statuses, the claim holder and its age, blockers, the description
+  rendered as Markdown, and a newest-first timeline of notes and history.
+- `/api/*` — the same documents the CLI produces; `/api/graph` and
+  `tack graph --json` carry identical values for the same database.
+
+Nothing in the web view mutates: every change goes through the CLI so it lands
+as an audited event. `--allow-remote` and `--allowed-host` exist for a
+deliberate exception; a loopback board never needs them.
 
 ## Best practices
 
