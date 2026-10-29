@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A plan application appends one canonical `task.created` event per task plus
   one board-level `plan.applied` event whose payload carries `file`, `tasks`
   and `ids`.
+- The README's five web-view screenshots are backed by committed tooling: a
+  deterministic seed (`scripts/demo_seed.py` with `scripts/demo_plan.json`) and
+  a capture script (`scripts/capture_demo_screenshots.py`). The seed builds
+  twelve fixed tasks covering all six statuses (including one cancelled task),
+  one claimed in-progress task and one blocked task with two unfinished
+  prerequisites; `tests/test_demo_seed.py` asserts the documented counts and
+  that two fresh runs project identically. The capture script renders all five
+  images from one running board at a single 1440×1200 viewport and device scale
+  factor 1, and validates each PNG before reporting success.
 
 ### Changed
 
