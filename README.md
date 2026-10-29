@@ -805,6 +805,33 @@ Stale claims
   .tackboard.toml (for example "45m"); --older-than overrides it per call.
 ```
 
+### Reference, on demand
+
+The block above is the whole always-loaded guide. Everything else is a topic
+you fetch when the work needs it — the same text as the corresponding section of
+[`SKILL.md`](SKILL.md):
+
+```bash
+tack guide --topics                  # list the reference topics
+tack guide --topic commands          # the full command reference
+tack guide --topic documents         # document shapes and field limits
+tack guide --topic memo              # the board memo and its guard
+```
+
+Topics: `commands`, `documents`, `plans`, `refs`, `reject`, `memo`, `force`,
+`doctor`, `web`, `schemas`, `practices`, `pitfalls`, `verification`.
+
+### Adoption examples
+
+[`examples/`](examples/) holds three small runnable recipes — a git worktree per
+claim, a supervisor loop over the event feed, and planner → workers → reviewer.
+Each builds its own temporary board, needs no network, and is executed by the
+test suite.
+
+An optional [MCP adapter](packages/tackboard-mcp/) lives in its own package for
+agent runtimes that call tools instead of assembling shell commands. It is
+outside the core: `tackboard` itself keeps `dependencies = []`.
+
 ## Web view
 
 `tack serve` starts a **read-only** browser view of one board — Kanban columns,

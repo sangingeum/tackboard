@@ -272,6 +272,27 @@ The CLI is the primary interface for agents, so its output is a versioned API:
 Exit codes and JSON documents are the parts an agent is allowed to depend on.
 Human output may be re-worded.
 
+### 7.1 Instructions are tiered like the output
+
+An agent's context is the scarcest resource this tool spends, so the written
+instructions follow the same rule as the JSON: load the minimum, fetch the rest
+by name.
+
+- **Core** — `tack guide` prints one page: setup, the work loop, the cheap board
+  queries, the JSON rules, the exit codes. It is byte-identical to the README's
+  "Agent quickstart" block (a test asserts it), and a size guard keeps it under
+  6 KiB so it cannot grow back into a manual.
+- **Topics** — `tack guide --topics` lists the reference, and
+  `tack guide --topic NAME` prints one section. An unknown name is a usage error
+  that names the whole set, so a mistyped topic teaches the right one.
+- **One source of truth** — the core is read from the README quickstart and each
+  topic from its `SKILL.md` section; `scripts/sync_guide.py` generates
+  `src/tackboard/guide.py` from both, and a test re-runs the generator and
+  compares, so the CLI text and the documents cannot drift.
+- **Out of the core** — the optional MCP adapter (`packages/tackboard-mcp`) is a
+  separate package: it shells out to `tack --json`, owns no domain logic, and
+  its framework dependency never reaches `tackboard`'s metadata.
+
 ## 8. Where things are enforced
 
 | Concern | Implementation | Enforced by |

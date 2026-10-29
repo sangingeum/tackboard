@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Tiered agent instructions. `tack guide` stays the one-page core (byte-identical
+  to the README "Agent quickstart", now guarded under 6 KiB by a test), and
+  `tack guide --topics` / `tack guide --topic NAME` print the reference on
+  demand: `commands`, `documents`, `plans`, `refs`, `reject`, `memo`, `force`,
+  `doctor`, `web`, `schemas`, plus `practices`, `pitfalls` and `verification`.
+  An unknown topic is a usage error naming the set. The text is generated from
+  the README quickstart and the `SKILL.md` sections by `scripts/sync_guide.py`,
+  so the CLI and the documents cannot drift; `SKILL.md`'s first screen now says
+  what to load when.
+- `packages/tackboard-mcp`, an optional MCP adapter outside the core: a
+  separate package that shells out to `tack --json` and exposes `next_claim`,
+  `show`, `note`, `complete`, `release`, `create` and `board_brief`, each
+  returning the CLI's document unchanged. No domain logic is duplicated, the
+  core stays at `dependencies = []`, and the framework dependency lives only in
+  the adapter's metadata.
+- `examples/` — three runnable adoption recipes, each with its own README and
+  executed by the test suite: a git worktree per claim (including the
+  `claim_conflict` refusal), a supervisor loop over `history --since` with a
+  persisted cursor and bounded passes, and planner → workers → reviewer with
+  `plan apply`, a rejection and a re-claim.
 - Contract-hardening test surfaces. `hypothesis` is a dev-group dependency
   only: property tests cover the transition table (every command lands or
   refuses), cycle detection against an independent reachability oracle, and
