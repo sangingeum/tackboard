@@ -44,7 +44,7 @@ src/tackboard/
   templates/       server-rendered HTML
   static/          CSS and JavaScript (no inline scripts, no external hosts)
 tests/             pytest suite, mirrors the module layout
-scripts/           development tools (real-output schema validation)
+scripts/           development tools (schema validation, scale benchmark)
 ```
 
 `schemas/` at the repository root is a symlink to `src/tackboard/schemas`, the

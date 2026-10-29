@@ -955,6 +955,24 @@ uv run mypy src             # types
 uv run pytest --cov         # coverage (the configured floor is in pyproject.toml)
 ```
 
+### Scale benchmark
+
+`scripts/benchmark_scale.py` builds deterministic boards (1,000 and 10,000
+tasks by default), has 50 distinct agents claim through `next --claim`, and
+times `next --claim`, `board --brief` and `graph --json` (p50/p95 over a fixed
+iteration count and seed). It prints a JSON summary:
+
+```bash
+uv run python scripts/benchmark_scale.py
+uv run python scripts/benchmark_scale.py --tasks 100 --agents 5 --iterations 1
+uv run python scripts/benchmark_scale.py --out benchmark.json
+```
+
+The benchmark is **tracked, not gated**: it publishes a ceiling and a
+regression signal, but no timing threshold fails CI. A smoke test runs it on a
+100-task board; the published numbers are recorded in the project's round
+notes, not asserted in the suite.
+
 ### Demo board
 
 The five screenshots in the web view section come from one deterministic seed
