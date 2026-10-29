@@ -27,7 +27,8 @@ provides exactly those, and nothing more:
   operator while agents work.
 
 Installation, the CLI contract, the semantics, and troubleshooting are all
-below; `DESIGN.md` describes the architecture for contributors.
+below; `DESIGN.md` describes the architecture for contributors, and
+[`docs/security.md`](docs/security.md) states the security model.
 
 ## Install
 
@@ -906,6 +907,15 @@ the board card appends `⚠ stale`, the graph node's holder badge reads
 `· stale` and gains a dashed outline, the server-rendered dependency outline
 appends `— stale`, and the task page shows a `⚠ stale claim` chip.
 
+## Security
+
+`tackboard` has no authentication: agent IDs are advisory labels and the web
+view is an unauthenticated loopback server. The board prevents accidents, not
+malice. The full model — advisory IDs, the read-only web view and its Host
+validation, untrusted-text handling, and the network-filesystem warning — is in
+[`docs/security.md`](docs/security.md). Read it before exposing the board or the
+web port beyond the machine that owns the database.
+
 ## Backup, migration and diagnostics
 
 - `tack backup PATH` writes a consistent snapshot using SQLite's online backup
@@ -975,6 +985,9 @@ appends `— stale`, and the task page shows a `⚠ stale claim` chip.
 | `--edit needs a terminal; use 'tack memo --file PATH' or 'tack memo -' instead.` | 2 | Use `--append`, `--file` or `-` |
 
 ## Development
+
+The acceptance bar for a 1.0 release, with the evidence for each criterion and
+the one still-open item, is in [`docs/1.0-criteria.md`](docs/1.0-criteria.md).
 
 ```bash
 uv sync

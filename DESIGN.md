@@ -442,7 +442,8 @@ No user accounts or authorization (agent identifiers are advisory labels);
 no cross-project dependencies; no automatic lease expiry or heartbeats; no
 bulk import; no web mutations; no automatic status change when a dependency
 changes; no deletion of tasks (cancel, never delete). The design should stay
-extensible, but none of these belong in the current version.
+extensible, but none of these belong in this version. The security model these
+choices produce is stated in [`docs/security.md`](docs/security.md).
 
 One clarification on that list, so "no bulk import" stays honest as the tool
 grows.
@@ -455,10 +456,41 @@ write history as if it had happened, and cannot touch a task it did not create.
 Atomic, create-only application of a plan is **in scope**: `tack plan apply`
 validates the whole document and commits every row, label and edge in one
 `BEGIN IMMEDIATE` transaction (or commits nothing). See section 7 for the CLI
-contract and `plans.py` for the rules.
+contract and `plans.py` for the rules. A plan's `status` may be `backlog`,
+`ready` or `cancelled`; active-work states and `done` are not creation states
+and are refused, so a plan cannot carry completed work into the board.
 
 Two notes on where the memo sits against this list. The board-level memo
 (section 11) is **in scope** as of schema version 2: it is the project's
 standing note, not a task. Pinning a **card** — a per-card `pin` — is
 deliberately **deferred**, and the name `pin` is reserved for it so nobody
 reaches for it to mean the board's memo.
+
+### Where the shipped surface meets the list
+
+The audit for the 1.0 bar checked each shipped feature against the non-goals
+above. The list itself is unchanged; these are the readings that keep it honest.
+
+- **Plan application is create-only.** It cannot adopt, update or delete an
+  existing task, and its edges are local keys resolved within the batch. It is
+  the "no bulk import" clarification above, not an exception.
+- **The memo is not a task.** Nothing in `tasks`, `claims` or `dependencies`
+  reads it; it cannot be claimed, completed, blocked or counted, and it never
+  appears in `board`, `list`, `next` or `counts`.
+- **Typed refs are pointers, not imports.** A note's `refs` array is event-only;
+  a `task:` ref names an existing task on the same board and writes no history,
+  no task row and no edge. A plan cannot use refs at all.
+- **`reject` adds no transition and no policy.** It is the existing
+  `review → in_progress` transition with a mandatory reason and the existing
+  claim guard. Rejecting a task claimed by another agent is a claim conflict;
+  there is no supervisor override. It is not a web mutation and not a deletion.
+- **The web view is read-only in the strict sense.** It answers `GET` and
+  `HEAD` only, everything else is `405`, and there is no write endpoint. The
+  optional non-loopback bind (`--allow-remote` plus `--allowed-host`) changes
+  reachability, not the mutation policy, and adds no authentication.
+- **The schemas describe documents; they add no storage or command.** They are
+  the published contract for the JSON already produced, not a new surface.
+- **Staleness is visible, not automatic.** `claim_age_seconds`, `claim_stale`,
+  `claims --stale` and `doctor`'s `stale_claim` warning surface a claim that has
+  aged past the configured threshold. Nothing expires a claim, and `recover` is
+  a manual, audited `release --force` wrapper — not a heartbeat or a lease.
