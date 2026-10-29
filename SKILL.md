@@ -95,6 +95,9 @@ This is the whole discipline; the command reference below exists to support it.
    prerequisites, description and any prior notes.
 3. **Record intent while working.** `tack note <id> "..."` for handoff context,
    a repro command, or a link to the artifact. Notes are append-only and cheap.
+   Add typed refs — `--ref commit:1a2b3c4`, `--ref url:https://…`, `--ref
+   path:src/…`, `--ref task:T-000118` — so the next agent follows the evidence
+   instead of re-deriving it.
 4. **Complete it.** `tack complete <id> --json`. Completing a task is what
    unblocks its dependents — it is the moment the board changes shape.
 5. **Review stage.** If your project routes work through `review`, a reviewer
@@ -125,7 +128,8 @@ tack update TASK_ID [--title T] [--description TEXT] [--priority P]
                     [--blocked-reason TEXT|--clear-blocked-reason] [--if-version N]
 tack status TASK_ID STATUS [--force --reason TEXT] [--if-version N]
 tack complete|reopen|cancel|restore TASK_ID [--force --reason TEXT] [--if-version N]
-tack note TASK_ID TEXT
+tack note TASK_ID TEXT [--ref KIND:VALUE ...]
+tack reject TASK_ID --reason TEXT [--if-version N]
 tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
            | --history | --diff [N [N]] | --restore N | --clear]
           [--if-rev N] [--reason TEXT] [--force] [--dry-run] [--limit N]
@@ -136,7 +140,7 @@ tack agents [--json]
 tack recover TASK_ID --reason TEXT [--if-version N]
 tack next [--agent A] [--claim] [--stage work|review] [--label L]
           [--min-priority P] [--assignee A|--all-assignees] [--full]
-          [--force --reason TEXT]
+          [--different-from-author] [--force --reason TEXT]
 tack depend add TASK_ID --on PREREQUISITE_ID [--force --reason TEXT] [--if-version N]
 tack depend remove TASK_ID --on PREREQUISITE_ID [--if-version N]
 tack deps TASK_ID | tack dependents TASK_ID
@@ -314,8 +318,16 @@ Limits are enforced on write; a violation is exit 4 (`validation`).
 | `label` | 50 characters per label, at most 20 labels per task |
 | `blocked_reason` | 2 KiB (2048 UTF-8 bytes) |
 | note text (`note`) | 2 KiB (2048 UTF-8 bytes) |
-| `--reason` (with `--force`) | 1024 characters |
+| note refs (`--ref`) | at most 20 refs per note; per-kind limits below |
+| `--reason` (with `--force`, and always on `reject`) | 1024 characters |
 | agent id (`--agent`, `--assignee`) | 1-64 characters from `[A-Za-z0-9._:-]` |
+
+Ref limits by kind: `commit` is a git object id of 7-40 hexadecimal
+characters; `url` is an absolute `http`/`https` URL with no whitespace, at most
+2048 characters; `path` is a repository-relative path — no leading `/`, no
+backslash, no `.`/`..`/empty segment — at most 1024 characters; `task` must
+name an existing task on the same board. Identical `kind:value` pairs collapse
+to one before the cap is counted.
 
 Read the limit before writing: a rejected `create` costs a round trip, and the
 fix is usually to shorten the title and move the full text into
@@ -374,9 +386,9 @@ array; `{...}` is an object whose inner keys are described below the table.
 | `memo --diff [A [B]]` | `{schema_version, from, to, added, removed, unified}` (`unified` is the text a human sees) |
 | a memo write | `{schema_version, changed, memo:{rev, text, author, created_at, bytes}}`; `--dry-run` adds `dry_run:true`, `max`, `bytes`, `remaining` |
 | `doctor` | `{schema_version, ok, errors:[...], warnings:[...]}` |
-| a mutation except `note` and `reopen` (`create`, `update`, `status`, `complete`, `cancel`, `restore`, `claim`, `release`, `depend add/remove`) | `{schema_version, changed, task:{...}}` |
+| a mutation except `note` and `reopen` (`create`, `update`, `status`, `complete`, `cancel`, `restore`, `reject`, `claim`, `release`, `depend add/remove`) | `{schema_version, changed, task:{...}}` |
 | `reopen <id>` | `{schema_version, changed, task:{...}}`, plus `active_dependents:[...]` when it changes anything |
-| `note <id> TEXT` | `{schema_version, changed, event:{...}}` |
+| `note <id> TEXT [--ref KIND:VALUE ...]` | `{schema_version, changed, event:{...}}`; the event's `payload` is `{text, refs:[{kind, value}]}` |
 | `init` | `{schema_version, ok, database, operation, created, project_label, database_schema_version}` |
 | `migrate` | `{schema_version, ok, database, operation, migrated, from_version, to_version, database_schema_version}` |
 | `backup` | `{schema_version, ok, database, operation, backup, source_application_id, database_schema_version}` |
@@ -389,8 +401,9 @@ The **task projection** (the `task` object, and each entry of `tasks`) carries
 `id`, `title`, `description` (omitted on `board`/`list`/`next` unless `--full`),
 `status`, `priority`, `assignee`, `labels`, `depends_on`, `dependency_ready`,
 `eligible`, `reviewable`, `blocked`, `blocked_reason`, `blockers`,
-`claimed_by`, `claimed_at`, `claim_age_seconds`, `claim_stale`, `created_at`,
-`updated_at`, `completed_at`, `version`. `claim_age_seconds` is the active
+`claimed_by`, `claimed_at`, `claim_age_seconds`, `claim_stale`, `rejections`,
+`last_rejection_reason`, `created_at`, `updated_at`, `completed_at`, `version`.
+`claim_age_seconds` is the active
 claim's age in whole seconds (`null` when the task has no active claim) and
 `claim_stale` says whether that age reached the configured
 `stale_claim_after` threshold (always `false` without a claim). Both are
@@ -398,6 +411,28 @@ derived read-only fields — nothing is stored, `schema_version` stays `1`, and
 the age is measured against one clock per read. A `graph --format json` node is
 a reduced subset of it
 (`id`, `title`, `status`, `priority`, `assignee`, `claimed_by`, `claimed_at`).
+
+- **Typed note refs.** A note event's payload is `{text, refs}`; `refs` is
+  always an array (empty `[]` when the note carried none, including notes
+  written before refs existed — the stored row is never rewritten). Each entry
+  is `{kind, value}` with `kind` one of `commit`, `url`, `path`, `task`. The
+  same array appears in `show`'s `notes[]` and in the `note` events of
+  `history`, so a consumer reads one shape. Refs are event-only: no table, no
+  column, no migration, and they never count toward the 2 KiB note text cap.
+- **Rejections are derived, never stored.** `tack reject <id> --reason TEXT`
+  moves a task from `review` back to `in_progress` through the ordinary
+  transition function and appends one `task.rejected` event whose payload is
+  `{from:"review", to:"in_progress", reason}`. It is **not** a forced
+  transition — there is no `forced` key and `--force` is not accepted. The
+  reason is mandatory. `rejections` (integer, `0` when never rejected) and
+  `last_rejection_reason` (string or `null`) are counted from those events on
+  every read, so they cost no column and cannot drift from history.
+- **Reviewer separation is opt-in.** `next --stage review --claim
+  --different-from-author` drops candidates whose most recent `in_progress`
+  entry was made by the calling agent. It is valid only with `--stage review`
+  and `--claim` (otherwise exit 2), runs inside the same `BEGIN IMMEDIATE`
+  select-and-claim transaction as the claim, and leaves the default selection
+  untouched.
 
 - **`show` is a container, not the task.** The task object is under `task`;
   `notes` holds the task's notes (newest first, at most five). Read

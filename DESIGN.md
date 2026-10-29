@@ -142,6 +142,14 @@ plan is built; and every accepted force is recorded in the event payload as
 another agent cannot be modified" — the claim must be taken over or released
 first.
 
+`reject` is the one reason-bearing shortcut that is **not** a forced
+transition: it is `review -> in_progress` through this same function, with a
+mandatory `--reason` recorded in the `task.rejected` payload and no `forced`
+key. A reason on a transition therefore has two distinct meanings — the audit
+trail of an override, and the explanation of ordinary review feedback — and
+only the first is force. `rejections` and `last_rejection_reason` are derived
+from those events on read; nothing about a rejection is stored.
+
 ## 5. Transactions, history and idempotence
 
 - **One transaction per mutation**, opened with `BEGIN IMMEDIATE` explicitly.

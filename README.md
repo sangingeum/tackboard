@@ -147,7 +147,8 @@ tack complete TASK_ID [mutation options]
 tack reopen TASK_ID [mutation options]
 tack cancel TASK_ID [mutation options]
 tack restore TASK_ID [mutation options]
-tack note TASK_ID TEXT [--agent ID]
+tack note TASK_ID TEXT [--ref KIND:VALUE ...] [--agent ID]
+tack reject TASK_ID --reason TEXT [--agent ID] [--if-version N]
 tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
            | --history | --diff [N [N]] | --restore N | --clear]
           [--if-rev N] [--reason TEXT] [--force] [--dry-run] [--limit N]
@@ -155,8 +156,8 @@ tack claim TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
 tack release TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
 tack claims [--agent ID] [--older-than DURATION]
 tack agents [--json]
-tack next [--agent ID] [--claim] [--stage work|review] [--force --reason TEXT]
-          [--assignee AGENT_ID|--all-assignees] [filters]
+tack next [--agent ID] [--claim] [--stage work|review] [--different-from-author]
+          [--force --reason TEXT] [--assignee AGENT_ID|--all-assignees] [filters]
 tack depend add TASK_ID --on PREREQUISITE_ID [--agent ID] [--if-version N] [--force --reason TEXT]
 tack depend remove TASK_ID --on PREREQUISITE_ID [--agent ID] [--if-version N]
 tack deps TASK_ID
@@ -287,8 +288,16 @@ message names the field and the limit.
 | `label` | 50 characters per label, at most 20 labels per task |
 | `blocked_reason` | 2 KiB (2048 UTF-8 bytes) |
 | note text (`note`) | 2 KiB (2048 UTF-8 bytes) |
-| `--reason` (with `--force`) | 1024 characters |
+| note refs (`--ref`) | at most 20 per note; per-kind limits below |
+| `--reason` (with `--force`, and always on `reject`) | 1024 characters |
 | agent id (`--agent`, `--assignee`) | 1-64 characters from `[A-Za-z0-9._:-]` |
+
+Ref limits by kind: `commit` is a git object id of 7-40 hexadecimal
+characters; `url` is an absolute `http`/`https` URL with no whitespace, at most
+2048 characters; `path` is a repository-relative path — no leading `/`, no
+backslash, no `.`/`..`/empty segment — at most 1024 characters; `task` must
+name an existing task on the same board. Identical `kind:value` pairs collapse
+to one before the per-note cap is counted.
 
 A length violation also carries machine-readable details, so a caller can
 recover without parsing the message:
@@ -446,6 +455,73 @@ fails with exit 5 — take the claim over with `claim --force --reason` or clear
 it with `release --force --reason` first. `--reason` is required and must not be
 empty.
 
+## Handoff references and rejections
+
+### Typed references on notes
+
+A note can point at the evidence instead of describing it. `--ref` is
+repeatable and takes `KIND:VALUE`:
+
+```bash
+tack note T-000123 "PR is up; see the retry path" --agent cpp-dev \
+  --ref commit:1a2b3c4 \
+  --ref url:https://example.com/acme/repo/pull/42 \
+  --ref path:src/tackboard/service.py \
+  --ref task:T-000118
+```
+
+The kind vocabulary is closed — `commit`, `url`, `path`, `task` — and an
+unknown kind is a validation error (exit 4) whose message and `details.allowed`
+name the four accepted kinds. Each kind is validated on write; the rules and
+length limits are in [Field limits](#field-limits).
+
+Refs are **event-only**: they live in the note event's payload as
+`"refs": [{"kind": "...", "value": "..."}]`. There is no table, no column and
+no schema migration, `schema_version` stays `1`, and a note never changes the
+task's `version` or `updated_at` (it never has). They do not count toward the
+2 KiB note text cap, but a note carries at most 20 of them; identical
+`kind:value` pairs collapse to one, and the cap counts the survivors. `show
+--json` and `history --json` return the same array, and a note written without
+refs — including every note written before this change — reads as `"refs": []`.
+
+### Rejecting review work
+
+```bash
+tack reject T-000123 --reason "tests do not cover the retry path" --agent qa
+```
+
+`reject` sends a task in `review` back to `in_progress`. It is a shortcut over
+that existing transition, not a new one: it goes through the same transition
+function, adds no transition to the table, and changes no policy. `--reason` is
+**mandatory** and is stored in the event payload; it must not be empty and is
+capped at 1024 characters.
+
+A reject is **not a forced transition**. It records one canonical
+`task.rejected` event whose payload is `{from: "review", to: "in_progress",
+reason}`, with no `forced` key, and `--force` is not accepted on `reject`.
+Rejecting a task that is not in `review` is a validation error (exit 4).
+
+The `rejections` count and `last_rejection_reason` are derived from those
+events on every read — nothing is stored, so they cannot drift from history.
+Both appear on the task document (`show --json`, `board`, `list`, `next` and
+mutation results), and the web view prints the last reason on the card and the
+task page.
+
+### Reviewer separation
+
+```bash
+tack next --stage review --claim --different-from-author --agent qa --json
+```
+
+Reviewing your own work is a weak gate. This opt-in flag drops the candidates
+whose most recent `in_progress` entry was made by the calling agent, so the
+reviewer pool gets someone else's work. It is valid only together with
+`--stage review` and `--claim` (anything else is a usage error, exit 2) and it
+runs inside the same `BEGIN IMMEDIATE` select-and-claim transaction as the
+claim, so filtering and claiming stay atomic. The author is derived from
+history — there is no stored author column. Without the flag, selection is
+unchanged.
+
 ## Dependencies
 
 An edge `A -> B` means B depends on A. `depend add`, `depend remove`, `deps`,
@@ -596,6 +672,12 @@ unassigned), with `fields` still listing `assignee`. Events written before the
 new value was recorded may carry `previous_assignee` only. The payload change
 is additive — `schema_version` stays `1` and no field is renamed or removed.
 
+A note event's payload is `{"text": ..., "refs": [...]}` where `refs` is an
+array of `{"kind": ..., "value": ...}` objects — always present, `[]` when the
+note carried none, including notes written before typed refs existed. A reject
+appends one `task.rejected` event whose payload is `{"from": "review", "to":
+"in_progress", "reason": ...}`; it carries no `forced` key.
+
 ### Claim fields in graph and task documents
 
 Graph nodes and task documents may carry two optional claim fields:
@@ -607,6 +689,14 @@ carry the same values for the same database. The web view uses `claimed_at`
 only for display — a compact relative age in the holder badge's title text,
 with the full ISO timestamp in the badge's tooltip and `<title>` — and never
 changes the underlying claim.
+
+### Rejection fields in task documents
+
+Every task document carries `rejections` (an integer, `0` when the task has
+never been rejected — never `null`) and `last_rejection_reason` (the reason of
+the most recent `task.rejected` event, or `null`). Both are additive derived
+fields: `schema_version` stays `1`, nothing is stored, and they are recomputed
+from history on every read.
 
 ## Agent quickstart
 

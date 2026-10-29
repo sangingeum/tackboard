@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tack note TASK_ID TEXT --ref KIND:VALUE ...` attaches typed handoff
+  references to a note. The kind vocabulary is closed: `commit` (a git object
+  id of 7-40 hex characters), `url` (an absolute http(s) URL, at most 2048
+  characters, no whitespace), `path` (repository-relative — no leading `/`, no
+  backslash, no `.`/`..` segment, at most 1024 characters) and `task` (an
+  existing task id on the same board). An unknown kind, a bad value or a
+  missing task is a validation error (exit 4) whose message and
+  `details.allowed` name the vocabulary. At most 20 refs per note; identical
+  pairs collapse to one. Refs are event-only (`refs:[{kind,value}]` in the note
+  payload), never count toward the 2 KiB note text cap, and never change the
+  task's `version`. `show --json` and `history --json` expose the same array,
+  and a note without refs — including one written before this change — reads as
+  `"refs": []`. No schema migration.
+- `tack reject TASK_ID --reason TEXT` sends a task from `review` back to
+  `in_progress` through the existing transition function — no new transition,
+  no new policy. The reason is mandatory, capped at 1024 characters, stored in
+  the `task.rejected` event payload, and is **not** a forced transition: no
+  `forced` key, and `--force` is not accepted. Rejecting a task that is not in
+  `review` is a validation error (exit 4).
+- Task documents carry `rejections` (integer, `0` when never rejected) and
+  `last_rejection_reason` (string or `null`), both derived from
+  `task.rejected` history on every read. The web card and task page print the
+  last reason. Additive within `schema_version` 1; nothing is stored.
+- `tack next --stage review --claim --different-from-author` skips tasks whose
+  most recent `in_progress` entry was made by the calling agent, so a reviewer
+  does not pick up their own work. Opt-in only, valid solely with `--stage
+  review --claim` (otherwise exit 2), and filtered inside the same
+  `BEGIN IMMEDIATE` select-and-claim transaction. Default selection is
+  unchanged.
 - `tack plan apply FILE|- [--dry-run]` creates a whole dependency DAG in one
   command. The plan is JSON with one top-level key, `tasks`; each element may
   carry a local, file-scoped `key`, `title`, `description`, `status` (default
