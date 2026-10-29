@@ -231,12 +231,8 @@ def test_derived_flags_and_counts_match_a_fresh_derivation(
                 statuses[source] for source, target in edges if target == index
             ]
             dependency_ready = all(state == "done" for state in prerequisite_states)
-            blocked_expected = (
-                statuses[index] not in {"done", "cancelled"}
-                and (
-                    any(state != "done" for state in prerequisite_states)
-                    or explicit[index]
-                )
+            blocked_expected = statuses[index] not in {"done", "cancelled"} and (
+                any(state != "done" for state in prerequisite_states) or explicit[index]
             )
             row = conn.execute(
                 "SELECT claimed_at FROM claims WHERE task_id = ?", (task["id"],)
