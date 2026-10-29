@@ -581,6 +581,28 @@ def _state_chips(task: Mapping[str, Any]) -> str:
     return "".join(chips)
 
 
+def _rejection_html(task: Mapping[str, Any]) -> str:
+    """The last rejection reason as a card line; empty when never rejected."""
+    count = int(task.get("rejections") or 0)
+    if not count:
+        return ""
+    reason = str(task.get("last_rejection_reason") or "").strip()
+    if not reason:
+        return f'<p class="card__rejection">rejected {count}&#215;</p>'
+    return f'<p class="card__rejection">rejected {count}&#215;: {_esc(reason)}</p>'
+
+
+def _rejection_fact(task: Mapping[str, Any]) -> str:
+    """The task page's rejection fact: count, plus the last reason."""
+    count = int(task.get("rejections") or 0)
+    if not count:
+        return "&#8212;"
+    reason = str(task.get("last_rejection_reason") or "").strip()
+    if not reason:
+        return _esc(f"rejected {count}\u00d7")
+    return _esc(f"rejected {count}\u00d7: {reason}")
+
+
 def _blocked_html(task: Mapping[str, Any]) -> str:
     if not task.get("blocked"):
         return ""
@@ -640,6 +662,7 @@ def _card(task: Mapping[str, Any], now: datetime) -> str:
         state_chips=_state_chips(task),
         blocked=_blocked_html(task),
         claim=_claim_html(task, now),
+        rejection=_rejection_html(task),
         blocked_flag="true" if task.get("blocked") else "false",
         claimed_flag="true" if task.get("claimed_by") else "false",
     )
@@ -1482,6 +1505,7 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
             claim_html=_claim_fact_html(
                 claim, now, stale=bool(task.get("claim_stale"))
             ),
+            rejection_fact=_rejection_fact(task),
             readiness_chips=_readiness_chips_html(task, claim),
             readiness_sentence=_readiness_sentence(task, claim),
             blocked_summary=_blocked_summary_html(task),
