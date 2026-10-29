@@ -183,6 +183,22 @@ validates and reports without writing anything (not even events). A cycle
 among the batch's own edges is a validation error (exit 4). A plan appends one
 `task.created` event per task and one board-level `plan.applied` event.
 
+A complete plan file — two keys, one edge, one element without a key:
+
+```json
+{"tasks": [
+  {"key": "parser", "title": "Ship the parser", "priority": "high",
+   "assignee": "cpp-dev", "labels": ["core"]},
+  {"key": "cli", "title": "Wire the CLI", "depends_on": ["parser"]},
+  {"title": "Document the plan", "depends_on": ["cli"], "priority": "low"}
+]}
+```
+
+Applying it returns one JSON document with `count: 3` and one
+`{id, key, title}` element per created task (the keyless element's `key` is
+`null`). Every mutating command needs an actor: pass `--agent ID` or set
+`TACKBOARD_AGENT`.
+
 ### Statuses and transitions
 
 `backlog → ready | cancelled`, `ready → backlog | in_progress | cancelled`,

@@ -503,9 +503,10 @@ Rules the command enforces:
 On success the document is:
 
 ```json
-{"schema_version": 1, "dry_run": false, "source": "plan.json", "count": 2,
+{"schema_version": 1, "dry_run": false, "source": "plan.json", "count": 3,
  "tasks": [{"id": "T-000123", "key": "parser", "title": "Ship the parser"},
-           {"id": "T-000124", "key": "cli", "title": "Wire the CLI"}]}
+           {"id": "T-000124", "key": "cli", "title": "Wire the CLI"},
+           {"id": "T-000125", "key": null, "title": "Document the plan"}]}
 ```
 
 A dry run returns the same shape with `"dry_run": true` and `"id": null` on
