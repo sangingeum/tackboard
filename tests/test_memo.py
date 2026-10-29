@@ -106,6 +106,26 @@ def _text(run: RunCli, db: Path, *argv: str) -> tuple[int, str]:
     return code, out
 
 
+def _freeze_claim_ages(value: Any) -> Any:
+    """Zero the time-derived claim age fields so snapshots stay comparable.
+
+    ``claim_age_seconds`` and a doctor warning's ``age_seconds`` are measured
+    against the clock at read time, so two snapshots of an unchanged board
+    legitimately differ by a second or two. Everything else in a document is
+    stable, and that is what a leak check must compare.
+    """
+    if isinstance(value, dict):
+        return {
+            key: 0
+            if key in {"claim_age_seconds", "age_seconds"}
+            else _freeze_claim_ages(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_freeze_claim_ages(item) for item in value]
+    return value
+
+
 def _raw(path: Path) -> sqlite3.Connection:
     """A connection with foreign keys off, for seeding corrupt or v1 states."""
     connection = sqlite3.connect(path, isolation_level=None)
@@ -1194,7 +1214,7 @@ def test_the_memo_never_leaks_into_the_task_surface(run: RunCli, db_path: Path) 
         ):
             code, out_text = _text(run, db_path, *argv)
             assert code in {0, 6}, (key, out_text)
-            out[key] = out_text
+            out[key] = json.dumps(_freeze_claim_ages(_json_document(out_text)))
         return out
 
     before = snapshot()

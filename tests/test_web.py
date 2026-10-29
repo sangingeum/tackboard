@@ -57,6 +57,21 @@ DERIVED_NODE_FIELDS = frozenset(
 CLAIM_NODE_FIELDS = frozenset({"claimed_by", "claimed_at"})
 
 
+def _freeze_claim_ages(value: Any) -> Any:
+    """Zero the time-derived claim age so a served document and a CLI document
+    of the same board compare equal even when a second ticks between reads."""
+    if isinstance(value, dict):
+        return {
+            key: 0
+            if key in {"claim_age_seconds", "age_seconds"}
+            else _freeze_claim_ages(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_freeze_claim_ages(item) for item in value]
+    return value
+
+
 @pytest.fixture(autouse=True)
 def isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Never inherit project selection or an actor from the developer's shell."""
@@ -285,7 +300,9 @@ def test_json_endpoints_match_the_cli_schemas(
     run: RunCli, server: WebClient, db_file: Path, board: dict[str, str]
 ) -> None:
     cli_board = json.loads(run("board", "--db", str(db_file), "--json")[1])
-    assert server.request("/api/board").json() == cli_board
+    assert _freeze_claim_ages(server.request("/api/board").json()) == (
+        _freeze_claim_ages(cli_board)
+    )
 
     cli_graph = json.loads(run("graph", "--db", str(db_file), "--json")[1])
     served_graph = server.request("/api/graph").json()
@@ -309,7 +326,7 @@ def test_json_endpoints_match_the_cli_schemas(
 
     cli_show = json.loads(run("show", board["claimed"], "--db", str(db_file), "--json")[1])
     detail = server.request(f"/api/tasks/{board['claimed']}").json()
-    assert detail["task"] == cli_show["task"]
+    assert _freeze_claim_ages(detail["task"]) == _freeze_claim_ages(cli_show["task"])
     assert detail["notes"] == cli_show["notes"]
     assert detail["claim"]["agent_id"] == DEFAULT_ACTOR
     assert [task["id"] for task in detail["prerequisites"]] == [board["done"]]
