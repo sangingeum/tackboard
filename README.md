@@ -154,6 +154,7 @@ tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
 tack claim TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
 tack release TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
 tack claims [--agent ID] [--older-than DURATION]
+tack agents [--json]
 tack next [--agent ID] [--claim] [--stage work|review] [--force --reason TEXT]
           [--assignee AGENT_ID|--all-assignees] [filters]
 tack depend add TASK_ID --on PREREQUISITE_ID [--agent ID] [--if-version N] [--force --reason TEXT]
@@ -410,6 +411,23 @@ An agent's identity is `--agent AGENT_ID`, falling back to `TACKBOARD_AGENT`.
 Every task or memo mutation needs one; without either, it exits 2. Identifiers are
 advisory labels and are not authenticated — the board prevents accidents, not
 malice.
+
+### Agent activity
+
+`tack agents` is a read-only summary derived entirely from active claims and the
+event log — nothing is stored. For each agent it reports the tasks currently
+claimed, the timestamp of that agent's most recent event, and counts of
+completed, released and forced actions:
+
+```json
+{"schema_version": 1, "agents": [{"agent_id": "dev", "claimed_tasks": ["T-000123"], "last_event_at": "2026-10-29T09:15:02Z", "completed": 4, "released": 1, "forced": 0}]}
+```
+
+Only agents with at least one event or one active claim appear; a board with no
+activity returns `"agents": []` (the human form prints `(no agent activity)`).
+The human form is a compact table. `completed` counts `task.completed` events,
+`released` counts `task.released`, and `forced` counts events whose payload
+carries `forced: true`.
 
 ### `--force` is a short, audited list
 

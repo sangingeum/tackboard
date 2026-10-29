@@ -633,6 +633,11 @@ def _build_parser() -> _Parser:
     )
     claims_parser.set_defaults(handler="claims")
 
+    agents_parser = subparsers.add_parser(
+        "agents", parents=[shared], help="summarise activity per agent"
+    )
+    agents_parser.set_defaults(handler="agents")
+
     recover_parser = subparsers.add_parser(
         "recover",
         parents=[shared],
@@ -1106,6 +1111,31 @@ def _run_claims(ctx: _Context, args: argparse.Namespace) -> int:
         _write_line(
             f"{item['task_id']}  {item['agent_id']}  claimed {item['claimed_at']} "
             f"({item['age_seconds']}s ago)"
+        )
+    return 0
+
+
+def _run_agents(ctx: _Context, args: argparse.Namespace) -> int:
+    with _project(args) as conn:
+        result = views.agents_document(conn)
+    if ctx.json:
+        _write_json(result)
+        return 0
+    if not ctx.quiet:
+        _write_line("# agent activity")
+    agents = result["agents"]
+    if not agents:
+        _write_line("(no agent activity)")
+        return 0
+    _write_line(
+        f"{'AGENT':<20} {'CLAIMED':>7} {'COMPLETED':>9} {'RELEASED':>8} "
+        f"{'FORCED':>6}  LAST EVENT"
+    )
+    for agent in agents:
+        _write_line(
+            f"{agent['agent_id']:<20} {len(agent['claimed_tasks']):>7} "
+            f"{agent['completed']:>9} {agent['released']:>8} "
+            f"{agent['forced']:>6}  {agent['last_event_at'] or '-'}"
         )
     return 0
 
@@ -1703,6 +1733,8 @@ def _dispatch(ctx: _Context, args: argparse.Namespace) -> int:
         return _run_recover(ctx, args)
     if handler == "claims":
         return _run_claims(ctx, args)
+    if handler == "agents":
+        return _run_agents(ctx, args)
     if handler == "next":
         return _run_next(ctx, args)
     if handler in {"depend.add", "depend.remove"}:

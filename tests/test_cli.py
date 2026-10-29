@@ -1581,6 +1581,53 @@ def test_history_follow_streams_events_and_exits_zero_on_sigint(db_file: Path) -
     assert out == ""
 
 
+def test_agents_summarises_claims_and_event_counts(run: RunCli, db_file: Path) -> None:
+    done = _create(run, db_file, "finished", "--status", "ready")
+    run("claim", done["id"], "--agent", "dev", "--db", str(db_file))
+    run("complete", done["id"], "--agent", "dev", "--db", str(db_file))
+
+    dropped = _create(run, db_file, "dropped", "--status", "ready")
+    run("claim", dropped["id"], "--agent", "dev", "--db", str(db_file))
+    run("release", dropped["id"], "--agent", "dev", "--db", str(db_file))
+
+    taken = _create(run, db_file, "taken over", "--status", "ready")
+    run("claim", taken["id"], "--agent", "dev", "--db", str(db_file))
+    run(
+        "claim", taken["id"], "--agent", "qa", "--force",
+        "--reason", "dev went offline", "--db", str(db_file),
+    )
+
+    code, out, err = run("agents", "--json", "--db", str(db_file))
+    assert code == 0, err
+    document = _json_document(out)
+    assert document["schema_version"] == 1
+    agents = {entry["agent_id"]: entry for entry in document["agents"]}
+    assert sorted(agents) == ["dev", "qa"]
+    assert agents["dev"]["completed"] == 1
+    assert agents["dev"]["released"] == 1
+    assert agents["dev"]["forced"] == 0
+    assert agents["dev"]["claimed_tasks"] == []
+    assert agents["qa"]["forced"] == 1
+    assert agents["qa"]["claimed_tasks"] == [taken["id"]]
+    assert agents["qa"]["last_event_at"] is not None
+
+    code, out, _ = run("agents", "--db", str(db_file))
+    assert code == 0
+    lines = out.splitlines()
+    assert lines[1].startswith("AGENT")
+    assert "dev" in out and "qa" in out
+
+
+def test_agents_is_empty_on_a_fresh_board(run: RunCli, db_file: Path) -> None:
+    code, out, err = run("agents", "--json", "--db", str(db_file))
+    assert code == 0, err
+    assert _json_document(out)["agents"] == []
+
+    code, out, _ = run("agents", "--db", str(db_file))
+    assert code == 0
+    assert "(no agent activity)" in out
+
+
 def test_maintenance_commands_report_json(run: RunCli, tmp_path: Path) -> None:
     database = tmp_path / "new.sqlite3"
     backup = tmp_path / "copy.sqlite3"

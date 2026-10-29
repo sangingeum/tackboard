@@ -141,10 +141,86 @@ def memo_document(
     return {"schema_version": JSON_SCHEMA_VERSION, **memo.read_memo(conn, rev)}
 
 
+def agents_document(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Per-agent activity derived from active claims and the event log.
+
+    Every agent with at least one event or one active claim appears; an agent
+    with neither is not an agent on this board and never appears as a zero row.
+    ``claimed_tasks`` lists the task ids the agent currently holds,
+    ``last_event_at`` is the timestamp of that agent's highest event id, and
+    ``completed`` / ``released`` / ``forced`` count the matching events. Nothing
+    is stored: one read transaction computes the whole summary.
+    """
+    with read_transaction(conn):
+        claimed_rows = conn.execute(
+            """
+            SELECT c.agent_id AS agent_id, c.task_id AS task_id
+            FROM claims c JOIN tasks t ON t.id = c.task_id
+            ORDER BY c.agent_id, c.task_id
+            """
+        ).fetchall()
+        event_rows = conn.execute(
+            """
+            SELECT e.actor AS agent_id,
+                   SUM(CASE WHEN e.event_type = 'task.completed'
+                            THEN 1 ELSE 0 END) AS completed,
+                   SUM(CASE WHEN e.event_type = 'task.released'
+                            THEN 1 ELSE 0 END) AS released,
+                   SUM(CASE WHEN json_extract(e.payload_json, '$.forced') = 1
+                            THEN 1 ELSE 0 END) AS forced,
+                   MAX(e.id) AS last_event_id
+            FROM events e
+            GROUP BY e.actor
+            ORDER BY e.actor
+            """
+        ).fetchall()
+        last_ids = [int(row["last_event_id"]) for row in event_rows]
+        timestamps: dict[int, str] = {}
+        if last_ids:
+            placeholders = ", ".join("?" for _ in last_ids)
+            timestamps = {
+                int(row["id"]): str(row["timestamp"])
+                for row in conn.execute(
+                    f"SELECT id, timestamp FROM events WHERE id IN ({placeholders})",
+                    last_ids,
+                )
+            }
+
+    agents: dict[str, dict[str, Any]] = {}
+    for row in event_rows:
+        agents[str(row["agent_id"])] = {
+            "agent_id": str(row["agent_id"]),
+            "claimed_tasks": [],
+            "last_event_at": timestamps[int(row["last_event_id"])],
+            "completed": int(row["completed"]),
+            "released": int(row["released"]),
+            "forced": int(row["forced"]),
+        }
+    for row in claimed_rows:
+        agent = agents.setdefault(
+            str(row["agent_id"]),
+            {
+                "agent_id": str(row["agent_id"]),
+                "claimed_tasks": [],
+                "last_event_at": None,
+                "completed": 0,
+                "released": 0,
+                "forced": 0,
+            },
+        )
+        agent["claimed_tasks"].append(str(row["task_id"]))
+
+    return {
+        "schema_version": JSON_SCHEMA_VERSION,
+        "agents": [agents[key] for key in sorted(agents)],
+    }
+
+
 __all__ = [
     "JSON_SCHEMA_VERSION",
     "TASK_DETAIL_HISTORY_LIMIT",
     "TASK_DETAIL_NOTE_LIMIT",
+    "agents_document",
     "board_document",
     "graph_document",
     "memo_document",
