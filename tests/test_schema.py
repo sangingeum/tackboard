@@ -280,6 +280,45 @@ def test_doctor_is_happy_with_a_healthy_database(db_path: Path) -> None:
     assert report["warnings"] == []
 
 
+def test_doctor_warns_when_the_board_lives_on_a_network_filesystem(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mount_point = str(db_path.parent)
+    monkeypatch.setattr(
+        schema,
+        "_read_mount_table",
+        lambda: f"overlay / overlay rw 0 0\nserver:/share {mount_point} nfs4 rw 0 0\n",
+    )
+    report = schema.doctor(db_path)
+    warnings = [entry for entry in report["warnings"] if entry["code"] == "network_filesystem"]
+    assert len(warnings) == 1
+    assert warnings[0]["fstype"] == "nfs4"
+    assert warnings[0]["mount_point"] == mount_point
+    assert "WAL is unsafe" in warnings[0]["message"]
+    assert report["ok"] is True  # a warning never changes the exit code
+
+
+def test_doctor_stays_silent_on_a_local_filesystem(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mount_point = str(db_path.parent)
+    monkeypatch.setattr(
+        schema,
+        "_read_mount_table",
+        lambda: f"overlay / overlay rw 0 0\n/dev/sda1 {mount_point} ext4 rw 0 0\n",
+    )
+    report = schema.doctor(db_path)
+    assert not any(entry["code"] == "network_filesystem" for entry in report["warnings"])
+
+
+def test_doctor_stays_silent_when_the_mount_table_is_unreadable(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(schema, "_read_mount_table", lambda: None)
+    report = schema.doctor(db_path)
+    assert not any(entry["code"] == "network_filesystem" for entry in report["warnings"])
+
+
 def test_doctor_reports_a_missing_database(tmp_path: Path) -> None:
     report = schema.doctor(tmp_path / "ghost.sqlite3")
     assert report["ok"] is False

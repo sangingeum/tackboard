@@ -480,6 +480,11 @@ same filtered set.
   adds `found` / `supported`; a `dependency_cycle` adds `path`; a foreign-key
   violation adds `table` / `rowid` — including `dangling_dependency`, whose
   entry concerns a task row but names it by `table` / `rowid`, not `task_id`.
+- `doctor` also emits a `network_filesystem` warning when the database sits on a
+  network/shared mount (NFS, CIFS/SMB, SSHFS, rclone, GlusterFS, Ceph, AFS, 9p,
+  davfs, Lustre) where SQLite's WAL locking is unsafe. It carries `fstype` and
+  `mount_point`; detection that cannot read the mount table stays silent. Move
+  the board to a local disk; a warning never changes the exit code.
 
 ### Exit codes
 

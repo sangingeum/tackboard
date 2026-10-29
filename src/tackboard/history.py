@@ -119,6 +119,7 @@ def list_events(
         "items": [_event_from_row(row) for row in rows],
     }
     if ascending:
+        assert since is not None  # ascending is exactly "since was supplied"
         document["order"] = "asc"
         document["since"] = int(since)
     return document

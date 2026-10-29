@@ -420,6 +420,89 @@ def database_name(conn: sqlite3.Connection) -> str:
     return Path(path).name if path else "<unknown>"
 
 
+#: Filesystem types whose WAL locking is unsafe for a live SQLite database.
+#: Deliberately narrow: a false warning is worse than none, so only well-known
+#: network/shared filesystems are listed. Detection that cannot read the mount
+#: table stays silent.
+NETWORK_FILESYSTEM_TYPES: frozenset[str] = frozenset(
+    {
+        "nfs",
+        "nfs4",
+        "cifs",
+        "smbfs",
+        "smb3",
+        "sshfs",
+        "fuse.sshfs",
+        "fuse.rclone",
+        "fuse.smbnetfs",
+        "glusterfs",
+        "ceph",
+        "cephfs",
+        "fuse.cephfs",
+        "afs",
+        "9p",
+        "davfs",
+        "lustre",
+    }
+)
+
+
+def _read_mount_table() -> str | None:
+    """Return the kernel mount table, or ``None`` when it cannot be read."""
+    try:
+        return Path("/proc/self/mounts").read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _mount_for_path(
+    path: Path, mounts: str | None = None
+) -> tuple[str, str] | None:
+    """Return ``(fstype, mount_point)`` for the filesystem holding ``path``.
+
+    ``None`` means detection is impossible or the path is not mounted: callers
+    stay silent rather than guess. The longest matching mount point wins.
+    """
+    table = _read_mount_table() if mounts is None else mounts
+    if table is None:
+        return None
+    target = str(path.resolve())
+    best: tuple[int, str, str] | None = None
+    for line in table.splitlines():
+        fields = line.split()
+        if len(fields) < 3:
+            continue
+        mount_point = fields[1].replace("\\040", " ")
+        matches = target == mount_point or target.startswith(
+            mount_point.rstrip("/") + "/"
+        )
+        if matches and (best is None or len(mount_point) > best[0]):
+            best = (len(mount_point), fields[2], mount_point)
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
+def _doctor_network_filesystem(path: Path) -> list[dict[str, Any]]:
+    """Warn when the board file sits on a network filesystem unsafe for WAL."""
+    mount = _mount_for_path(path)
+    if mount is None or mount[0] not in NETWORK_FILESYSTEM_TYPES:
+        return []
+    fstype, mount_point = mount
+    return [
+        {
+            "code": "network_filesystem",
+            "message": (
+                f"Database {path.name} is on a {fstype} mount at {mount_point}; "
+                "SQLite WAL is unsafe on network/shared filesystems. Keep the "
+                "board on a local disk, or accept the corruption risk knowingly."
+            ),
+            "fstype": fstype,
+            "mount_point": mount_point,
+        }
+    ]
+
+
 def doctor(
     path: Path, *, stale_after_seconds: int | None = None
 ) -> dict[str, Any]:
@@ -444,6 +527,8 @@ def doctor(
             {"code": "missing_database", "message": f"Database {path} does not exist."}
         )
         return {"schema_version": 1, "ok": False, "errors": errors, "warnings": warnings}
+
+    warnings.extend(_doctor_network_filesystem(path))
 
     try:
         conn = sqlite3.connect(str(path), isolation_level=None)

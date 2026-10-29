@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `tack history --since EVENT_ID` resumes the append-only event feed: events
+  with `id` greater than the cursor, **oldest first**, so a consumer appends in
+  order. The document adds `order: "asc"` and echoes the cursor in `since`;
+  the plain `history` document is unchanged (newest first). Delivery is
+  at-least-once; de-duplicate on event `id`.
+- `tack history --follow [--since EVENT_ID]` streams new events as NDJSON, one
+  flat JSON object per line — the only command allowed to emit more than one
+  JSON document. Without `--since` it starts at the board's current maximum
+  event id; it polls on a bounded interval and exits **0** on SIGINT. It cannot
+  be combined with `--limit`.
+- `tack agents [--json]` summarises per-agent activity from active claims and
+  the event log: claimed tasks, last event time, and counts of completed,
+  released and forced actions. Nothing is stored and `schema_version` stays
+  `1`; a board with no activity returns `"agents": []`.
+- `tack doctor` warns with `network_filesystem` when the database sits on a
+  network or shared mount where SQLite's WAL locking is unsafe. The warning
+  carries `fstype` and `mount_point`, never changes the exit code, and stays
+  silent when the mount table cannot be read.
+
 ## [0.5.0] - 2026-10-29
 
 ### Added

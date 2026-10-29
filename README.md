@@ -690,6 +690,13 @@ tab stop with `aria-activedescendant` tracking the active node.
   non-monotonic revisions). Errors exit 6; warnings are listed and exit 0.
   `ok: true` therefore means only that no errors were found — it does not mean
   the board is clean, so read the `warnings` array rather than `ok`.
+- `tack doctor` also warns with `network_filesystem` when the database file
+  sits on a network or shared mount (`nfs`, `nfs4`, `cifs`, `smbfs`, `smb3`,
+  `sshfs`/`fuse.sshfs`, `fuse.rclone`, `glusterfs`, `ceph`, `afs`, `9p`,
+  `davfs`, `lustre`). SQLite's WAL locking is unsafe there: keep the board on a
+  local disk. The warning carries `fstype` and `mount_point`, and detection that
+  cannot read the mount table stays silent rather than guess. A warning never
+  changes the exit code.
 
 ## Troubleshooting
 
