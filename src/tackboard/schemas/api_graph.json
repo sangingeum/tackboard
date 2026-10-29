@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tackboard:schema:api_graph",
+  "title": "tackboard /api/graph document",
+  "description": "The HTTP graph document: the CLI graph document with each node carrying the four derived readiness flags. Every key of `tack graph --format json` is present with the same meaning; the four flags are the only per-node additions.",
+  "schema_version": 1,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:tackboard:schema:graph#/properties/edges/items"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "nodes",
+    "edges"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "description": "The CLI graph node (id, title, status, priority, assignee, claimed_by, claimed_at) plus the four derived readiness flags.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "urn:tackboard:schema:task#/$defs/node/properties/id"
+        },
+        "title": {
+          "$ref": "urn:tackboard:schema:task#/$defs/node/properties/title"
+        },
+        "status": {
+          "$ref": "urn:tackboard:schema:task#/$defs/node/properties/status"
+        },
+        "priority": {
+          "$ref": "urn:tackboard:schema:task#/$defs/node/properties/priority"
+        },
+        "assignee": {
+          "$ref": "urn:tackboard:schema:task#/$defs/node/properties/assignee"
+        },
+        "claimed_by": {
+          "$ref": "urn:tackboard:schema:task#/$defs/node/properties/claimed_by"
+        },
+        "claimed_at": {
+          "$ref": "urn:tackboard:schema:task#/$defs/node/properties/claimed_at"
+        },
+        "dependency_ready": {
+          "type": "boolean"
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "reviewable": {
+          "type": "boolean"
+        },
+        "blocked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "priority",
+        "assignee",
+        "claimed_by",
+        "claimed_at",
+        "dependency_ready",
+        "eligible",
+        "reviewable",
+        "blocked"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
