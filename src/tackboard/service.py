@@ -8,10 +8,13 @@ section 9 (history events). Every status change in the tool goes through
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import history
 from .config import validate_agent_id
@@ -31,8 +34,12 @@ from .models import (
     MAX_LABEL_LENGTH,
     MAX_LABELS,
     MAX_NOTE_BYTES,
+    MAX_NOTE_REFS,
     MAX_REASON_LENGTH,
+    MAX_REF_PATH_LENGTH,
+    MAX_REF_URL_LENGTH,
     MAX_TITLE_LENGTH,
+    NOTE_REF_KINDS,
     PREREQUISITE_GATED_STATUSES,
     PRIORITIES,
     PRIORITY_RANK,
@@ -168,6 +175,156 @@ def _check_note(text: str) -> str:
             },
         )
     return text
+
+
+_COMMIT_REF_RE = re.compile(r"\A[0-9a-fA-F]{7,40}\Z")
+_REF_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _check_refs(
+    conn: sqlite3.Connection, refs: Sequence[str] | None
+) -> list[dict[str, str]]:
+    """Validate ``KIND:VALUE`` note references into ``{kind, value}`` objects.
+
+    The kind vocabulary is closed (``NOTE_REF_KINDS``). Identical pairs collapse
+    to their first occurrence; the per-note cap counts the surviving pairs.
+    A ``task`` ref must name an existing task on the same board. Refs are
+    event-only: the caller stores them in the note event's payload.
+    """
+    if not refs:
+        return []
+    allowed = ", ".join(NOTE_REF_KINDS)
+    parsed: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw in refs:
+        if not isinstance(raw, str):
+            raise ValidationError(
+                "A ref must be a KIND:VALUE string.", details={"field": "refs"}
+            )
+        kind, separator, value = raw.partition(":")
+        kind = kind.strip()
+        if not separator or not kind:
+            raise ValidationError(
+                f"Ref {raw!r} is not KIND:VALUE; allowed kinds are: {allowed}.",
+                details={"field": "refs", "allowed": list(NOTE_REF_KINDS)},
+            )
+        if kind not in NOTE_REF_KINDS:
+            raise ValidationError(
+                f"Unknown ref kind {kind!r}; allowed kinds are: {allowed}.",
+                details={"field": "refs", "allowed": list(NOTE_REF_KINDS)},
+            )
+        if not value:
+            raise ValidationError(
+                f"Ref {kind!r} has an empty value.",
+                details={"field": "refs", "kind": kind},
+            )
+        if _REF_CONTROL_RE.search(value):
+            raise ValidationError(
+                f"Ref {kind!r} contains a control character.",
+                details={"field": "refs", "kind": kind},
+            )
+        if kind == "commit":
+            if _COMMIT_REF_RE.fullmatch(value) is None:
+                raise ValidationError(
+                    "A commit ref must be a git object id of 7-40 hexadecimal "
+                    f"characters; got {value!r}.",
+                    details={"field": "refs", "kind": "commit"},
+                )
+        elif kind == "url":
+            if len(value) > MAX_REF_URL_LENGTH:
+                raise ValidationError(
+                    f"A url ref is too long: maximum is {MAX_REF_URL_LENGTH} "
+                    "characters.",
+                    details={
+                        "field": "refs",
+                        "kind": "url",
+                        "max": MAX_REF_URL_LENGTH,
+                        "unit": "characters",
+                        "actual": len(value),
+                    },
+                )
+            parsed_url = urlsplit(value)
+            if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                raise ValidationError(
+                    f"A url ref must be an absolute http(s) URL; got {value!r}.",
+                    details={"field": "refs", "kind": "url"},
+                )
+            if any(character.isspace() for character in value):
+                raise ValidationError(
+                    "A url ref must not contain whitespace.",
+                    details={"field": "refs", "kind": "url"},
+                )
+        elif kind == "path":
+            if len(value) > MAX_REF_PATH_LENGTH:
+                raise ValidationError(
+                    f"A path ref is too long: maximum is {MAX_REF_PATH_LENGTH} "
+                    "characters.",
+                    details={
+                        "field": "refs",
+                        "kind": "path",
+                        "max": MAX_REF_PATH_LENGTH,
+                        "unit": "characters",
+                        "actual": len(value),
+                    },
+                )
+            segments = value.split("/")
+            if (
+                value.startswith("/")
+                or "\\" in value
+                or any(segment in {"", ".", ".."} for segment in segments)
+            ):
+                raise ValidationError(
+                    "A path ref must be a repository-relative path: no leading "
+                    f"slash, no backslash and no '.'/'..' segments; got {value!r}.",
+                    details={"field": "refs", "kind": "path"},
+                )
+        else:  # task
+            row = conn.execute(
+                "SELECT 1 FROM tasks WHERE id = ?", (value,)
+            ).fetchone()
+            if row is None:
+                raise ValidationError(
+                    "A task ref must name an existing task on this board; "
+                    f"{value!r} does not.",
+                    details={"field": "refs", "kind": "task", "value": value},
+                )
+        key = (kind, value)
+        if key in seen:
+            continue
+        seen.add(key)
+        parsed.append({"kind": kind, "value": value})
+    if len(parsed) > MAX_NOTE_REFS:
+        raise ValidationError(
+            f"Too many refs: {len(parsed)}, maximum is {MAX_NOTE_REFS} per note.",
+            details={
+                "field": "refs",
+                "max": MAX_NOTE_REFS,
+                "unit": "refs",
+                "actual": len(parsed),
+            },
+        )
+    return parsed
+
+
+_REJECT_REQUIRES_REASON = "reject requires --reason with a non-empty explanation."
+
+
+def _check_reject_reason(reason: str | None) -> str:
+    """Validate the mandatory reason on a reject (a non-forced transition)."""
+    if reason is None or not isinstance(reason, str) or not reason.strip():
+        raise ValidationError(_REJECT_REQUIRES_REASON)
+    trimmed = reason.strip()
+    if len(trimmed) > MAX_REASON_LENGTH:
+        raise ValidationError(
+            f"--reason is too long: maximum is {MAX_REASON_LENGTH} characters.",
+            details={
+                "field": "reason",
+                "max": MAX_REASON_LENGTH,
+                "unit": "characters",
+                "actual": len(trimmed),
+            },
+        )
+    return trimmed
 
 
 def _check_force_reason(force: bool, reason: str | None) -> str | None:
@@ -431,6 +588,33 @@ def derived_flags(
     }
 
 
+def _rejection_stats(
+    conn: sqlite3.Connection, task_ids: Sequence[str]
+) -> dict[str, tuple[int, str | None]]:
+    """Count rejections per task from history and keep the latest reason.
+
+    Nothing is stored: the count and the reason are derived from the
+    ``task.rejected`` events in the append-only log.
+    """
+    if not task_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"SELECT task_id, payload_json FROM events "
+        f"WHERE event_type = 'task.rejected' AND task_id IN ({placeholders}) "
+        "ORDER BY id ASC",
+        list(task_ids),
+    ).fetchall()
+    stats: dict[str, tuple[int, str | None]] = {}
+    for row in rows:
+        task_id = str(row["task_id"])
+        payload = json.loads(row["payload_json"])
+        reason = payload.get("reason")
+        count = stats.get(task_id, (0, None))[0] + 1
+        stats[task_id] = (count, str(reason) if reason else None)
+    return stats
+
+
 def _project_row(
     row: sqlite3.Row,
     labels: Sequence[str],
@@ -440,6 +624,8 @@ def _project_row(
     full: bool,
     now: str,
     stale_after_seconds: int | None = None,
+    rejections: int = 0,
+    last_rejection_reason: str | None = None,
 ) -> dict[str, Any]:
     flags = derived_flags(
         prerequisites,
@@ -472,6 +658,8 @@ def _project_row(
             "claimed_at": claim.claimed_at if claim is not None else None,
             "claim_age_seconds": flags["claim_age_seconds"],
             "claim_stale": flags["claim_stale"],
+            "rejections": rejections,
+            "last_rejection_reason": last_rejection_reason,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "completed_at": row["completed_at"],
@@ -494,6 +682,7 @@ def _project_rows(
     labels = _labels_for(conn, task_ids)
     prerequisites = _prerequisites_for(conn, task_ids)
     claims = _claims_for(conn, task_ids)
+    rejections = _rejection_stats(conn, task_ids)
     return [
         _project_row(
             row,
@@ -503,6 +692,8 @@ def _project_rows(
             full=full,
             now=moment,
             stale_after_seconds=stale_after_seconds,
+            rejections=rejections.get(str(row["id"]), (0, None))[0],
+            last_rejection_reason=rejections.get(str(row["id"]), (0, None))[1],
         )
         for row in rows
     ]
@@ -1340,20 +1531,64 @@ def add_note(
     text: str,
     *,
     actor: str,
+    refs: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """Append a note event — never touches ``updated_at`` or ``version`` (9.1)."""
+    """Append a note event — never touches ``updated_at`` or ``version`` (9.1).
+
+    ``refs`` is a sequence of ``KIND:VALUE`` strings validated by
+    ``_check_refs``. They are stored in the event payload as a ``refs`` array
+    of ``{kind, value}`` objects; a note without refs stores an empty array.
+    """
     actor = _actor(actor)
     clean_text = _check_note(text)
     with write_transaction(conn):
         _task_row(conn, task_id)
+        clean_refs = _check_refs(conn, refs)
         event = history.record_event(
             conn,
             event_type="note",
             actor=actor,
             task_id=task_id,
-            payload={"text": clean_text},
+            payload={"text": clean_text, "refs": clean_refs},
         )
         return {"changed": True, "event": event}
+
+
+def reject_task(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    actor: str,
+    reason: str | None,
+    if_version: int | None = None,
+) -> dict[str, Any]:
+    """Send a task from ``review`` back to ``in_progress`` with a reason.
+
+    A shortcut over the existing ``review -> in_progress`` transition: it adds
+    no transition and no policy. ``--reason`` is mandatory and is stored in the
+    ``task.rejected`` event payload; it is **not** a forced transition, so the
+    event carries no ``forced`` key.
+    """
+    actor = _actor(actor)
+    clean_reason = _check_reject_reason(reason)
+    with write_transaction(conn):
+        task = _load_task(conn, task_id)
+        if task.status != _REVIEW:
+            raise ValidationError(
+                f"Cannot reject {task_id}: its status is {task.status}; "
+                "reject applies only to a task in review."
+            )
+        return apply_transition(
+            conn,
+            task_id,
+            actor=actor,
+            mode="status",
+            status=_IN_PROGRESS,
+            if_version=if_version,
+            force=False,
+            event_type="task.rejected",
+            payload_extra={"reason": clean_reason},
+        )
 
 
 def list_tasks(
@@ -1474,6 +1709,7 @@ __all__ = [
     "list_tasks",
     "project_task",
     "project_tasks_by_id",
+    "reject_task",
     "reopen_task",
     "restore_task",
     "set_status",

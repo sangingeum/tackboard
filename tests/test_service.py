@@ -47,6 +47,8 @@ TASK_KEYS = {
     "claimed_at",
     "claim_age_seconds",
     "claim_stale",
+    "rejections",
+    "last_rejection_reason",
     "created_at",
     "updated_at",
     "completed_at",

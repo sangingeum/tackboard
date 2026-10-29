@@ -105,6 +105,7 @@ _MUTATION_VERBS: dict[str, str] = {
     "claim": "Claimed",
     "release": "Released",
     "recover": "Recovered",
+    "reject": "Rejected",
     "depend.add": "Dependency added to",
     "depend.remove": "Dependency removed from",
 }
@@ -321,6 +322,10 @@ def _render_show(task: Mapping[str, Any], notes: Sequence[Mapping[str, Any]]) ->
     lines.append(f"  updated:       {task['updated_at']}")
     lines.append(f"  completed:     {task['completed_at'] or '-'}")
     lines.append(f"  version:       {task['version']}")
+    if task.get("rejections"):
+        lines.append(f"  rejections:    {task['rejections']}")
+        if task.get("last_rejection_reason"):
+            lines.append(f"    last reason: {task['last_rejection_reason']}")
     if task["description"]:
         lines.append("  description:")
         lines.extend(f"    {line}" for line in str(task["description"]).splitlines())
@@ -329,6 +334,8 @@ def _render_show(task: Mapping[str, Any], notes: Sequence[Mapping[str, Any]]) ->
         for note in notes:
             text = str(note["payload"].get("text", ""))
             lines.append(f"    {note['timestamp']}  {note['actor']}  {text}")
+            for ref in note["payload"].get("refs", ()):
+                lines.append(f"      ref {ref['kind']}:{ref['value']}")
     return lines
 
 
@@ -612,8 +619,34 @@ def _build_parser() -> _Parser:
     note = subparsers.add_parser("note", parents=[shared], help="append a note")
     note.add_argument("task_id", metavar="TASK_ID")
     note.add_argument("text", metavar="TEXT")
+    note.add_argument(
+        "--ref",
+        action="append",
+        metavar="KIND:VALUE",
+        help=(
+            "typed handoff reference, repeatable; kinds: commit, url, path, task"
+        ),
+    )
     _add_actor(note)
     note.set_defaults(handler="note")
+
+    reject = subparsers.add_parser(
+        "reject",
+        parents=[shared],
+        help="send a task in review back to in_progress with a reason",
+    )
+    reject.add_argument("task_id", metavar="TASK_ID")
+    _add_actor(reject)
+    _add_if_version(reject)
+    reject.add_argument(
+        "--reason",
+        metavar="TEXT",
+        help=(
+            "why the work is rejected (required; validated as a value error, "
+            "not a usage error)"
+        ),
+    )
+    reject.set_defaults(handler="reject")
 
     for name in ("claim", "release"):
         claim_parser = subparsers.add_parser(
@@ -682,6 +715,14 @@ def _build_parser() -> _Parser:
         ),
     )
     next_parser.add_argument("--full", action="store_true")
+    next_parser.add_argument(
+        "--different-from-author",
+        action="store_true",
+        help=(
+            "with --stage review --claim: skip tasks whose last in_progress "
+            "claimant is the calling agent"
+        ),
+    )
     _add_force(next_parser)
     next_parser.set_defaults(handler="next")
 
@@ -1088,10 +1129,29 @@ def _run_shortcut(ctx: _Context, args: argparse.Namespace, handler: str) -> int:
     return _emit_mutation(ctx, _MUTATION_VERBS[handler], result)
 
 
+def _run_reject(ctx: _Context, args: argparse.Namespace) -> int:
+    actor = _actor(args)
+    with _project(args) as conn:
+        result = service.reject_task(
+            conn,
+            args.task_id,
+            actor=actor,
+            reason=args.reason,
+            if_version=args.if_version,
+        )
+    return _emit_mutation(ctx, _MUTATION_VERBS["reject"], result)
+
+
 def _run_note(ctx: _Context, args: argparse.Namespace) -> int:
     actor = _actor(args)
     with _project(args) as conn:
-        result = service.add_note(conn, args.task_id, args.text, actor=actor)
+        result = service.add_note(
+            conn,
+            args.task_id,
+            args.text,
+            actor=actor,
+            refs=tuple(args.ref or ()),
+        )
     document = {
         "schema_version": JSON_SCHEMA_VERSION,
         "changed": bool(result["changed"]),
@@ -1195,6 +1255,7 @@ def _run_next(ctx: _Context, args: argparse.Namespace) -> int:
             all_assignees=args.all_assignees,
             assignee=args.assignee,
             full=args.full,
+            different_from_author=args.different_from_author,
         )
         task = result["task"]
         if args.claim and task is not None:
@@ -1787,6 +1848,8 @@ def _dispatch(ctx: _Context, args: argparse.Namespace) -> int:
         return _run_status(ctx, args)
     if handler in {"complete", "reopen", "cancel", "restore"}:
         return _run_shortcut(ctx, args, handler)
+    if handler == "reject":
+        return _run_reject(ctx, args)
     if handler == "note":
         return _run_note(ctx, args)
     if handler in {"claim", "release"}:

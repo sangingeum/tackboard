@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
@@ -237,6 +238,7 @@ def _candidates(
     all_assignees: bool,
     assignee: str | None | _Unset = _UNSET,
     full: bool,
+    different_from_author: bool = False,
 ) -> list[dict[str, Any]]:
     sql = "SELECT t.* FROM tasks t"
     params: list[Any] = []
@@ -264,6 +266,9 @@ def _candidates(
         tasks = [
             task for task in tasks if PRIORITY_RANK[str(task["priority"])] >= floor
         ]
+    if different_from_author:
+        authors = _last_in_progress_actor(conn, [str(task["id"]) for task in tasks])
+        tasks = [task for task in tasks if authors.get(str(task["id"])) != actor]
     tasks.sort(key=_next_sort_key)
     return tasks
 
@@ -271,6 +276,28 @@ def _candidates(
 def _next_sort_key(task: dict[str, Any]) -> tuple[int, str, int]:
     sequence = int(str(task["id"]).split("-", 1)[1])
     return (-PRIORITY_RANK[str(task["priority"])], str(task["created_at"]), sequence)
+
+
+def _last_in_progress_actor(
+    conn: sqlite3.Connection, task_ids: Sequence[str]
+) -> dict[str, str]:
+    """Map each task to the actor of its most recent in_progress transition.
+
+    Read-only and event-derived: no column stores "the author" of a review
+    item. A task never moved to in_progress is absent from the map.
+    """
+    if not task_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"SELECT task_id, actor FROM events "
+        f"WHERE event_type IN ('task.status_changed', 'task.claimed', 'task.rejected') "
+        f"AND task_id IN ({placeholders}) "
+        "AND json_extract(payload_json, '$.to') = 'in_progress' "
+        "ORDER BY id ASC",
+        list(task_ids),
+    ).fetchall()
+    return {str(row["task_id"]): str(row["actor"]) for row in rows}
 
 
 def next_task(
@@ -286,6 +313,7 @@ def next_task(
     all_assignees: bool = False,
     assignee: str | None | _Unset = _UNSET,
     full: bool = False,
+    different_from_author: bool = False,
 ) -> dict[str, Any]:
     """Select the next task for ``actor``; ``claim=True`` selects and claims in
     one ``BEGIN IMMEDIATE`` transaction (spec 10.4)."""
@@ -298,6 +326,14 @@ def next_task(
         raise UsageError("--force is only meaningful together with --claim.")
     if min_priority is not None:
         _check_priority(min_priority)
+    if different_from_author and stage != "review":
+        raise UsageError(
+            "--different-from-author applies only to --stage review."
+        )
+    if different_from_author and not claim:
+        raise UsageError(
+            "--different-from-author is only meaningful together with --claim."
+        )
     if assignee is not _UNSET and assignee is not None:
         if assignee != "":
             try:
@@ -320,6 +356,7 @@ def next_task(
         "all_assignees": all_assignees,
         "assignee": assignee,
         "full": full,
+        "different_from_author": different_from_author,
     }
 
     if claim:

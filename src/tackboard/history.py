@@ -24,6 +24,9 @@ CANONICAL_EVENT_TYPES: tuple[str, ...] = (
     "task.restored",
     "task.claimed",
     "task.released",
+    # A review task sent back to in_progress by ``tack reject``. The payload
+    # carries the mandatory ``reason``; the transition is not forced.
+    "task.rejected",
     "dependency.added",
     "dependency.removed",
     "note",
@@ -73,13 +76,19 @@ def record_event(
 
 
 def _event_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    payload = json.loads(row["payload_json"])
+    if row["event_type"] == NOTE_EVENT_TYPE and "refs" not in payload:
+        # Notes recorded before typed refs read as an honest empty array so
+        # ``show`` and ``history`` expose one shape. Additive within
+        # schema_version 1; the stored payload is never rewritten.
+        payload["refs"] = []
     return {
         "id": row["id"],
         "timestamp": row["timestamp"],
         "actor": row["actor"],
         "event_type": row["event_type"],
         "task_id": row["task_id"],
-        "payload": json.loads(row["payload_json"]),
+        "payload": payload,
     }
 
 

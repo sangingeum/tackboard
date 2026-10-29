@@ -22,6 +22,13 @@ MAX_LABEL_LENGTH = 50
 MAX_BLOCKED_REASON_BYTES = 2 * 1024
 MAX_REASON_LENGTH = 1024
 MAX_NOTE_BYTES = 2 * 1024
+#: Typed handoff references on a note. The kind vocabulary is closed; each
+#: kind carries its own validation and length limit. Refs live in the note
+#: event payload and never count toward ``MAX_NOTE_BYTES``.
+NOTE_REF_KINDS: tuple[str, ...] = ("commit", "url", "path", "task")
+MAX_NOTE_REFS = 20
+MAX_REF_URL_LENGTH = 2048
+MAX_REF_PATH_LENGTH = 1024
 #: The board-level memo's cap: the same "large free-text field" size as
 #: ``description``, byte-measured on the UTF-8 encoding of the stored text.
 MAX_MEMO_BYTES = 64 * 1024
@@ -202,7 +209,11 @@ __all__ = [
     "MAX_LABELS",
     "MAX_MEMO_BYTES",
     "MAX_NOTE_BYTES",
+    "MAX_NOTE_REFS",
     "MAX_REASON_LENGTH",
+    "MAX_REF_PATH_LENGTH",
+    "MAX_REF_URL_LENGTH",
+    "NOTE_REF_KINDS",
     "MAX_TITLE_LENGTH",
     "PRIORITIES",
     "PRIORITY_RANK",
