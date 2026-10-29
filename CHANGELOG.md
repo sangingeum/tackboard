@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Stale-claim visibility. The task projection now carries two derived,
+  read-only fields: `claim_age_seconds` (the active claim's age in seconds,
+  `null` when the task is unclaimed) and `claim_stale` (whether that age
+  reached the stale threshold). Nothing is stored and the JSON document
+  `schema_version` stays `1`; the age is measured against one clock per read,
+  so a single document never straddles two.
+- `tack claims --stale` lists only claims older than the configured threshold.
+  The default is `2h` and may be overridden by the optional
+  `[tackboard] stale_claim_after = "2h"` key in `.tackboard.toml`; an
+  unparseable value is a validation error. `--older-than` still works and
+  overrides the threshold for one call. Without `--stale` the document is
+  unchanged.
+- `tack recover TASK_ID --reason TEXT` resolves a dead claim in one audited
+  command. It is a thin wrapper over the existing `release --force --reason`
+  transition, mapping only to the enumerated force cases (a claim held by
+  another agent, or an `in_progress` task that lost its claim); it adds no
+  transition, no force case and no schema change.
+- `doctor` emits a `stale_claim` warning per stale active claim, naming the
+  task, the claiming agent and the claim's age. It remains a warning: `ok`,
+  `errors` and the exit code are unchanged (exit 0).
+
 ## [0.4.2] - 2026-10-25
 
 ### Fixed

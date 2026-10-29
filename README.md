@@ -106,6 +106,10 @@ and ignore the database and its sidecars in `.gitignore`:
 
 Any command run from inside the project then finds the board with no flags.
 
+The same `[tackboard]` table may carry `stale_claim_after = "2h"`, the default
+threshold behind `tack claims --stale`, the derived `claim_stale` flag and the
+`stale_claim` doctor warning. It is optional; omitting it means `2h`.
+
 **B — commit nothing, use the environment.**
 
 ```bash
@@ -372,6 +376,16 @@ unassigned, and any agent may claim a task routed to another agent, the claim
 recording the caller while the routing stands. Only `create --assignee` and
 `update --assignee` write it.
 
+Claims are never expired automatically. Staleness is made visible instead: the
+task projection carries `claim_age_seconds` (the active claim's age, `null`
+when unclaimed) and `claim_stale` (whether that age reached the configured
+threshold), `tack claims --stale` lists only claims past the threshold, and
+`doctor` reports a `stale_claim` warning for each one. To clear a dead claim,
+`tack recover T-000123 --reason "the holder is gone"` releases it through the
+same audited `release --force` path — it is a thin wrapper, adding no new
+transition or force case. A task the caller already holds is refused (use
+`tack release`), and a healthy unclaimed task is an idempotent no-op.
+
 The default `next` selection already covers "assigned to me": it considers
 unassigned work and work routed to the acting agent. For stricter selection,
 `next --assignee AGENT_ID` restricts the candidates to exactly that route, with
@@ -443,8 +457,8 @@ the caller held and the one now stored — so a caller never has to read the
 numbers out of the message. Other errors document their own keys. `doctor`
 also reports its own diagnostic codes in `errors[]` and `warnings[]` — for
 example `memo_table_invalid`, `memo_revision_gap`, `claim_on_inactive_task`
-and `in_progress_without_claim` — so read those codes rather than matching
-messages.
+`in_progress_without_claim` and `stale_claim` — so read those codes rather
+than matching messages.
 Without `--json`, errors go to stderr as `error: <message>`. Tracebacks appear
 only with `--verbose`, and output is UTF-8 with no color codes.
 

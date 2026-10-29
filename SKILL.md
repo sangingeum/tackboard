@@ -131,7 +131,8 @@ tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
           [--if-rev N] [--reason TEXT] [--force] [--dry-run] [--limit N]
 tack claim TASK_ID [--force --reason TEXT] [--if-version N]
 tack release TASK_ID [--force --reason TEXT] [--if-version N]
-tack claims [--agent A] [--older-than 2h]
+tack claims [--agent A] [--older-than 2h] [--stale]
+tack recover TASK_ID --reason TEXT [--if-version N]
 tack next [--agent A] [--claim] [--stage work|review] [--label L]
           [--min-priority P] [--assignee A|--all-assignees] [--full]
           [--force --reason TEXT]
@@ -152,6 +153,19 @@ and `memo --dry-run`; every memo write needs one.
 `next` needs one even without `--claim`, because selection is agent-specific.
 `next --claim` prints a single-task document where plain `next` prints the
 `tasks` container — see *The JSON contract*.
+
+`tack claims --stale` is a convenience filter over the same listing: it keeps
+claims at least as old as the configured threshold, which is the optional
+`[tackboard] stale_claim_after` key in `.tackboard.toml` and defaults to `2h`.
+`--older-than` still works and overrides the threshold for that call; an
+unparseable configured value is a validation error (exit 4), never a silent
+fallback. `tack recover TASK_ID --reason TEXT` is the one-command way to
+resolve a dead claim: it is a thin wrapper over
+`release --force --reason`, mapping only to the enumerated force cases (a claim
+held by another agent, or an `in_progress` task that lost its claim). It adds
+no transition and no force case, so a claim the caller already holds is refused
+by the existing policy (use plain `release`), and a healthy unclaimed task is
+an idempotent no-op.
 
 ### Statuses and transitions
 
@@ -335,8 +349,14 @@ The **task projection** (the `task` object, and each entry of `tasks`) carries
 `id`, `title`, `description` (omitted on `board`/`list`/`next` unless `--full`),
 `status`, `priority`, `assignee`, `labels`, `depends_on`, `dependency_ready`,
 `eligible`, `reviewable`, `blocked`, `blocked_reason`, `blockers`,
-`claimed_by`, `claimed_at`, `created_at`, `updated_at`, `completed_at`,
-`version`. A `graph --format json` node is a reduced subset of it
+`claimed_by`, `claimed_at`, `claim_age_seconds`, `claim_stale`, `created_at`,
+`updated_at`, `completed_at`, `version`. `claim_age_seconds` is the active
+claim's age in whole seconds (`null` when the task has no active claim) and
+`claim_stale` says whether that age reached the configured
+`stale_claim_after` threshold (always `false` without a claim). Both are
+derived read-only fields — nothing is stored, `schema_version` stays `1`, and
+the age is measured against one clock per read. A `graph --format json` node is
+a reduced subset of it
 (`id`, `title`, `status`, `priority`, `assignee`, `claimed_by`, `claimed_at`).
 
 - **`show` is a container, not the task.** The task object is under `task`;
@@ -430,7 +450,9 @@ same filtered set.
   kind) and `message` (the human-readable text); beyond those two an entry
   carries only the keys its own kind needs. The claim and started-dependent
   checks name the task in `task_id` (`claim_on_inactive_task`,
-  `in_progress_without_claim`), and `inconsistent_blocked_state` adds
+  `in_progress_without_claim`), and `stale_claim` adds `agent_id` and
+  `age_seconds` for the claim that has aged past the configured threshold.
+  `inconsistent_blocked_state` adds
   `prerequisite_id` for the unfinished prerequisite. A `schema_version` error
   adds `found` / `supported`; a `dependency_cycle` adds `path`; a foreign-key
   violation adds `table` / `rowid` — including `dangling_dependency`, whose
@@ -498,11 +520,14 @@ same filtered set.
     keeps its history and its ID stays meaningful; a cancelled prerequisite
     blocks its dependents with reason `prerequisite_cancelled` until you remove
     the edge or restore and complete it.
-14. **Recover stale work explicitly.** `tack claims --older-than 2h` lists
-    claims that look abandoned; clear one with
-    `tack release <id> --force --reason "..."`. An `in_progress` task with no
-    claim at all is an inconsistent state — `doctor` reports it, and recovering
-    it needs `--force --reason`.
+14. **Recover stale work explicitly.** `tack claims --stale` lists claims past
+    the configured threshold (default `2h`), and `doctor` reports each one as a
+    `stale_claim` warning; clear one with
+    `tack recover <id> --reason "..."` — a thin wrapper over
+    `release --force --reason`. An `in_progress` task with no claim at all is an
+    inconsistent state — `doctor` reports it, and `recover` resolves it the same
+    way. Nothing expires on its own: staleness is visible, and clearing it is
+    always one explicit, audited command.
 15. **Never copy or commit a live database file.** Back up with
     `tack backup PATH` (a consistent snapshot taken while agents are writing);
     `cp` can capture a torn WAL state. Gitignore the database and its `-wal` /
