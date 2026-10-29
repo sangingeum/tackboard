@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import io
 import json
+import selectors
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -1465,8 +1467,11 @@ def test_history_json_and_human(run: RunCli, db_file: Path) -> None:
 
     code, out, err = run("history", "T-000001", "--json", "--db", str(db_file))
     assert code == 0, err
-    items = _json_document(out)["items"]
+    document = _json_document(out)
+    items = document["items"]
     assert [item["event_type"] for item in items] == ["note", "task.created"]
+    # The plain document keeps its 0.5.0 shape: no order key, newest first.
+    assert "order" not in document
 
     code, out, _ = run("history", "T-000001", "--limit", "1", "--db", str(db_file))
     assert code == 0
@@ -1475,6 +1480,105 @@ def test_history_json_and_human(run: RunCli, db_file: Path) -> None:
     code, out, _ = run("history", "T-999999", "--json", "--db", str(db_file))
     assert code == 3
     assert _json_document(out)["error"]["code"] == "not_found"
+
+
+def test_history_since_is_an_oldest_first_resume_cursor(
+    run: RunCli, db_file: Path
+) -> None:
+    _create(run, db_file, "alpha")
+    run("note", "T-000001", "a note", "--agent", "dev", "--db", str(db_file))
+    plain = _json_document(run("history", "T-000001", "--json", "--db", str(db_file))[1])
+    newest = plain["items"][0]["id"]
+    oldest = plain["items"][-1]["id"]
+
+    code, out, err = run(
+        "history", "T-000001", "--since", str(oldest), "--json", "--db", str(db_file)
+    )
+    assert code == 0, err
+    document = _json_document(out)
+    assert document["order"] == "asc"
+    assert document["since"] == oldest
+    assert [item["id"] for item in document["items"]] == [newest]
+    assert document["items"][0]["event_type"] == "note"
+
+    code, out, _ = run(
+        "history", "T-000001", "--since", str(newest), "--json", "--db", str(db_file)
+    )
+    assert code == 0
+    assert _json_document(out)["items"] == []
+
+    for bad in ("nope", "-1"):
+        code, out, err = run(
+            "history", "--since", bad, "--json", "--db", str(db_file)
+        )
+        assert code == 4, err
+        assert _json_document(out)["error"]["code"] == "validation"
+
+
+def test_history_follow_rejects_limit(run: RunCli, db_file: Path) -> None:
+    code, out, err = run(
+        "history", "--follow", "--limit", "2", "--json", "--db", str(db_file)
+    )
+    assert code == 2
+    assert "cannot be combined" in _json_document(out)["error"]["message"]
+    assert err == ""
+
+
+def _read_line_with_timeout(stream: Any, seconds: float = 5.0) -> str:
+    """Read one line from a subprocess pipe, failing instead of hanging."""
+    selector = selectors.DefaultSelector()
+    try:
+        selector.register(stream, selectors.EVENT_READ)
+        if not selector.select(seconds):
+            raise AssertionError("timed out waiting for a line from `history --follow`")
+        return stream.readline()
+    finally:
+        selector.close()
+
+
+def test_history_follow_streams_events_and_exits_zero_on_sigint(db_file: Path) -> None:
+    """The streaming feed must deliver new events and terminate cleanly."""
+    script = Path(sys.executable).parent / "tack"
+    created = subprocess.run(
+        [str(script), "create", "feed subject", "--agent", "dev",
+         "--db", str(db_file), "--json"],
+        capture_output=True, text=True, check=False,
+    )
+    assert created.returncode == 0, created.stderr
+
+    feed = subprocess.Popen(
+        [str(script), "history", "--follow", "--since", "0", "--json",
+         "--db", str(db_file)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert feed.stdout is not None and feed.stderr is not None
+    try:
+        first = json.loads(_read_line_with_timeout(feed.stdout))
+        assert first["schema_version"] == 1
+        assert first["event_type"] == "task.created"
+
+        noted = subprocess.run(
+            [str(script), "note", "T-000001", "streamed note", "--agent", "dev",
+             "--db", str(db_file), "--json"],
+            capture_output=True, text=True, check=False,
+        )
+        assert noted.returncode == 0, noted.stderr
+
+        second = json.loads(_read_line_with_timeout(feed.stdout))
+        assert second["event_type"] == "note"
+        assert second["id"] > first["id"]
+        assert second["payload"]["text"] == "streamed note"
+
+        feed.send_signal(signal.SIGINT)
+        out, err = feed.communicate(timeout=5)
+    finally:
+        if feed.poll() is None:
+            feed.kill()
+            feed.communicate()
+
+    assert feed.returncode == 0
+    assert err == ""
+    assert out == ""
 
 
 def test_maintenance_commands_report_json(run: RunCli, tmp_path: Path) -> None:

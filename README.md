@@ -161,7 +161,7 @@ tack depend remove TASK_ID --on PREREQUISITE_ID [--agent ID] [--if-version N]
 tack deps TASK_ID
 tack dependents TASK_ID
 tack graph [TASK_ID] [--format json|dot]
-tack history [TASK_ID] [--limit N]
+tack history [TASK_ID] [--limit N] [--since EVENT_ID] [--follow]
 tack doctor
 tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
 tack guide
@@ -445,8 +445,9 @@ combining it with `--json` is a usage error.
 ## JSON output
 
 Every document on stdout is a single JSON object carrying
-`"schema_version": 1`, and stdout carries nothing else. Under `--json` errors
-are also JSON — on **stdout**, matching:
+`"schema_version": 1`, and stdout carries nothing else — with one documented
+exception, the `history --follow` NDJSON feed (see [The event feed](#the-event-feed)).
+Under `--json` errors are also JSON — on **stdout**, matching:
 
 ```json
 {"schema_version": 1, "error": {"code": "claim_conflict", "message": "Cannot claim T-000123: already claimed by agent qa.", "exit_code": 5, "retryable": false, "details": {"claimed_by": "qa"}}}
@@ -480,6 +481,31 @@ anything). `doctor` returns `ok`, `errors` and `warnings`, where
 `warnings` array. The full table of document shapes is in the skill's *The JSON
 contract* section (`SKILL.md`); if this summary and `SKILL.md`'s *The JSON
 contract* differ, the skill is authoritative.
+
+### The event feed
+
+`tack history` is the board's append-only event log. Its plain form is newest
+first and keeps the 0.5.0 shape. Two options turn it into an orchestrator feed:
+
+```bash
+tack history --since 412 --json          # events after id 412, oldest first
+tack history --follow --json             # stream new events as NDJSON
+tack history T-000123 --follow --since 412
+```
+
+`--since EVENT_ID` returns events with `id` greater than the cursor, oldest
+first, and adds `"order": "asc"` plus the echoed `"since"` to the document. The
+cursor is the last event `id` the consumer saw, so it resumes exactly where it
+stopped. Delivery is **at-least-once**: an overlapping read may repeat an
+event, so de-duplicate on `id`. Ordering is by event id, which is monotonic on
+the append-only table. A non-integer or negative `--since` is a validation
+error (exit 4), never a silent empty result.
+
+`--follow` streams one flat JSON event object per line (NDJSON) as events
+appear — the only command allowed to emit more than one JSON document. Without
+`--since` it starts at the board's current maximum event id (only new events);
+with `--since` it resumes from the cursor. It polls on a bounded interval and
+exits 0 on SIGINT. `--follow` cannot be combined with `--limit`.
 
 ### Claim fields in graph and task documents
 

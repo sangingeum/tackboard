@@ -21,6 +21,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -76,6 +77,10 @@ TERMINAL_GROUP_LIMIT = 10
 
 #: ``show`` displays the latest notes (spec 9.1).
 SHOW_NOTE_LIMIT = 5
+
+#: ``history --follow`` polls on this bounded interval; it never spins hot and
+#: never blocks on a read that cannot be interrupted.
+FOLLOW_POLL_SECONDS = 0.5
 
 #: The counts of spec 10.2, in output order: total, stored statuses, derived.
 _COUNT_KEYS: tuple[str, ...] = (
@@ -706,6 +711,16 @@ def _build_parser() -> _Parser:
     )
     history_parser.add_argument("task_id", nargs="?", metavar="TASK_ID")
     history_parser.add_argument("--limit", type=int, metavar="N")
+    history_parser.add_argument(
+        "--since",
+        metavar="EVENT_ID",
+        help="events after EVENT_ID, oldest first (a resume cursor)",
+    )
+    history_parser.add_argument(
+        "--follow",
+        action="store_true",
+        help="stream new events as NDJSON, one event per line, until interrupted",
+    )
     history_parser.set_defaults(handler="history")
 
     doctor = subparsers.add_parser(
@@ -1212,11 +1227,31 @@ def _run_graph(ctx: _Context, args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_event_id(text: str) -> int:
+    """Parse a ``--since`` cursor; anything but a non-negative integer is exit 4."""
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        raise ValidationError(
+            f"Invalid event id {text!r} for --since: use a non-negative integer."
+        ) from None
+    if value < 0:
+        raise ValidationError(
+            f"Invalid event id {text!r} for --since: the cursor cannot be negative."
+        )
+    return value
+
+
 def _run_history(ctx: _Context, args: argparse.Namespace) -> int:
+    since = None if args.since is None else _parse_event_id(args.since)
+    if args.follow:
+        if args.limit is not None:
+            raise UsageError("--follow cannot be combined with --limit.")
+        return _follow_history(args, task_id=args.task_id, since=since)
     with _project(args) as conn:
         if args.task_id is not None:
             service.get_task(conn, args.task_id)
-        result = history.list_events(conn, args.task_id, limit=args.limit)
+        result = history.list_events(conn, args.task_id, limit=args.limit, since=since)
     if ctx.json:
         _write_json(result)
         return 0
@@ -1231,6 +1266,38 @@ def _run_history(ctx: _Context, args: argparse.Namespace) -> int:
             f"{item['task_id'] or '-'}  {payload}"
         )
     return 0
+
+
+def _follow_history(
+    args: argparse.Namespace, *, task_id: str | None, since: int | None
+) -> int:
+    """Stream new events as NDJSON until SIGINT (exit 0).
+
+    The feed is at-least-once and ordered by event id; the cursor is the last
+    id written. Without ``--since`` it starts at the board's current maximum id,
+    so only events appended after the command starts are streamed. The command
+    polls on ``FOLLOW_POLL_SECONDS`` — a bounded interval, never a busy loop —
+    and each event is one flat JSON object on its own stdout line.
+    """
+    path = _resolve_db_path(args)
+    conn = schema.open_database(path, read_only=True)
+    try:
+        if task_id is not None:
+            service.get_task(conn, task_id)
+        cursor = since if since is not None else history.latest_event_id(conn)
+        while True:
+            document = history.list_events(conn, task_id, since=cursor)
+            for item in document["items"]:
+                line = {"schema_version": 1, **item}
+                _write_line(json.dumps(line, ensure_ascii=False, sort_keys=True))
+                sys.stdout.flush()
+                cursor = item["id"]
+            if not document["items"]:
+                time.sleep(FOLLOW_POLL_SECONDS)
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        conn.close()
 
 
 def _run_doctor(ctx: _Context, args: argparse.Namespace) -> int:

@@ -84,24 +84,55 @@ def list_events(
     task_id: str | None = None,
     *,
     limit: int | None = None,
+    since: int | None = None,
 ) -> dict[str, Any]:
-    """Return recent events, newest first, optionally limited to one task."""
+    """Return events, optionally limited to one task and a ``since`` cursor.
+
+    The plain read (no ``since``) is newest first and keeps its 0.5.0 shape, so
+    existing consumers are unaffected. ``since`` switches to the feed form:
+    events with ``id`` greater than the cursor, **oldest first**, so a consumer
+    resumes exactly where it stopped and appends in order. That document adds
+    ``order: "asc"`` and echoes the cursor in ``since``. ``id`` is monotonic on
+    the append-only ``events`` table, so the cursor is sound.
+    """
+    ascending = since is not None
     sql = "SELECT * FROM events"
+    clauses: list[str] = []
     params: list[Any] = []
     if task_id is not None:
-        sql += " WHERE task_id = ?"
+        clauses.append("task_id = ?")
         params.append(task_id)
-    sql += " ORDER BY id DESC"
+    if since is not None:
+        clauses.append("id > ?")
+        params.append(int(since))
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY id ASC" if ascending else " ORDER BY id DESC"
     if limit is not None:
         sql += " LIMIT ?"
         params.append(int(limit))
     with read_transaction(conn):
         rows = conn.execute(sql, params).fetchall()
-    return {
+    document: dict[str, Any] = {
         "schema_version": 1,
         "task_id": task_id,
         "items": [_event_from_row(row) for row in rows],
     }
+    if ascending:
+        document["order"] = "asc"
+        document["since"] = int(since)
+    return document
+
+
+def latest_event_id(conn: sqlite3.Connection) -> int:
+    """Return the highest event id on the board (``0`` when there are none).
+
+    The starting cursor for ``history --follow`` without ``--since``: only
+    events appended after the command starts are streamed.
+    """
+    with read_transaction(conn):
+        row = conn.execute("SELECT COALESCE(MAX(id), 0) AS latest FROM events").fetchone()
+    return int(row["latest"])
 
 
 #: The event type appended by ``service.add_note`` (spec 9.1).

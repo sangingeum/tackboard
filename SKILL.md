@@ -140,7 +140,7 @@ tack depend add TASK_ID --on PREREQUISITE_ID [--force --reason TEXT] [--if-versi
 tack depend remove TASK_ID --on PREREQUISITE_ID [--if-version N]
 tack deps TASK_ID | tack dependents TASK_ID
 tack graph [TASK_ID] [--format json|dot]
-tack history [TASK_ID] [--limit N]
+tack history [TASK_ID] [--limit N] [--since EVENT_ID] [--follow]
 tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
 tack guide
 ```
@@ -301,6 +301,10 @@ fix is usually to shorten the title and move the full text into
   `{"schema_version":1,"error":{"code","message","exit_code","retryable","details"}}`
   and stderr stays empty unless `--verbose`. Without `--json`, errors go to
   stderr and humans get prose.
+- **The one NDJSON exception: `history --follow`.** It streams one flat JSON
+  event object per line on stdout as events appear — the only command allowed
+  to emit more than one JSON document. It implies `--json`; combining it with
+  `--limit` is a usage error.
 - `board`, `list`, `next` (both forms), `deps`/`dependents` and `claims` emit
   the **task projection without `description`** — the token-economy default.
   `board`, `list` and `next` take `--full` to include it; `deps`/`dependents`
@@ -327,7 +331,9 @@ array; `{...}` is an object whose inner keys are described below the table.
 | `deps <id>` / `dependents <id>` | `{schema_version, task_id, tasks:[...]}` |
 | `graph --format json` | `{schema_version, nodes:[{id,title,status,priority,assignee,claimed_by,claimed_at}], edges:[{source,target}]}` |
 | `graph --format dot` | Graphviz text, not JSON |
-| `history [<id>]` | `{schema_version, task_id, items:[{id,timestamp,actor,event_type,task_id,payload}]}` |
+| `history [<id>]` | `{schema_version, task_id, items:[{id,timestamp,actor,event_type,task_id,payload}]}` (newest first) |
+| `history [<id>] --since EVENT_ID` | `{schema_version, task_id, order:"asc", since, items:[...]}` (events with `id > EVENT_ID`, oldest first) |
+| `history [<id>] --follow [--since EVENT_ID]` | NDJSON: one `{schema_version, id, timestamp, actor, event_type, task_id, payload}` per line |
 | `claims` | `{schema_version, items:[{task_id,agent_id,claimed_at,age_seconds,task:{...}}]}` |
 | `memo` / `memo --rev N` | `{schema_version, rev, text, author, created_at, bytes}` (rev 0 with no memo: `rev:0`, `text:""`, `author:null`, `created_at:null`, `bytes:0`) |
 | `memo --history` | `{schema_version, current_rev, items:[{rev, author, created_at, bytes, reason}]}` (newest first) |
@@ -383,9 +389,18 @@ a reduced subset of it
 - **`deps` / `dependents`** name the queried task in `task_id` and hold its
   direct prerequisites / dependents in `tasks` (an empty `tasks` is normal).
 - **`history`** sets `task_id` to the task you queried (`null` for the
-  board-wide call) and holds the events in `items`. **`claims`** holds one row
-  per held claim in `items`, each row carrying the claim (`task_id`,
-  `agent_id`, `claimed_at`, `age_seconds`) and the full `task`.
+  board-wide call) and holds the events in `items`. The plain form is newest
+  first. `--since EVENT_ID` switches to the feed form: events with `id` greater
+  than the cursor, **oldest first**, plus `order:"asc"` and the echoed `since`
+  — so a consumer resumes exactly where it stopped and appends in order. The
+  cursor is the last event `id` seen; delivery is at-least-once (an overlapping
+  read may repeat an event, so de-duplicate on `id`). `--follow` streams new
+  events as NDJSON (see the NDJSON exception above): without `--since` it starts
+  at the board's current maximum id, with `--since` it resumes from the cursor,
+  polls on a bounded interval, and exits **0** on SIGINT. A `--since` value that
+  is not a non-negative integer is a validation error (exit 4).
+  **`claims`** holds one row per held claim in `items`, each row carrying the
+  claim (`task_id`, `agent_id`, `claimed_at`, `age_seconds`) and the full `task`.
 - **Mutations return `{"schema_version":1,"changed":<bool>,"task":{...}}`**, with
   two exceptions. `note` returns `{changed, event}` (a note is an event, not a
   task change). `reopen` adds a fourth top-level key, `active_dependents`, when
