@@ -35,6 +35,8 @@ DEFAULT_ACTOR = "dev"
 #: Every document shape the SKILL.md contract table names.
 DOCUMENT_SHAPES = (
     "agents",
+    "api_graph",
+    "api_task",
     "backup",
     "board",
     "claims",

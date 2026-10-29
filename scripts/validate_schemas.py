@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Validate real ``tack`` output against the published JSON Schemas.
 
-Every document shape in the contract is produced by running the CLI against a
-scratch board, then validated with ``jsonschema`` against the schema of the
-same name. The schemas are the source of truth: a mismatch here is either a
+Every document shape in the contract is produced against a scratch board, then
+validated with ``jsonschema`` against the schema of the same name. The CLI
+documents are read from ``tack --json``; the HTTP API documents are read from a
+real ``tack serve`` process over loopback, so the route itself is what is
+validated. The schemas are the source of truth: a mismatch here is either a
 schema bug or a contract change, and this script never fixes either.
 
 This is a development/CI tool, not part of the package: ``jsonschema`` is a dev
@@ -23,6 +25,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
@@ -45,6 +48,8 @@ EXPECTED_DOCUMENTS: tuple[str, ...] = (
     "board",
     "deps",
     "graph",
+    "api_graph",
+    "api_task",
     "history",
     "history_since",
     "history_follow",
@@ -135,6 +140,52 @@ class Harness:
         return records
 
 
+class ServedApi:
+    """A real ``tack serve`` process, read over loopback as a browser would."""
+
+    def __init__(self, command: Sequence[str], database: Path) -> None:
+        self.command = list(command)
+        self.database = database
+        self.environment = {**os.environ, "TACKBOARD_AGENT": "validate"}
+        self.process: subprocess.Popen[str] | None = None
+        self.port = 0
+
+    def __enter__(self) -> ServedApi:
+        self.process = subprocess.Popen(
+            [*self.command, "--db", str(self.database), "serve", "--port", "0", "--json"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self.environment,
+        )
+        assert self.process.stdout is not None
+        line = self.process.stdout.readline()
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+            raise SystemExit(f"`tack serve` printed no startup record: {line!r}") from exc
+        if record.get("event") != "serve.start":
+            raise SystemExit(f"`tack serve` printed no startup record: {line!r}")
+        self.port = int(record["port"])
+        return self
+
+    def document(self, path: str) -> dict[str, Any]:
+        url = f"http://127.0.0.1:{self.port}{path}"
+        with urllib.request.urlopen(url, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def __exit__(self, *exc_info: object) -> None:
+        if self.process is None:  # pragma: no cover - defensive
+            return
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=20)
+        finally:
+            for stream in (self.process.stdout, self.process.stderr):
+                if stream is not None:
+                    stream.close()
+
+
 def produce_documents(harness: Harness, workdir: Path) -> Iterable[tuple[str, Any]]:
     """Run the CLI and yield ``(document name, parsed document)`` pairs."""
     yield "init", harness.document("init", "--json")
@@ -177,6 +228,14 @@ def produce_documents(harness: Harness, workdir: Path) -> Iterable[tuple[str, An
     harness.run("depend", "add", second_id, "--on", task_id, "--json")
     yield "deps", harness.document("deps", second_id, "--json")
     yield "graph", harness.document("graph", "--format", "json")
+
+    # The HTTP documents come from the route itself, not from a re-derivation:
+    # one served process answers both, against the same scratch board.
+    with ServedApi(harness.command, harness.database) as api:
+        yield "api_graph", api.document("/api/graph")
+        yield "api_task", api.document(f"/api/tasks/{task_id}")
+        yield "api_task", api.document(f"/api/tasks/{second_id}")
+
     yield "history", harness.document("history", task_id, "--json")
     yield "history_since", harness.document("history", "--since", "1", "--json")
     for record in harness.follow("--since", "0"):
