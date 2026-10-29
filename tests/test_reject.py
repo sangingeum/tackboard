@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from tackboard import claims, cli, history, schema, service
-from tackboard.errors import ValidationError
+from tackboard.errors import ClaimConflictError, ValidationError
 from tackboard.models import MAX_REASON_LENGTH
 
 DEFAULT_ACTOR = "dev"
@@ -151,6 +151,41 @@ def test_a_reason_over_the_limit_is_refused(
             conn, task["id"], actor=DEFAULT_ACTOR, reason="x" * (MAX_REASON_LENGTH + 1)
         )
     assert str(MAX_REASON_LENGTH) in str(caught.value)
+
+
+def test_reject_under_a_foreign_claim_is_refused_until_the_claim_is_released(
+    conn: Any, make_task: Callable[..., dict[str, Any]]
+) -> None:
+    reviewer = "qa"
+    author = "author"
+    task = make_task(title="claimed review", status="ready")
+    claims.claim(conn, task["id"], actor=author)
+    service.set_status(conn, task["id"], "review", actor=author)
+    # Moving to review releases the work claim; a reviewer then claims it for
+    # review, which is the claim `reject` runs into.
+    claims.claim(conn, task["id"], actor=author)
+
+    with pytest.raises(ClaimConflictError) as caught:
+        service.reject_task(conn, task["id"], actor=reviewer, reason="needs work")
+    assert author in str(caught.value)
+    still = service.get_task(conn, task["id"])
+    assert still["status"] == "review"
+    assert still["claimed_by"] == author
+
+    claims.release(
+        conn,
+        task["id"],
+        actor=reviewer,
+        force=True,
+        reason=f"recovering a dead leg held by {author}",
+    )
+    result = service.reject_task(conn, task["id"], actor=reviewer, reason="needs work")
+
+    rejected = result["task"]
+    assert rejected["status"] == "in_progress"
+    assert rejected["claimed_by"] == reviewer
+    assert rejected["rejections"] == 1
+    assert rejected["last_rejection_reason"] == "needs work"
 
 
 # --------------------------------------------------------------------------- #

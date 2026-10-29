@@ -497,10 +497,13 @@ function, adds no transition to the table, and changes no policy. `--reason` is
 **mandatory** and is stored in the event payload; it must not be empty and is
 capped at 1024 characters.
 
-A reject is **not a forced transition**. It records one canonical
+A reject is **not** a forced transition. It records one canonical
 `task.rejected` event whose payload is `{from: "review", to: "in_progress",
 reason}`, with no `forced` key, and `--force` is not accepted on `reject`.
 Rejecting a task that is not in `review` is a validation error (exit 4).
+`reject` inherits the claim policy: rejecting a task claimed by **another**
+agent is refused with a claim conflict, so the reviewer must take over the
+claim or `release --force --reason` it first (there is no supervisor override).
 
 The `rejections` count and `last_rejection_reason` are derived from those
 events on every read — nothing is stored, so they cannot drift from history.
