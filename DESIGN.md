@@ -212,6 +212,27 @@ contract, not an implementation detail:
 - **Transactions stay short** — no rendering, no I/O, no waiting on anything
   except SQLite while a write transaction is open.
 
+### Measured contention ceiling
+
+`scripts/benchmark_scale.py` (checked in, tracked but never a CI gate) publishes
+the numbers this policy produces. On this machine, fixed seed, 50 distinct
+claiming agents and 10 claims each:
+
+| Board | `next --claim` p50 / p95 | `board --brief` p50 | `graph --json` p50 / p95 |
+|---|---|---|---|
+| 1,000 tasks | 9.6 ms / 3.5 s | 9.3 ms | 50.8 ms / 53.0 ms |
+| 10,000 tasks | 153.5 ms / 13.7 s | 68.7 ms | 4.4 s / 4.4 s (2.27 MB) |
+
+At 10,000 tasks under 50-way contention, 10 of 50 claimers exhausted the
+bounded retry budget and surfaced `LockedError` (exit 5, `retryable: true`).
+That is the documented ceiling, not a silent failure: the retry is bounded by
+design, so a caller that must keep claiming should retry the command or reduce
+the number of concurrent claimers. Read commands stay usable at that size —
+`board --brief` is tens of milliseconds and `graph --json` is seconds and
+megabytes, which is why the graph is a human view rather than an agent hot
+path. Re-measure on the machine that matters before planning around these
+figures.
+
 Read-only *web* connections use `PRAGMA query_only=ON` rather than opening the
 file `mode=ro`, because a read-only connection to a WAL database still needs
 the `-shm` file and is unreliable without it.

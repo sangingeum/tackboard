@@ -973,6 +973,14 @@ regression signal, but no timing threshold fails CI. A smoke test runs it on a
 100-task board; the published numbers are recorded in the project's round
 notes, not asserted in the suite.
 
+Measured on this machine (fixed seed, 50 claiming agents): at 1,000 tasks
+`next --claim` is p50 9.6 ms / p95 3.5 s; at 10,000 tasks p50 153.5 ms /
+p95 13.7 s, `board --brief` 68.7 ms and `graph --json` 4.4 s / 2.27 MB, and
+10 of 50 claimers exhausted the bounded retry budget with a retryable
+`LockedError` (exit 5). That is the documented contention ceiling — retry the
+command or reduce concurrency beyond it. See `DESIGN.md` §6, "Measured
+contention ceiling", for the caveats and the full table.
+
 ### Demo board
 
 The five screenshots in the web view section come from one deterministic seed
