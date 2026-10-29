@@ -116,6 +116,7 @@ Global options (`--db`, `--json`, `--quiet`, `--verbose`, `--version`,
 ```text
 tack init [--db PATH]
 tack migrate | tack backup PATH | tack doctor [--json]
+tack schema [DOCUMENT] [--json]
 tack board|list [--status S] [--assignee A] [--label L] [--priority P]
                 [--blocked] [--eligible|--ready] [--limit N]
                 [--sort FIELD] [--reverse] [--full] [--brief] [--count]
@@ -153,9 +154,9 @@ tack guide
 
 Every task or memo mutation takes `--agent` or falls back to `TACKBOARD_AGENT`
 (the explicit option wins). Read-only commands (`board`, `list`, `show`,
-`deps`, `dependents`, `graph`, `history`, `claims`, `doctor`) need no actor, and
-so do the memo's reads (`memo`, `memo --rev`, `memo --history`, `memo --diff`)
-and `memo --dry-run`; every memo write needs one.
+`deps`, `dependents`, `graph`, `history`, `claims`, `doctor`, `schema`) need no
+actor, and so do the memo's reads (`memo`, `memo --rev`, `memo --history`,
+`memo --diff`) and `memo --dry-run`; every memo write needs one.
 `next` needs one even without `--claim`, because selection is agent-specific.
 `next --claim` prints a single-task document where plain `next` prints the
 `tasks` container — see *The JSON contract*.
@@ -360,6 +361,34 @@ fix is usually to shorten the title and move the full text into
   violation gives `field` / `max` / `unit` / `actual`; a claim conflict gives
   `claimed_by`) — read them instead of parsing the message text.
 
+### JSON Schemas
+
+The schemas are the source of truth for every document below: one JSON Schema
+(draft 2020-12) per shape, in the `schemas` directory of the repository and
+inside the installed package (`tackboard/schemas`).
+
+```bash
+tack schema --json            # every schema: name, $id, repo-relative path
+tack schema show --json       # one schema document, unchanged
+tack schema board --json
+```
+
+`$id`s are URNs (`urn:tackboard:schema:<name>`) — there is no hosted copy at a
+public URL, so a consumer builds a resolver from the listed documents. The task
+projection is defined once, in `schemas/task.json` (`$defs.task`,
+`$defs.node`, `$defs.event`, `$defs.note`, `$defs.blocker`), and every other
+schema references it rather than restating it. Each schema sets
+`additionalProperties: false`: new fields must be declared, which is the
+additive-only rule above in machine-readable form. An unknown document name is
+a usage error (exit 2) that lists the allowed set.
+
+Naming: the schema names are the document shapes — `show`, `next`,
+`next_claim`, `board` (with and without `tasks`; the same schema describes
+both, `tasks` is optional), `deps`, `graph`, `history`, `history_since`,
+`history_follow` (one NDJSON line), `plan_apply`, `claims`, `agents`, `memo`,
+`memo_history`, `memo_diff`, `memo_write`, `doctor`, `task_mutation`, `note`,
+`init`, `migrate`, `backup`, `error`.
+
 ### Document shapes
 
 The top-level keys of every `--json` document a consumer meets. `[...]` is an
@@ -390,7 +419,7 @@ array; `{...}` is an object whose inner keys are described below the table.
 | `reopen <id>` | `{schema_version, changed, task:{...}}`, plus `active_dependents:[...]` when it changes anything |
 | `note <id> TEXT [--ref KIND:VALUE ...]` | `{schema_version, changed, event:{...}}`; the event's `payload` is `{text, refs:[{kind, value}]}` |
 | `init` | `{schema_version, ok, database, operation, created, project_label, database_schema_version}` |
-| `migrate` | `{schema_version, ok, database, operation, migrated, from_version, to_version, database_schema_version}` |
+| `migrate` | `{schema_version, ok, database, operation, migrated, from_version, to_version, database_schema_version}`, plus `backup` when a migration ran |
 | `backup` | `{schema_version, ok, database, operation, backup, source_application_id, database_schema_version}` |
 | any error under `--json` | `{schema_version, error:{code,message,exit_code,retryable,details}}` |
 

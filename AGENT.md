@@ -37,12 +37,20 @@ src/tackboard/
   claims.py        claim/release, atomic `next --claim`
   history.py       append-only event emission and queries
   memo.py          the board-level memo: revisions, guard, append rules
+  contracts.py     the published JSON Schemas: discovery, loading, listing
+  schemas/         one JSON Schema (draft 2020-12) per --json document shape
   views.py         read models shared by the CLI and the web layer
   web.py           read-only HTTP server (board, DAG, task detail, /api/*)
   templates/       server-rendered HTML
   static/          CSS and JavaScript (no inline scripts, no external hosts)
 tests/             pytest suite, mirrors the module layout
+scripts/           development tools (real-output schema validation)
 ```
+
+`schemas/` at the repository root is a symlink to `src/tackboard/schemas`, the
+one physical copy: the schemas must live inside the package so `uv_build`
+ships them in the wheel. `contracts.py` reads them, and `tack schema` prints
+them.
 
 `views.py` holds the interface-neutral read models (`board_document`,
 `graph_document`, `task_document`, `memo_document`): one read transaction, plain
@@ -64,6 +72,9 @@ uv run pytest --cov -q                   # suite with coverage
 uv run tack --help                       # the CLI, from the `tack` entry point
 uv run python -m tackboard --help        # same CLI, module form
 uv run tack guide                        # the agent-facing usage summary
+uv run tack schema --json                # the published JSON Schemas
+uv run python scripts/validate_schemas.py --tack "uv run tack"
+                                         # validate real output (dev/CI)
 uv run tack board --db PATH --json       # every command takes --db and --json
 uv run tack serve --db PATH --port 0     # the read-only web view
 uv build                                 # sdist + wheel

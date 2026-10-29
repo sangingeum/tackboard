@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Published JSON Schemas for every `--json` document shape, and
+  `tack schema [DOCUMENT] [--json]` to read them. `tack schema --json` lists
+  each schema's name, `$id` (a `urn:tackboard:schema:<name>` URN — no hosted
+  URL is implied) and repository-relative path; `tack schema DOCUMENT --json`
+  prints one schema unchanged, and `tack schema task --json` prints the shared
+  definitions. An unknown name is a usage error (exit 2) naming the allowed
+  set. The schemas ship inside the package (`tackboard/schemas`), so the
+  command behaves the same from a checkout and an installed wheel; the
+  repository's `schemas` directory is that same path. They are the source of
+  truth for the contract tables in `README.md` and `SKILL.md`, and CI validates
+  real CLI output against them (`scripts/validate_schemas.py`) both in process
+  and through the installed console script. `jsonschema` is a dev-only
+  dependency: the package still declares none. No schema migration,
+  `schema_version` stays `1`.
 - `tack note TASK_ID TEXT --ref KIND:VALUE ...` attaches typed handoff
   references to a note. The kind vocabulary is closed: `commit` (a git object
   id of 7-40 hex characters), `url` (an absolute http(s) URL, at most 2048

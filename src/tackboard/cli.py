@@ -157,6 +157,8 @@ JSON
   --verbose is given; without --json, errors go to stderr.
   The one exception: tack history --follow streams NDJSON events (one JSON
   object per line) and polls every 0.5 s.
+  tack schema --json                   list the published JSON Schemas
+  tack schema show --json              print one schema document
 
 Exit codes
   0 success, including no-ops and an empty next

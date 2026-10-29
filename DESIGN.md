@@ -241,6 +241,12 @@ The CLI is the primary interface for agents, so its output is a versioned API:
 - The board-level memo (section 11) adds its own documents without changing any
   other: `board`, `list`, `next`, `counts`, `deps`, `dependents`, `graph`,
   `doctor` and `history <TASK_ID>` are untouched by a memo write.
+- The contract is published as data: one JSON Schema per document shape in
+  `schemas/` (shipped as `tackboard/schemas`), with `schema_version` const 1 and
+  `additionalProperties: false` so an additive field must be declared. The task
+  projection is defined once, in `schemas/task.json`, and referenced by URN.
+  `tack schema [DOCUMENT] --json` prints them; CI validates real output against
+  them in process and through the installed console script.
 
 Exit codes and JSON documents are the parts an agent is allowed to depend on.
 Human output may be re-worded.

@@ -166,6 +166,7 @@ tack graph [TASK_ID] [--format json|dot]
 tack history [TASK_ID] [--limit N] [--since EVENT_ID] [--follow]
 tack plan apply FILE [--dry-run] [--agent ID]
 tack doctor
+tack schema [DOCUMENT] [--json]
 tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
 tack guide
 ```
@@ -632,6 +633,29 @@ anything). `doctor` returns `ok`, `errors` and `warnings`, where
 contract* section (`SKILL.md`); if this summary and `SKILL.md`'s *The JSON
 contract* differ, the skill is authoritative.
 
+### JSON Schemas
+
+The schemas are the source of truth for these documents. Each shape has one
+JSON Schema (draft 2020-12) in the repository's `schemas` directory, which is
+the same directory the package ships as `tackboard/schemas` — an installed
+wheel carries them, so `tack schema` works identically from a checkout and from
+an installed console script.
+
+```bash
+tack schema --json            # {"schema_version": 1, "schemas": [{name, $id, path}, ...]}
+tack schema show --json       # the show schema, unchanged
+tack schema task --json       # the shared definitions every schema references
+```
+
+`$id`s are URNs (`urn:tackboard:schema:<name>`): the schemas are published in
+the repository, not at a hosted URL, so a consumer builds a resolver from the
+listed documents. The task projection lives once in `schemas/task.json` — the
+other schemas `$ref` its `$defs`. An unknown document name is a usage error
+(exit 2) whose message lists the allowed set. Each schema sets
+`additionalProperties: false`, so an additive field must be declared here before
+it is emitted; `scripts/validate_schemas.py` validates real CLI output against
+these files in CI.
+
 ### The event feed
 
 `tack history` is the board's append-only event log. Its plain form is newest
@@ -749,6 +773,8 @@ JSON
   --verbose is given; without --json, errors go to stderr.
   The one exception: tack history --follow streams NDJSON events (one JSON
   object per line) and polls every 0.5 s.
+  tack schema --json                   list the published JSON Schemas
+  tack schema show --json              print one schema document
 
 Exit codes
   0 success, including no-ops and an empty next
