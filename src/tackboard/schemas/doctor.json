@@ -60,6 +60,18 @@
           },
           "age_seconds": {
             "type": "integer"
+          },
+          "event_id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
           }
         },
         "required": [
@@ -117,6 +129,18 @@
             "type": "string"
           },
           "age_seconds": {
+            "type": "integer"
+          },
+          "event_id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "limit": {
             "type": "integer"
           }
         },

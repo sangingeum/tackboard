@@ -7,16 +7,26 @@ mutations and never write task events.
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from . import db
 from .config import DEFAULT_STALE_CLAIM_SECONDS
 from .errors import NotFoundError, SchemaError, TackError, ValidationError
-from .models import MAX_MEMO_BYTES, utcnow_iso, utcstamp_iso
+from .models import (
+    MAX_MEMO_BYTES,
+    MAX_NOTE_REFS,
+    MAX_REF_PATH_LENGTH,
+    MAX_REF_URL_LENGTH,
+    NOTE_REF_KINDS,
+    Claim,
+    utcnow_iso,
+    utcstamp_iso,
+)
 
 #: A fixed magic number identifying a tackboard database (spec 5.4).
 APPLICATION_ID = 0x5441434B  # "TACK"
@@ -578,6 +588,9 @@ def doctor(
         errors.extend(_doctor_cycles(conn))
         if version == SCHEMA_VERSION:
             errors.extend(_doctor_memo(conn))
+            warnings.extend(_doctor_note_refs(conn))
+            warnings.extend(_doctor_memo_events(conn))
+            warnings.extend(_doctor_plan_events(conn))
         warnings.extend(_doctor_claim_states(conn, threshold))
     finally:
         conn.close()
@@ -738,11 +751,285 @@ def _doctor_memo(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return findings
 
 
+_NOTE_REF_COMMIT_RE = re.compile(r"\A[0-9a-fA-F]{7,40}\Z")
+_NOTE_REF_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _note_ref_finding(
+    *,
+    code: str,
+    message: str,
+    task_id: str | None,
+    event_id: int,
+    kind: str | None = None,
+    value: str | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    finding: dict[str, Any] = {
+        "code": code,
+        "message": message,
+        "task_id": task_id,
+        "event_id": event_id,
+    }
+    if kind is not None:
+        finding["kind"] = kind
+    if value is not None:
+        finding["value"] = value
+    if limit is not None:
+        finding["limit"] = limit
+    return finding
+
+
+def _doctor_note_refs(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Warn when a stored note's refs break the documented kind limits.
+
+    The CLI validates refs before writing, so a finding here means the event
+    payload was written outside the CLI (corruption or tampering). Each finding
+    names the task and the event so the row can be located.
+    """
+    findings: list[dict[str, Any]] = []
+    rows = conn.execute(
+        "SELECT id, task_id, payload_json FROM events WHERE event_type = 'note' "
+        "ORDER BY id"
+    ).fetchall()
+    task_ids = {str(row["id"]) for row in conn.execute("SELECT id FROM tasks")}
+    for row in rows:
+        event_id = int(row["id"])
+        task_id = row["task_id"]
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, ValueError):
+            findings.append(
+                _note_ref_finding(
+                    code="note_payload_invalid",
+                    message=f"note event {event_id} does not carry a JSON payload.",
+                    task_id=task_id,
+                    event_id=event_id,
+                )
+            )
+            continue
+        refs = payload.get("refs") if isinstance(payload, dict) else None
+        if refs is None:
+            continue
+        if not isinstance(refs, list):
+            findings.append(
+                _note_ref_finding(
+                    code="note_ref_invalid",
+                    message=f"note event {event_id} carries refs that are not a list.",
+                    task_id=task_id,
+                    event_id=event_id,
+                )
+            )
+            continue
+        if len(refs) > MAX_NOTE_REFS:
+            findings.append(
+                _note_ref_finding(
+                    code="note_refs_exceeded",
+                    message=(
+                        f"note event {event_id} has {len(refs)} refs, over the "
+                        f"{MAX_NOTE_REFS}-ref cap."
+                    ),
+                    task_id=task_id,
+                    event_id=event_id,
+                    limit=MAX_NOTE_REFS,
+                )
+            )
+        for ref in refs:
+            if not isinstance(ref, dict):
+                findings.append(
+                    _note_ref_finding(
+                        code="note_ref_invalid",
+                        message=f"note event {event_id} has a ref that is not an object.",
+                        task_id=task_id,
+                        event_id=event_id,
+                    )
+                )
+                continue
+            kind = ref.get("kind")
+            value = ref.get("value")
+            if not isinstance(kind, str) or kind not in NOTE_REF_KINDS:
+                findings.append(
+                    _note_ref_finding(
+                        code="note_ref_invalid",
+                        message=(
+                            f"note event {event_id} has ref kind {kind!r}, which is "
+                            f"not one of {', '.join(NOTE_REF_KINDS)}."
+                        ),
+                        task_id=task_id,
+                        event_id=event_id,
+                        kind=str(kind),
+                    )
+                )
+                continue
+            if not isinstance(value, str) or not value.strip():
+                findings.append(
+                    _note_ref_finding(
+                        code="note_ref_invalid",
+                        message=f"note event {event_id} has an empty {kind} ref value.",
+                        task_id=task_id,
+                        event_id=event_id,
+                        kind=kind,
+                    )
+                )
+                continue
+            limit = {
+                "url": MAX_REF_URL_LENGTH,
+                "path": MAX_REF_PATH_LENGTH,
+                "commit": 40,
+            }.get(kind)
+            invalid = _NOTE_REF_CONTROL_RE.search(value) is not None
+            if kind == "commit" and not _NOTE_REF_COMMIT_RE.match(value):
+                invalid = True
+            if limit is not None and len(value) > limit:
+                invalid = True
+            if invalid:
+                findings.append(
+                    _note_ref_finding(
+                        code="note_ref_invalid",
+                        message=(
+                            f"note event {event_id} has a {kind} ref that breaks "
+                            "the documented value limits."
+                        ),
+                        task_id=task_id,
+                        event_id=event_id,
+                        kind=kind,
+                        value=value[:120],
+                        limit=limit,
+                    )
+                )
+                continue
+            if kind == "task" and value not in task_ids:
+                findings.append(
+                    _note_ref_finding(
+                        code="note_ref_missing_task",
+                        message=(
+                            f"note event {event_id} refers to {value}, which is "
+                            "not a task on this board."
+                        ),
+                        task_id=task_id,
+                        event_id=event_id,
+                        kind=kind,
+                        value=value,
+                    )
+                )
+    return findings
+
+
+def _doctor_memo_events(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Warn when a ``memo.*`` event's revision pointer does not resolve.
+
+    Every memo write appends a revision row and one event naming it, so the
+    event log and the revision table must agree: each event's ``rev`` exists,
+    and the newest event names the current revision. A missing revision table
+    is already reported by ``_doctor_memo``; this check then stays silent.
+    """
+    try:
+        revisions = {
+            int(row["rev"]) for row in conn.execute("SELECT rev FROM memo_revisions")
+        }
+    except sqlite3.DatabaseError:
+        return []
+    current = max(revisions) if revisions else 0
+
+    findings: list[dict[str, Any]] = []
+    latest_rev: int | None = None
+    rows = conn.execute(
+        "SELECT id, payload_json FROM events WHERE event_type LIKE 'memo.%' "
+        "ORDER BY id"
+    ).fetchall()
+    for row in rows:
+        event_id = int(row["id"])
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, ValueError):
+            payload = None
+        rev = payload.get("rev") if isinstance(payload, dict) else None
+        if not isinstance(rev, int):
+            findings.append(
+                {
+                    "code": "memo_event_invalid",
+                    "message": f"memo event {event_id} does not name a revision.",
+                    "event_id": event_id,
+                }
+            )
+            continue
+        latest_rev = rev
+        if rev not in revisions:
+            findings.append(
+                {
+                    "code": "memo_event_missing_revision",
+                    "message": (
+                        f"memo event {event_id} names revision {rev}, which is "
+                        "not in memo_revisions."
+                    ),
+                    "event_id": event_id,
+                    "rev": rev,
+                }
+            )
+    if latest_rev is not None and latest_rev != current:
+        findings.append(
+            {
+                "code": "memo_event_rev_mismatch",
+                "message": (
+                    f"the newest memo event names revision {latest_rev}, but the "
+                    f"current revision is {current}."
+                ),
+                "expected": current,
+                "found": latest_rev,
+            }
+        )
+    return findings
+
+
+def _doctor_plan_events(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Warn when a ``plan.applied`` event names tasks that do not exist.
+
+    Plan application is atomic and creates every task it names, so a missing
+    id means the task row was removed outside the CLI (cancel is the only
+    removal path, and it keeps the row).
+    """
+    findings: list[dict[str, Any]] = []
+    task_ids = {str(row["id"]) for row in conn.execute("SELECT id FROM tasks")}
+    rows = conn.execute(
+        "SELECT id, payload_json FROM events WHERE event_type = 'plan.applied' "
+        "ORDER BY id"
+    ).fetchall()
+    for row in rows:
+        event_id = int(row["id"])
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, ValueError):
+            payload = None
+        ids = payload.get("ids") if isinstance(payload, dict) else None
+        if not isinstance(ids, list):
+            findings.append(
+                {
+                    "code": "plan_event_invalid",
+                    "message": f"plan.applied event {event_id} does not name task ids.",
+                    "event_id": event_id,
+                }
+            )
+            continue
+        for task_id in ids:
+            if not isinstance(task_id, str) or task_id not in task_ids:
+                findings.append(
+                    {
+                        "code": "plan_event_missing_task",
+                        "message": (
+                            f"plan.applied event {event_id} names {task_id!r}, "
+                            "which is not a task on this board."
+                        ),
+                        "event_id": event_id,
+                        "task_id": str(task_id),
+                    }
+                )
+    return findings
+
+
 def _doctor_claim_states(
     conn: sqlite3.Connection, stale_after_seconds: int
 ) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
-    now = utcnow_iso()
 
     rows = conn.execute(
         """
@@ -809,11 +1096,25 @@ def _doctor_claim_states(
         ORDER BY c.claimed_at, c.task_id
         """
     ).fetchall()
-    current = datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ")
+    from .service import derived_flags  # local: service imports this module
+
     for row in rows:
-        moment = datetime.strptime(row["claimed_at"], "%Y-%m-%dT%H:%M:%SZ")
-        age = max(0, int((current - moment).total_seconds()))
-        if age < stale_after_seconds:
+        claim = Claim(
+            task_id=str(row["task_id"]),
+            agent_id=str(row["agent_id"]),
+            claimed_at=str(row["claimed_at"]),
+        )
+        # One source for the stale rule: the same derived flag the projection
+        # and `claims --stale` read, against the same configured threshold.
+        flags = derived_flags(
+            (),
+            None,
+            "in_progress",
+            claim,
+            stale_after_seconds=stale_after_seconds,
+        )
+        age = flags["claim_age_seconds"]
+        if not flags["claim_stale"] or age is None:
             continue
         findings.append(
             {

@@ -899,6 +899,28 @@ appends `— stale`, and the task page shows a `⚠ stale claim` chip.
   local disk. The warning carries `fstype` and `mount_point`, and detection that
   cannot read the mount table stays silent rather than guess. A warning never
   changes the exit code.
+- `tack doctor` warns about the stored event surfaces that the CLI validates on
+  write, so a finding means the row was written outside the CLI (corruption or
+  tampering) and never makes the board unusable: `note_refs_exceeded` (more
+  than the 20-ref cap), `note_ref_invalid` (unknown kind, empty value, control
+  characters, a non-hex commit, or a value over its kind's length limit),
+  `note_ref_missing_task` (a `task:` ref naming a task not on this board), and
+  `note_payload_invalid`. Each names the note's `task_id` and the `event_id`;
+  the ref findings add `kind`, `value` (truncated in the message) and `limit`
+  where one applies.
+- `tack doctor` warns when the memo event log and the revision table disagree:
+  `memo_event_missing_revision` (an event names a revision that is not in
+  `memo_revisions`), `memo_event_rev_mismatch` (the newest event does not name
+  the current revision, with `expected`/`found`), and `memo_event_invalid` (an
+  event carries no revision).
+- `tack doctor` warns when a `plan.applied` event names tasks that do not
+  exist: `plan_event_missing_task` carries the `event_id` and the missing
+  `task_id`, and `plan_event_invalid` means the event carries no id list. Plan
+  application is atomic, so either finding means the rows were changed outside
+  the CLI.
+- The `stale_claim` warning reads the same derived `claim_stale` flag as the
+  task projection and `claims --stale`, against the same configured
+  `stale_claim_after` threshold — one rule, one source.
 
 ## Troubleshooting
 

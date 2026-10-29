@@ -585,6 +585,21 @@ same filtered set.
   davfs, Lustre) where SQLite's WAL locking is unsafe. It carries `fstype` and
   `mount_point`; detection that cannot read the mount table stays silent. Move
   the board to a local disk; a warning never changes the exit code.
+- `doctor` warns about event rows the CLI would never write — a finding means
+  corruption or an out-of-band write, and every one of these is a warning:
+  - `note_refs_exceeded` / `note_ref_invalid` / `note_ref_missing_task` /
+    `note_payload_invalid` — a stored note's `refs` break the documented kind
+    limits or the 20-ref cap, or name a task that is not on the board. Findings
+    carry `task_id`, `event_id`, and `kind` / `value` / `limit` where they apply.
+  - `memo_event_missing_revision` — a `memo.*` event names a `rev` that is not
+    in `memo_revisions`; `memo_event_rev_mismatch` — the newest memo event does
+    not name the current revision (`expected` / `found`); `memo_event_invalid` —
+    an event carries no revision.
+  - `plan_event_missing_task` / `plan_event_invalid` — a `plan.applied` event's
+    `ids` name tasks that do not exist, or the event carries no id list.
+- The `stale_claim` warning is the derived `claim_stale` flag — the same one the
+  task projection and `claims --stale` read — against the configured
+  `stale_claim_after` threshold.
 
 ### Exit codes
 
