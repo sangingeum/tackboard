@@ -840,6 +840,27 @@ def test_double_edge_uses_the_reviewable_token() -> None:
     assert "var(--accent)" not in body
 
 
+def test_graph_js_wires_the_stale_claim_badge() -> None:
+    """The canvas badge names staleness and reads the page's server-held ids."""
+    source = (REPO_ROOT / "src" / "tackboard" / "static" / "graph.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'node.claim_stale ? " \\u00b7 stale"' in source
+    assert '"data-stale": node.claim_stale ? "true" : "false"' in source
+    assert "data-stale-claims" in source
+    assert "stale claim" in source
+
+
+def test_stale_claim_badge_uses_a_dashed_mark() -> None:
+    """A stale holder badge is distinguishable without colour alone."""
+    css = (REPO_ROOT / "src" / "tackboard" / "static" / "app.css").read_text(
+        encoding="utf-8"
+    )
+    start = css.index('.node__claim-badge[data-stale="true"]')
+    body = css[start : start + 120]
+    assert "stroke-dasharray" in body
+
+
 def test_assignment_history_names_both_sides() -> None:
     event = {
         "event_type": "task.updated",
