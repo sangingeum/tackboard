@@ -36,6 +36,7 @@ from . import (
     dependencies,
     history,
     memo,
+    plans,
     schema,
     service,
     views,
@@ -141,6 +142,10 @@ Dependencies
   tack deps T-000002                   direct prerequisites
   tack dependents T-000001             direct dependents
   tack graph --format dot              whole graph; --format json for machines
+
+Plans
+  tack plan apply plan.json --json     create a whole task DAG atomically
+  tack plan apply plan.json --dry-run  validate and report; writes nothing
 
 JSON
   --json works before or after the subcommand and prints exactly one JSON
@@ -834,6 +839,26 @@ def _build_parser() -> _Parser:
     )
     memo_parser.set_defaults(handler="memo")
 
+    plan_parser = subparsers.add_parser(
+        "plan", parents=[shared], help="apply a whole task plan from a file"
+    )
+    plan_subs = plan_parser.add_subparsers(dest="plan_command", metavar="{apply}")
+
+    plan_apply = plan_subs.add_parser(
+        "apply", parents=[shared], help="create a plan's tasks in one transaction"
+    )
+    plan_apply.add_argument(
+        "file", metavar="FILE", help="plan file (JSON; '-' reads stdin)"
+    )
+    plan_apply.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="validate and report what would be created, writing nothing",
+    )
+    _add_actor(plan_apply)
+    plan_apply.set_defaults(handler="plan.apply")
+
     return parser
 
 
@@ -1256,6 +1281,39 @@ def _run_graph(ctx: _Context, args: argparse.Namespace) -> int:
         _write_json(result)
         return 0
     _write_line(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _render_plan(document: Mapping[str, Any]) -> list[str]:
+    """Human lines for a ``plan apply`` document: one line per created task."""
+    source = document["source"]
+    count = int(document["count"])
+    noun = "task" if count == 1 else "tasks"
+    if document["dry_run"]:
+        lines = [f"Dry run: {source} would create {count} {noun}; nothing written."]
+    else:
+        lines = [f"Applied {source}: {count} {noun} created."]
+    for item in document["tasks"]:
+        key = f" [{item['key']}]" if item["key"] else ""
+        lines.append(f"  {item['id'] or '-'}{key}  {item['title']}")
+    return lines
+
+
+def _run_plan(ctx: _Context, args: argparse.Namespace) -> int:
+    """Apply one plan file: validate the whole batch, then create it atomically."""
+    actor = _actor(args)
+    source = "stdin" if args.file == "-" else args.file
+    text = _read_text_source(args.file)
+    tasks = plans.load_plan(text, source=source)
+    with _project(args) as conn:
+        document = plans.apply_plan(
+            conn, actor=actor, tasks=tasks, source=source, dry_run=args.dry_run
+        )
+    if ctx.json:
+        _write_json(document)
+        return 0
+    for line in _render_plan(document):
+        _write_line(line)
     return 0
 
 
@@ -1709,6 +1767,8 @@ def _dispatch(ctx: _Context, args: argparse.Namespace) -> int:
             raise UsageError(
                 "Missing subcommand: use 'tack depend add' or 'tack depend remove'."
             )
+        if args.command == "plan":
+            raise UsageError("Missing subcommand: use 'tack plan apply FILE'.")
         raise UsageError("Missing command. Run 'tack --help' for usage.")
 
     if handler in {"init", "migrate", "backup"}:
@@ -1755,6 +1815,8 @@ def _dispatch(ctx: _Context, args: argparse.Namespace) -> int:
         return _run_serve(ctx, args)
     if handler == "memo":
         return _run_memo(ctx, args)
+    if handler == "plan.apply":
+        return _run_plan(ctx, args)
     raise InternalError(f"Unhandled command {handler!r}.")
 
 

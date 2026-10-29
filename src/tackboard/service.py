@@ -1066,6 +1066,107 @@ def _active_dependents(conn: sqlite3.Connection, task_id: str) -> list[dict[str,
     return _project_rows(conn, rows, full=False)
 
 
+def _check_initial_status(status: str) -> str:
+    """Validate a creation status: active work and ``done`` are not creation states."""
+    clean_status = _check_status(status)
+    if clean_status in {_IN_PROGRESS, _REVIEW, _DONE}:
+        raise ValidationError(
+            f"Cannot create a task as {clean_status}; use claim and status "
+            "transitions instead."
+        )
+    return clean_status
+
+
+def _insert_task_row(
+    conn: sqlite3.Connection,
+    *,
+    title: str,
+    description: str,
+    status: str,
+    priority: str,
+    assignee: str | None,
+    label_pairs: Sequence[tuple[str, str]],
+) -> str:
+    """Insert one already-validated task row and its labels; return its id.
+
+    The caller owns the transaction and the ``task.created`` event. A plan
+    application creates every row first, then each row's edges, so its event
+    can carry the resolved prerequisite ids.
+    """
+    row = conn.execute(
+        "SELECT value FROM metadata WHERE key = 'next_sequence'"
+    ).fetchone()
+    sequence = int(row["value"]) if row is not None else 1
+    task_id = task_id_for_sequence(sequence)
+    conn.execute(
+        "UPDATE metadata SET value = ? WHERE key = 'next_sequence'",
+        (str(sequence + 1),),
+    )
+    now = utcnow_iso()
+    conn.execute(
+        """
+        INSERT INTO tasks(
+            id, sequence, title, description, status, priority, assignee,
+            blocked_reason, created_at, updated_at, completed_at, version
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, 1)
+        """,
+        (
+            task_id,
+            sequence,
+            title,
+            description,
+            status,
+            priority,
+            assignee,
+            now,
+            now,
+        ),
+    )
+    for label, key in label_pairs:
+        conn.execute(
+            "INSERT INTO task_labels(task_id, label, label_key) VALUES(?, ?, ?)",
+            (task_id, label, key),
+        )
+    return task_id
+
+
+def _insert_dependency_edge(
+    conn: sqlite3.Connection, task_id: str, prerequisite_id: str
+) -> None:
+    """Insert one edge between two task rows that already exist."""
+    conn.execute(
+        "INSERT INTO dependencies(prerequisite_id, task_id) VALUES(?, ?)",
+        (prerequisite_id, task_id),
+    )
+
+
+def _record_created_event(
+    conn: sqlite3.Connection,
+    *,
+    actor: str,
+    task_id: str,
+    status: str,
+    priority: str,
+    assignee: str | None,
+    label_pairs: Sequence[tuple[str, str]],
+    prerequisite_ids: Sequence[str],
+) -> None:
+    """Append the canonical ``task.created`` event for one new row."""
+    history.record_event(
+        conn,
+        event_type="task.created",
+        actor=actor,
+        task_id=task_id,
+        payload={
+            "status": status,
+            "priority": priority,
+            "assignee": assignee,
+            "labels": [label for label, _ in label_pairs],
+            "depends_on": list(prerequisite_ids),
+        },
+    )
+
+
 def create_task(
     conn: sqlite3.Connection,
     *,
@@ -1085,12 +1186,7 @@ def create_task(
     clean_description = _check_description(description)
     clean_priority = _check_priority(priority)
     clean_assignee = _check_assignee(assignee)
-    clean_status = _check_status(status)
-    if clean_status in {_IN_PROGRESS, _REVIEW, _DONE}:
-        raise ValidationError(
-            f"Cannot create a task as {clean_status}; use claim and status "
-            "transitions instead."
-        )
+    clean_status = _check_initial_status(status)
     if if_version is not None:
         raise ValidationError("--if-version does not apply to task creation.")
     label_pairs = _normalize_labels(labels)
@@ -1099,57 +1195,26 @@ def create_task(
     with write_transaction(conn):
         for prerequisite_id in prerequisite_ids:
             _task_row(conn, prerequisite_id)
-        row = conn.execute(
-            "SELECT value FROM metadata WHERE key = 'next_sequence'"
-        ).fetchone()
-        sequence = int(row["value"]) if row is not None else 1
-        task_id = task_id_for_sequence(sequence)
-        conn.execute(
-            "UPDATE metadata SET value = ? WHERE key = 'next_sequence'",
-            (str(sequence + 1),),
-        )
-        now = utcnow_iso()
-        conn.execute(
-            """
-            INSERT INTO tasks(
-                id, sequence, title, description, status, priority, assignee,
-                blocked_reason, created_at, updated_at, completed_at, version
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, 1)
-            """,
-            (
-                task_id,
-                sequence,
-                clean_title,
-                clean_description,
-                clean_status,
-                clean_priority,
-                clean_assignee,
-                now,
-                now,
-            ),
-        )
-        for label, key in label_pairs:
-            conn.execute(
-                "INSERT INTO task_labels(task_id, label, label_key) VALUES(?, ?, ?)",
-                (task_id, label, key),
-            )
-        for prerequisite_id in prerequisite_ids:
-            conn.execute(
-                "INSERT INTO dependencies(prerequisite_id, task_id) VALUES(?, ?)",
-                (prerequisite_id, task_id),
-            )
-        history.record_event(
+        task_id = _insert_task_row(
             conn,
-            event_type="task.created",
+            title=clean_title,
+            description=clean_description,
+            status=clean_status,
+            priority=clean_priority,
+            assignee=clean_assignee,
+            label_pairs=label_pairs,
+        )
+        for prerequisite_id in prerequisite_ids:
+            _insert_dependency_edge(conn, task_id, prerequisite_id)
+        _record_created_event(
+            conn,
             actor=actor,
             task_id=task_id,
-            payload={
-                "status": clean_status,
-                "priority": clean_priority,
-                "assignee": clean_assignee,
-                "labels": [label for label, _ in label_pairs],
-                "depends_on": prerequisite_ids,
-            },
+            status=clean_status,
+            priority=clean_priority,
+            assignee=clean_assignee,
+            label_pairs=label_pairs,
+            prerequisite_ids=prerequisite_ids,
         )
         return {"changed": True, "task": _project_task(conn, task_id)}
 

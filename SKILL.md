@@ -142,6 +142,7 @@ tack depend remove TASK_ID --on PREREQUISITE_ID [--if-version N]
 tack deps TASK_ID | tack dependents TASK_ID
 tack graph [TASK_ID] [--format json|dot]
 tack history [TASK_ID] [--limit N] [--since EVENT_ID] [--follow]
+tack plan apply FILE|- [--dry-run] [--agent A]
 tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
 tack guide
 ```
@@ -167,6 +168,20 @@ held by another agent, or an `in_progress` task that lost its claim). It adds
 no transition and no force case, so a claim the caller already holds is refused
 by the existing policy (use plain `release`), and a healthy unclaimed task is
 an idempotent no-op.
+
+`tack plan apply FILE` creates a whole dependency DAG in one command. The file
+is JSON with one top-level key, `tasks`, whose elements carry a local `key`
+(file-scoped handle, unique within the file), `title` (required),
+`description`, `status` (default `ready`), `priority` (default `normal`),
+`assignee`, `labels`, and `depends_on` (an array of keys from the same file).
+Unknown fields are a validation error. `-` reads stdin. The command is
+**create-only**: it never updates or adopts an existing task, and applying the
+same file twice creates a second set. The whole document is validated first;
+an accepted batch commits its rows, labels and edges in one `BEGIN IMMEDIATE`
+transaction, so any failure leaves the board exactly as it was. `--dry-run`
+validates and reports without writing anything (not even events). A cycle
+among the batch's own edges is a validation error (exit 4). A plan appends one
+`task.created` event per task and one board-level `plan.applied` event.
 
 ### Statuses and transitions
 
@@ -335,6 +350,7 @@ array; `{...}` is an object whose inner keys are described below the table.
 | `history [<id>]` | `{schema_version, task_id, items:[{id,timestamp,actor,event_type,task_id,payload}]}` (newest first) |
 | `history [<id>] --since EVENT_ID` | `{schema_version, task_id, order:"asc", since, items:[...]}` (events with `id > EVENT_ID`, oldest first) |
 | `history [<id>] --follow [--since EVENT_ID]` | NDJSON: one `{schema_version, id, timestamp, actor, event_type, task_id, payload}` per line |
+| `plan apply <file>` | `{schema_version, dry_run, source, count, tasks:[{id, key, title}]}` (`id` is `null` under `--dry-run`) |
 | `claims` | `{schema_version, items:[{task_id,agent_id,claimed_at,age_seconds,task:{...}}]}` |
 | `agents` | `{schema_version, agents:[{agent_id,claimed_tasks,last_event_at,completed,released,forced}]}` |
 | `memo` / `memo --rev N` | `{schema_version, rev, text, author, created_at, bytes}` (rev 0 with no memo: `rev:0`, `text:""`, `author:null`, `created_at:null`, `bytes:0`) |

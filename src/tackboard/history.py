@@ -27,6 +27,10 @@ CANONICAL_EVENT_TYPES: tuple[str, ...] = (
     "dependency.added",
     "dependency.removed",
     "note",
+    # One board-level event per accepted ``tack plan apply`` batch; its payload
+    # names the file, the task count and the created ids. Each created task
+    # still appends its own ``task.created`` event.
+    "plan.applied",
     # Board-level memo writes (schema 2). The payload points at the revision it
     # created (``rev``), never the memo body: the document lives in
     # ``memo_revisions``, the log holds the audit pointer.

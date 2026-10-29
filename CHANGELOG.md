@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `tack plan apply FILE|- [--dry-run]` creates a whole dependency DAG in one
+  command. The plan is JSON with one top-level key, `tasks`; each element may
+  carry a local, file-scoped `key`, `title`, `description`, `status` (default
+  `ready`), `priority` (default `normal`), `assignee`, `labels` and
+  `depends_on` (keys from the same file). Unknown fields, duplicate keys,
+  dangling references, self-dependencies, invalid values and cycles among the
+  batch's own edges are validation errors (exit 4) and create nothing. An
+  accepted batch commits every task, label and edge in one `BEGIN IMMEDIATE`
+  transaction — create-only, so applying the same file twice creates a second
+  set of tasks and never updates or adopts an existing one. `--dry-run`
+  validates and reports without writing anything. The JSON document is
+  `{schema_version, dry_run, source, count, tasks:[{id, key, title}]}`; a dry
+  run reports `id: null` because ids are assigned inside the write
+  transaction. No schema migration.
+- A plan application appends one canonical `task.created` event per task plus
+  one board-level `plan.applied` event whose payload carries `file`, `tasks`
+  and `ids`.
+
 ### Fixed
 
 - `tack history --since EVENT_ID` now documents and tests the resume cursor's

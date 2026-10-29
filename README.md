@@ -163,6 +163,7 @@ tack deps TASK_ID
 tack dependents TASK_ID
 tack graph [TASK_ID] [--format json|dot]
 tack history [TASK_ID] [--limit N] [--since EVENT_ID] [--follow]
+tack plan apply FILE [--dry-run] [--agent ID]
 tack doctor
 tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
 tack guide
@@ -460,6 +461,60 @@ restored and finished.
 dot` emits Graphviz text (identifiers and labels are quoted and escaped);
 combining it with `--json` is a usage error.
 
+## Plans
+
+`tack plan apply FILE` creates a whole dependency DAG from one file in a single
+`BEGIN IMMEDIATE` transaction. The file is JSON with one top-level key, `tasks`:
+
+```json
+{
+  "tasks": [
+    {"key": "parser", "title": "Ship the parser", "status": "ready",
+     "priority": "high", "assignee": "cpp-dev", "labels": ["core"]},
+    {"key": "cli", "title": "Wire the CLI", "depends_on": ["parser"]},
+    {"title": "Document the plan", "depends_on": ["cli"], "priority": "low"}
+  ]
+}
+```
+
+Each element may carry `key` (a local, file-scoped handle — any non-empty
+string, unique within the file), `title` (required), `description`, `status`
+(default `ready`), `priority` (default `normal`), `assignee`, `labels`, and
+`depends_on` (an array of local keys). Unknown keys are a validation error,
+never silently ignored. `tack plan apply -` reads the document from stdin.
+
+Rules the command enforces:
+
+- **Create-only.** A plan never updates or re-creates a task. Applying the same
+  file twice creates a second set of tasks. There is no explicit `id` field:
+  the board assigns each `T-XXXXXX`.
+- **File-scoped handles.** `depends_on` resolves only against keys declared in
+  the same file. A dangling handle, a duplicate handle, a missing title, an
+  unknown status or priority, and a self-dependency are validation errors
+  (exit 4).
+- **All-or-nothing.** The whole batch is validated before anything is written.
+  An accepted batch commits its tasks, labels and edges in one transaction; a
+  failure at any point rolls the whole batch back. `--dry-run` validates and
+  reports what would be created, writing nothing — no tasks, no events.
+- **Cycles.** A cycle among the batch's own edges is a validation error (exit
+  4). Because handles are file-scoped, a plan never attaches to an existing
+  board task, so there is no cross-batch edge a plan could turn into a cycle.
+
+On success the document is:
+
+```json
+{"schema_version": 1, "dry_run": false, "source": "plan.json", "count": 2,
+ "tasks": [{"id": "T-000123", "key": "parser", "title": "Ship the parser"},
+           {"id": "T-000124", "key": "cli", "title": "Wire the CLI"}]}
+```
+
+A dry run returns the same shape with `"dry_run": true` and `"id": null` on
+every element: the board assigns ids inside the write transaction, so a preview
+cannot promise them. Exit 0 on success or a dry run, 4 on a validation error
+(including a cycle), plus the usual database error codes. The command appends
+one `task.created` event per task and one board-level `plan.applied` event (see
+[The event feed](#the-event-feed)).
+
 ## JSON output
 
 Every document on stdout is a single JSON object carrying
@@ -530,6 +585,10 @@ exits 0 on SIGINT. It polls every 0.5 s: a bounded interval, never a busy loop.
 the one documented exception to the "exactly one JSON document on stdout" rule,
 so a consumer piping the stream reads one event object per line either way.
 
+A plan application appends one `task.created` event per task and one
+board-level `plan.applied` event (`task_id` null) whose payload carries `file`,
+`tasks` and `ids` (see [Plans](#plans)).
+
 ### Claim fields in graph and task documents
 
 Graph nodes and task documents may carry two optional claim fields:
@@ -580,6 +639,10 @@ Dependencies
   tack deps T-000002                   direct prerequisites
   tack dependents T-000001             direct dependents
   tack graph --format dot              whole graph; --format json for machines
+
+Plans
+  tack plan apply plan.json --json     create a whole task DAG atomically
+  tack plan apply plan.json --dry-run  validate and report; writes nothing
 
 JSON
   --json works before or after the subcommand and prints exactly one JSON

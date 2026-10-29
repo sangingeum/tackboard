@@ -8,7 +8,7 @@ through its internal helpers, so there is exactly one implementation.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from . import history
@@ -44,15 +44,21 @@ def _edge_exists(
     return row is not None
 
 
-def _prerequisite_path(
-    conn: sqlite3.Connection, start: str, target: str
-) -> list[str] | None:
-    """Return a prerequisite chain ``start -> ... -> target`` if one exists."""
+def _edge_map(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    """Return the stored edges as ``task_id -> [prerequisite_id, ...]``."""
     edges: dict[str, list[str]] = {}
     for row in conn.execute(
         "SELECT task_id, prerequisite_id FROM dependencies ORDER BY prerequisite_id"
     ):
         edges.setdefault(str(row["task_id"]), []).append(str(row["prerequisite_id"]))
+    return edges
+
+
+def _prerequisite_path(
+    conn: sqlite3.Connection, start: str, target: str
+) -> list[str] | None:
+    """Return a prerequisite chain ``start -> ... -> target`` if one exists."""
+    edges = _edge_map(conn)
 
     stack: list[tuple[str, list[str]]] = [(start, [start])]
     visited: set[str] = set()
@@ -68,20 +74,19 @@ def _prerequisite_path(
     return None
 
 
-def find_cycle(conn: sqlite3.Connection) -> list[str] | None:
-    """Return one dependency cycle as ``[a, b, ..., a]``, or ``None``."""
-    edges: dict[str, list[str]] = {}
-    for row in conn.execute(
-        "SELECT task_id, prerequisite_id FROM dependencies ORDER BY prerequisite_id"
-    ):
-        edges.setdefault(str(row["task_id"]), []).append(str(row["prerequisite_id"]))
+def find_cycle_in_edges(edges: Mapping[str, Sequence[str]]) -> list[str] | None:
+    """Return one cycle in ``edges`` as ``[a, b, ..., a]``, or ``None``.
 
-    white, grey, black = 0, 1, 2
+    The single cycle walker: ``find_cycle`` feeds it the stored edges, and a
+    plan application feeds it a batch's edges before anything is written. One
+    algorithm, two callers — never a second implementation.
+    """
     colour: dict[str, int] = {}
+    white, grey, black = 0, 1, 2
 
     def visit(node: str, path: list[str]) -> list[str] | None:
         colour[node] = grey
-        for neighbour in edges.get(node, []):
+        for neighbour in edges.get(node, ()):
             state = colour.get(neighbour, white)
             if state == grey:
                 index = path.index(neighbour)
@@ -99,6 +104,11 @@ def find_cycle(conn: sqlite3.Connection) -> list[str] | None:
             if cycle is not None:
                 return cycle
     return None
+
+
+def find_cycle(conn: sqlite3.Connection) -> list[str] | None:
+    """Return one dependency cycle as ``[a, b, ..., a]``, or ``None``."""
+    return find_cycle_in_edges(_edge_map(conn))
 
 
 def add_dependency(
@@ -433,6 +443,7 @@ __all__ = [
     "derived_flags",
     "export_graph",
     "find_cycle",
+    "find_cycle_in_edges",
     "list_dependencies",
     "list_dependents",
     "remove_dependency",

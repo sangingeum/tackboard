@@ -247,6 +247,8 @@ Human output may be re-worded.
 | `--force` scope and auditing | `_check_force_reason`, plan flags | `apply_transition`, `dependencies.add_dependency` |
 | Derived readiness | `service.derived_flags` | every projection and filter |
 | Cycle detection | `dependencies.find_cycle`, `_prerequisite_path` | `add_dependency` |
+| Batch cycle detection | `dependencies.find_cycle_in_edges` | `plans.load_plan` |
+| Atomic plan application | `plans.apply_plan` | one `BEGIN IMMEDIATE` around rows, labels, edges and events |
 | Atomic select-and-claim | `claims.next_task` | one `BEGIN IMMEDIATE` around both steps |
 | Version arithmetic | compare-and-set on `version` | `_update_task_row`, `update_task` |
 | Append-only history | triggers plus `record_event` | `schema._DDL` |
@@ -374,6 +376,19 @@ no cross-project dependencies; no automatic lease expiry or heartbeats; no
 bulk import; no web mutations; no automatic status change when a dependency
 changes; no deletion of tasks (cancel, never delete). The design should stay
 extensible, but none of these belong in the current version.
+
+One clarification on that list, so "no bulk import" stays honest as the tool
+grows.
+
+**"No bulk import" means no import of foreign data or history.** A plan file is
+not an import format for another tracker's rows: it creates new tasks from a
+document this board's own author writes, with no ids, timestamps, versions,
+events or completed work carried in. It cannot adopt an existing task, cannot
+write history as if it had happened, and cannot touch a task it did not create.
+Atomic, create-only application of a plan is **in scope**: `tack plan apply`
+validates the whole document and commits every row, label and edge in one
+`BEGIN IMMEDIATE` transaction (or commits nothing). See section 7 for the CLI
+contract and `plans.py` for the rules.
 
 Two notes on where the memo sits against this list. The board-level memo
 (section 11) is **in scope** as of schema version 2: it is the project's
