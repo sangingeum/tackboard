@@ -206,6 +206,7 @@ def list_claims(
                     """
                 ).fetchall(),
                 full=False,
+                now=now,
             )
         }
 

@@ -108,7 +108,12 @@ Any command run from inside the project then finds the board with no flags.
 
 The same `[tackboard]` table may carry `stale_claim_after = "2h"`, the default
 threshold behind `tack claims --stale`, the derived `claim_stale` flag and the
-`stale_claim` doctor warning. It is optional; omitting it means `2h`.
+`stale_claim` doctor warning. It is optional; omitting it means `2h`. Like the
+database path, the threshold is read from the nearest `.tackboard.toml` above
+the **current directory**, not from the board's directory: the same board read
+from two directories can therefore use two different thresholds. Put the key in
+the `.tackboard.toml` at the board's own root, or pass `--older-than DURATION`
+when running from elsewhere.
 
 **B — commit nothing, use the environment.**
 

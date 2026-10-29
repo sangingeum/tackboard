@@ -880,6 +880,14 @@ def _plan_release(
             )
         plan.force_used = True
         plan.payload["released_agent"] = claim.agent_id
+    elif force:
+        # Releasing your own claim needs no force, so no force case applies.
+        # Say so in the caller's own terms: ``recover`` is the command that
+        # reaches this branch most often, and its user never typed ``--force``.
+        raise ValidationError(
+            f"{task.id} is already claimed by you; release it with plain "
+            "'tack release', or 'tack recover' a claim held by another agent."
+        )
     plan.clear_claim = True
     if task.status == _IN_PROGRESS:
         plan.new_status = _READY
