@@ -91,8 +91,8 @@ jobs:
       - name: Check the distributions ship the JSON Schemas
         run: |
           set -euo pipefail
-          test "$(unzip -l dist/*.whl | rg -c 'tackboard/schemas/[a-z_]+\.json')" -ge 26
-          test "$(tar tzf dist/*.tar.gz | rg -c 'tackboard/schemas/[a-z_]+\.json')" -ge 26
+          test "$(unzip -l dist/*.whl | grep -cE 'tackboard/schemas/[a-z_]+\.json' || true)" -ge 26
+          test "$(tar tzf dist/*.tar.gz | grep -cE 'tackboard/schemas/[a-z_]+\.json' || true)" -ge 26
 
       - name: Check distributions
         run: uvx twine check dist/*
