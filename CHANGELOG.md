@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-29
+
 ### Added
 
 - Stale-claim visibility. The task projection now carries two derived,
@@ -28,6 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `doctor` emits a `stale_claim` warning per stale active claim, naming the
   task, the claiming agent and the claim's age. It remains a warning: `ok`,
   `errors` and the exit code are unchanged (exit 0).
+
+### Fixed
+
+- The `claims --json` document now measures every claim's age against one clock
+  per read, so a single document can no longer straddle two clocks.
+- Releasing your own claim through `recover` now refuses with a message naming
+  plain `tack release`, instead of mentioning `--force` which the user never
+  typed. The refusal's policy and exit code 4 are unchanged.
+- `README.md` states that the stale threshold, like the database path, is read
+  from the nearest `.tackboard.toml` above the current directory, so the same
+  board read from two directories can use two thresholds.
 
 ## [0.4.2] - 2026-10-25
 
