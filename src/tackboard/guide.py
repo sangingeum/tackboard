@@ -578,8 +578,10 @@ watch.
 - `/task/<id>` — metadata, derived readiness, prerequisites and dependents with
   live statuses, the claim holder and its age, blockers, the description
   rendered as Markdown, and a newest-first timeline of notes and history.
-- `/api/*` — the same documents the CLI produces; `/api/graph` and
-  `tack graph --json` carry identical values for the same database.
+- `/api/*` — the JSON documents the web view renders. Each is a **superset** of
+  its CLI counterpart: every CLI key is present with the same value, and the
+  derived readiness flags a browser needs are added on top. The rule, the
+  per-route keys and the schema obligation are in `docs/api-contract.md`.
 
 Nothing in the web view mutates: every change goes through the CLI so it lands
 as an audited event. `--allow-remote` and `--allowed-host` exist for a

@@ -272,6 +272,14 @@ The CLI is the primary interface for agents, so its output is a versioned API:
 Exit codes and JSON documents are the parts an agent is allowed to depend on.
 Human output may be re-worded.
 
+The HTTP documents obey the same rule in one direction only. Each `/api/*`
+document is a **superset** of its CLI counterpart: every key the CLI document
+carries is present with the same meaning and shape, and the derived readiness
+flags the browser needs are added on top and declared in the API document's own
+schema. Equality is not the contract; a CLI key may not disappear from an HTTP
+document without a document version. The rule, the per-route keys and the
+schema obligation are in `docs/api-contract.md`.
+
 ### 7.1 Instructions are tiered like the output
 
 An agent's context is the scarcest resource this tool spends, so the written
