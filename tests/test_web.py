@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 if str(SRC) not in sys.path:
@@ -29,6 +31,7 @@ if str(SRC) not in sys.path:
 from tackboard import (  # noqa: E402
     claims,
     cli,
+    contracts,
     db,
     memo,
     models,
@@ -56,6 +59,32 @@ DERIVED_NODE_FIELDS = frozenset(
 
 #: Claim fields the shared projection carries on every node (nullable when absent).
 CLAIM_NODE_FIELDS = frozenset({"claimed_by", "claimed_at"})
+
+#: Keys the task detail route adds on top of the ``tack show`` document.
+EXTRA_TASK_KEYS = frozenset({"claim", "prerequisites", "dependents", "history"})
+
+#: The documented cap on the embedded history list (``views.TASK_DETAIL_HISTORY_LIMIT``).
+API_HISTORY_LIMIT = 20
+
+
+def _assert_api_document(name: str, document: dict[str, Any]) -> None:
+    """The served document validates against its published API schema."""
+    schemas = {
+        path.stem: json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(contracts.SCHEMA_DIR.glob("*.json"))
+    }
+    registry = Registry().with_resources(
+        [
+            (schema["$id"], Resource.from_contents(schema))
+            for schema in schemas.values()
+        ]
+    )
+    validator = Draft202012Validator(schemas[name], registry=registry)
+    errors = sorted(validator.iter_errors(document), key=lambda error: list(error.path))
+    assert not errors, "\n".join(
+        f"{name}: {'/'.join(str(part) for part in error.path) or '<root>'}: {error.message}"
+        for error in errors
+    )
 
 
 def _freeze_claim_ages(value: Any) -> Any:
@@ -297,47 +326,92 @@ def test_each_server_serves_only_its_own_database(
     assert first.request("/api/tasks/T-000099").status == 404
 
 
-def test_json_endpoints_match_the_cli_schemas(
+def test_api_documents_are_supersets_of_the_cli_documents(
     run: RunCli, server: WebClient, db_file: Path, board: dict[str, str]
 ) -> None:
+    """Each HTTP document carries every CLI key unchanged, and only its declared additions."""
     cli_board = json.loads(run("board", "--db", str(db_file), "--json")[1])
     assert _freeze_claim_ages(server.request("/api/board").json()) == (
         _freeze_claim_ages(cli_board)
     )
 
-    cli_graph = json.loads(run("graph", "--db", str(db_file), "--json")[1])
+    cli_graph = json.loads(
+        run("graph", "--format", "json", "--db", str(db_file), "--json")[1]
+    )
     served_graph = server.request("/api/graph").json()
-    trimmed = [
-        {
-            key: value
-            for key, value in node.items()
-            if key not in DERIVED_NODE_FIELDS
-        }
-        for node in served_graph["nodes"]
-    ]
-    assert trimmed == cli_graph["nodes"]
+    assert set(served_graph) == set(cli_graph) == {"schema_version", "nodes", "edges"}
+    assert len(served_graph["nodes"]) == len(cli_graph["nodes"])
+    for cli_node, api_node in zip(cli_graph["nodes"], served_graph["nodes"], strict=True):
+        # Every CLI node key survives with the same value ...
+        assert set(cli_node) <= set(api_node)
+        for key, value in cli_node.items():
+            assert api_node[key] == value, f"node {cli_node['id']}: {key} changed"
+        # ... and the four derived flags are the only additions.
+        assert set(api_node) - set(cli_node) == DERIVED_NODE_FIELDS
+        assert set(api_node) >= CLAIM_NODE_FIELDS
     assert served_graph["edges"] == cli_graph["edges"]
-    # The claim fields are part of the shared projection now: both documents
-    # must carry them, and the trimmed comparison above already proves the
-    # values agree for the same database.
-    for node in served_graph["nodes"]:
-        assert set(node) >= CLAIM_NODE_FIELDS
-    for node in cli_graph["nodes"]:
-        assert set(node) >= CLAIM_NODE_FIELDS
+    _assert_api_document("api_graph", served_graph)
 
     cli_show = json.loads(run("show", board["claimed"], "--db", str(db_file), "--json")[1])
     detail = server.request(f"/api/tasks/{board['claimed']}").json()
-    assert _freeze_claim_ages(detail["task"]) == _freeze_claim_ages(cli_show["task"])
-    assert detail["notes"] == cli_show["notes"]
+    # Every CLI key survives with the same value (claim ages zeroed) ...
+    assert set(cli_show) <= set(detail)
+    carried = {
+        key: value
+        for key, value in _freeze_claim_ages(detail).items()
+        if key in cli_show
+    }
+    assert carried == _freeze_claim_ages(cli_show)
+    # ... and the claim, neighbours and history are the only additions.
+    assert set(detail) - set(cli_show) == EXTRA_TASK_KEYS
     assert detail["claim"]["agent_id"] == DEFAULT_ACTOR
+    assert set(detail["claim"]) == {"task_id", "agent_id", "claimed_at", "age_seconds"}
     assert [task["id"] for task in detail["prerequisites"]] == [board["done"]]
     assert [task["id"] for task in detail["dependents"]] == []
+    _assert_api_document("api_task", detail)
 
     blocked_detail = server.request(f"/api/tasks/{board['blocked']}").json()
     assert blocked_detail["task"]["blocked"] is True
     assert blocked_detail["task"]["blockers"] == [
         {"code": "prerequisite_unfinished", "task_id": board["eligible"]}
     ]
+    _assert_api_document("api_task", blocked_detail)
+
+
+def test_the_embedded_task_history_is_capped_at_twenty(
+    run: RunCli, server: WebClient, db_file: Path, board: dict[str, str]
+) -> None:
+    """``/api/tasks/<id>`` embeds the newest 20 events, a prefix of the CLI list."""
+    for index in range(API_HISTORY_LIMIT + 5):
+        code, _, err = run(
+            "note",
+            board["backlog"],
+            f"note {index}",
+            "--agent",
+            DEFAULT_ACTOR,
+            "--db",
+            str(db_file),
+            "--json",
+        )
+        assert code == 0, err
+
+    code, out, err = run(
+        "history",
+        board["backlog"],
+        "--limit",
+        str(API_HISTORY_LIMIT),
+        "--db",
+        str(db_file),
+        "--json",
+    )
+    assert code == 0, err
+    expected = json.loads(out)["items"]
+    assert len(expected) == API_HISTORY_LIMIT
+
+    detail = server.request(f"/api/tasks/{board['backlog']}").json()
+    assert len(detail["history"]) == API_HISTORY_LIMIT
+    assert detail["history"] == expected
+    _assert_api_document("api_task", detail)
 
 
 # --------------------------------------------------------------------------- #
