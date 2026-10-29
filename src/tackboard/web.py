@@ -313,15 +313,19 @@ def _fact_labels_html(task: Mapping[str, Any]) -> str:
     return " ".join(f'<span class="tag">{_esc(label)}</span>' for label in labels)
 
 
-def _claim_fact_html(claim: Mapping[str, Any] | None, now: datetime) -> str:
+def _claim_fact_html(
+    claim: Mapping[str, Any] | None, now: datetime, *, stale: bool = False
+) -> str:
     if claim is None:
         return "none"
     holder = _esc(claim["agent_id"])
     claimed_at = _esc(claim["claimed_at"])
     age = _relative_age(str(claim["claimed_at"]), now)
+    stale_html = ' <span class="claim-stale">\u26a0 stale claim</span>' if stale else ""
     return (
         f"{holder}, claimed "
         f'<time datetime="{claimed_at}" title="{claimed_at}">{_esc(age)} ago</time>'
+        f"{stale_html}"
     )
 
 
@@ -332,7 +336,12 @@ def _readiness_chips_html(
     if claim is not None:
         chips.append(
             '<li><span class="state-chip" data-state="claimed">'
-            f"◎ claimed by {_esc(claim['agent_id'])}</span></li>"
+            f"\u25ce claimed by {_esc(claim['agent_id'])}</span></li>"
+        )
+    if task.get("claim_stale"):
+        chips.append(
+            '<li><span class="state-chip" data-state="stale">'
+            "\u26a0 stale claim</span></li>"
         )
     if task.get("eligible"):
         chips.append(
@@ -364,6 +373,8 @@ def _readiness_sentence(
     ]
     if claim is not None:
         states.append(f"claimed by {claim['agent_id']}")
+    if task.get("claim_stale"):
+        states.append("stale claim")
     return "Readiness: " + ", ".join(states) + "."
 
 
@@ -457,6 +468,28 @@ def _event_payload_text(event: Mapping[str, Any]) -> str:
         return ", ".join(parts)
     if event_type == "task.updated":
         fields = payload.get("fields") or []
+        update_parts: list[str] = []
+        if "assignee" in fields and "previous_assignee" in payload:
+            previous = payload.get("previous_assignee")
+            if "assignee" in payload:
+                new = payload.get("assignee")
+                update_parts.append(
+                    "assignee: "
+                    f"{'unassigned' if previous is None else previous} "
+                    f"\u2192 {'unassigned' if new is None else new}"
+                )
+            else:
+                # An event written before the new value was recorded: name the
+                # previous holder honestly rather than inventing a successor.
+                update_parts.append(
+                    "assignee: "
+                    f"{'unassigned' if previous is None else previous} "
+                    "\u2192 (new value not recorded)"
+                )
+            others = [str(field) for field in fields if field != "assignee"]
+            if others:
+                update_parts.append(", ".join(others) + " updated")
+            return "; ".join(update_parts)
         if fields:
             return "updated: " + ", ".join(str(field) for field in fields)
         return "task updated"
@@ -571,15 +604,22 @@ def _claim_html(task: Mapping[str, Any], now: datetime) -> str:
         return ""
     age = _relative_age(str(claimed_at) if claimed_at else None, now)
     title = (
-        f"{holder} — claimed {age} ago ({claimed_at})"
+        f"{holder} \u2014 claimed {age} ago ({claimed_at})"
         if age
         else f"{holder} ({claimed_at})"
+    )
+    stale = (
+        ' <span class="claim-stale" title="Past the configured stale-claim threshold">'
+        "\u26a0 stale</span>"
+        if task.get("claim_stale")
+        else ""
     )
     return (
         '<p class="card__claim">'
         f'<span class="claim-badge" title="{_esc(title)}">@{_esc(holder)}</span> '
         f'<time class="card__claim-age" datetime="{_esc(claimed_at)}" '
         f'title="{_esc(claimed_at)}">{_esc(age)}</time>'
+        f"{stale}"
         "</p>"
     )
 
@@ -840,9 +880,10 @@ def _claimed_suffix(node: Mapping[str, Any]) -> str:
     if not holder:
         return ""
     claimed_at = node.get("claimed_at")
+    stale = " \u2014 stale" if node.get("claim_stale") else ""
     if claimed_at:
-        return f"[claimed by {holder} since {claimed_at}]"
-    return f"[claimed by {holder}]"
+        return f"[claimed by {holder} since {claimed_at}{stale}]"
+    return f"[claimed by {holder}{stale}]"
 
 
 def _dependency_list(
@@ -1355,8 +1396,15 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
         self, conn: sqlite3.Connection, query: Mapping[str, list[str]]
     ) -> str:
         task_id = _first(query, "task") or None
-        document = views.graph_document(conn, task_id)
+        document = views.graph_document(
+            conn, task_id, include_claim_staleness=True
+        )
         project = schema.database_label(conn)
+        stale_claims = " ".join(
+            _esc(str(node["id"]))
+            for node in document["nodes"]
+            if node.get("claim_stale")
+        )
         # ``hide_closed`` is the URL form of the toolbar toggle. The JSON
         # endpoints keep returning the full graph; only the no-JS outline and
         # the server-rendered counts are filtered here.
@@ -1400,6 +1448,7 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
             hide_closed_pressed="true" if hide_closed else "false",
             hide_closed_value="1" if hide_closed else "0",
             legend=_legend(),
+            stale_claims=stale_claims,
             fallback=_dependency_list(
                 document, nodes=outline_nodes, edges=outline_edges
             ),
@@ -1430,7 +1479,9 @@ class _BoardRequestHandler(BaseHTTPRequestHandler):
             priority_pips=_esc(PRIORITY_PIPS.get(str(task["priority"]), "")),
             assignee=_esc(task["assignee"] or "-"),
             labels_html=_fact_labels_html(task),
-            claim_html=_claim_fact_html(claim, now),
+            claim_html=_claim_fact_html(
+                claim, now, stale=bool(task.get("claim_stale"))
+            ),
             readiness_chips=_readiness_chips_html(task, claim),
             readiness_sentence=_readiness_sentence(task, claim),
             blocked_summary=_blocked_summary_html(task),

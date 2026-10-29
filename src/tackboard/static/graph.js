@@ -320,6 +320,7 @@
     var label = STATUS_LABEL[node.status] || node.status;
     var parts = [node.id + ", " + node.title + ", " + label];
     if (node.reviewable) { parts.push("reviewable"); }
+    if (node.claim_stale) { parts.push("stale claim"); }
     if (node.priority) { parts.push("priority " + node.priority); }
     if (node.assignee) { parts.push("assignee " + node.assignee); }
     if (node.claimed_by) {
@@ -339,6 +340,7 @@
     var label = STATUS_LABEL[node.status] || node.status;
     var text = node.id + " \u2014 " + node.title + " (" + label;
     if (node.reviewable) { text += ", reviewable"; }
+    if (node.claim_stale) { text += ", stale claim"; }
     if (node.claimed_by) {
       text += ", claimed by " + node.claimed_by;
       if (node.claimed_at) { text += " since " + node.claimed_at; }
@@ -517,7 +519,8 @@
         var fullHolder = String(node.claimed_by);
         var holder = clipHolder(fullHolder);
         var age = relativeAge(node.claimed_at);
-        var badgeText = "@" + holder + (age ? " \u00b7 " + age : "");
+        var staleText = node.claim_stale ? " \u00b7 stale" : "";
+        var badgeText = "@" + holder + (age ? " \u00b7 " + age : "") + staleText;
         var badgeWidth = Math.min(NODE_W - 20, Math.max(52, badgeText.length * 6.6 + 10));
         var badgeX = NODE_W - badgeWidth - 4;
         var badge = el("g", { "class": "node__claim-badge-group" });
@@ -526,6 +529,7 @@
           "@" + fullHolder + (node.claimed_at ? " since " + node.claimed_at : "");
         badge.appendChild(el("rect", {
           "class": "node__claim-badge",
+          "data-stale": node.claim_stale ? "true" : "false",
           x: badgeX,
           y: NODE_H - 16,
           width: badgeWidth,
@@ -1882,6 +1886,11 @@
 
   function show(graph) {
     if (!graph.nodes.length) { return; }
+    var staleAttr = root.getAttribute("data-stale-claims") || "";
+    var staleIds = staleAttr.split(/\s+/).filter(Boolean);
+    graph.nodes.forEach(function (node) {
+      if (staleIds.indexOf(node.id) !== -1) { node.claim_stale = true; }
+    });
     fullData = graph;
     hideClosed = readHideClosedPreference();
     updateHiddenCount(0);

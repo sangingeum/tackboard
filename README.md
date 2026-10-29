@@ -590,6 +590,12 @@ A plan application appends one `task.created` event per task and one
 board-level `plan.applied` event (`task_id` null) whose payload carries `file`,
 `tasks` and `ids` (see [Plans](#plans)).
 
+An assignment change appends one `task.updated` event whose payload carries
+both sides of the change: `previous_assignee` and `assignee` (`null` means
+unassigned), with `fields` still listing `assignee`. Events written before the
+new value was recorded may carry `previous_assignee` only. The payload change
+is additive — `schema_version` stays `1` and no field is renamed or removed.
+
 ### Claim fields in graph and task documents
 
 Graph nodes and task documents may carry two optional claim fields:
@@ -700,9 +706,9 @@ stored status at a glance: `▷` for `ready`, `▶` for `in_progress`, `◐` for
 `review`, `✓` for `done`, `…` for `backlog`, and `✕` for `cancelled`; only
 `backlog` (dashed) and `cancelled` (dotted) also change the border style.
 Derived states add an overlay rather than a status colour: `blocked` carries a
-45° hatch fill and a 3 px border, and `reviewable` carries a second parallel
-line 3 px inside its top edge. Claimed nodes gain a double ring, a holder
-badge on its own row and the claim age.
+3 px border and appends `· blocked` to its status line, and `reviewable` carries
+a second parallel line 3 px inside its top edge. Claimed nodes gain a double
+ring, a holder badge on its own row and the claim age.
 
 | Full graph (`nodes=12`) | Active tasks only — "Hide done & cancelled" |
 |:---:|:---:|
@@ -742,6 +748,16 @@ edges=A of B · N hidden` when filtering is on. Every graph action except the
 toolbar-only "Focus claimed" sub-mode has a keyboard equivalent; press `?` for
 the shortcut table. A skip link precedes the top bar, and the canvas is a single
 tab stop with `aria-activedescendant` tracking the active node.
+
+### Stale claims
+
+The web view marks an active claim as stale once its age reaches the same
+`[tackboard] stale_claim_after` threshold `tack claims --stale` uses — the
+server's derived `claim_stale` flag, never a second threshold in the browser.
+A stale claim is named in words and carries a dashed mark, not colour alone:
+the board card appends `⚠ stale`, the graph node's holder badge reads
+`· stale` and gains a dashed outline, the server-rendered dependency outline
+appends `— stale`, and the task page shows a `⚠ stale claim` chip.
 
 ## Backup, migration and diagnostics
 

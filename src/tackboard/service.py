@@ -1317,7 +1317,11 @@ def update_task(
 
         payload: dict[str, Any] = {"fields": sorted(changes)}
         if "assignee" in changes:
+            # Both sides of the assignment change: ``previous_assignee`` keeps
+            # its 0.x name and ``assignee`` carries the new value (``null``
+            # when the task was unassigned). Additive within schema_version 1.
             payload["previous_assignee"] = task.assignee
+            payload["assignee"] = changes["assignee"]
         if labels is not None:
             payload["labels"] = [label for label, _ in labels]
         history.record_event(

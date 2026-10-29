@@ -433,6 +433,10 @@ a reduced subset of it
   at the board's current maximum id, with `--since` it resumes from the cursor,
   polls on a bounded interval, and exits **0** on SIGINT. A `--since` value that
   is not a non-negative integer is a validation error (exit 4).
+  An assignment change is one `task.updated` event whose payload carries both
+  sides: `previous_assignee` and `assignee` (`null` means unassigned), with
+  `fields` still listing `assignee`. Older events may carry
+  `previous_assignee` only. The change is additive within `schema_version` 1.
   **`claims`** holds one row per held claim in `items`, each row carrying the
   claim (`task_id`, `agent_id`, `claimed_at`, `age_seconds`) and the full `task`.
   **`agents`** is a derived summary, not stored state: one row per agent with at

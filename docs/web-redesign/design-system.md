@@ -549,7 +549,7 @@ an overlay that never changes the status shape:
 
 | Derived state | Non-colour cue | Text |
 | --- | --- | --- |
-| `blocked` | 45° hatch fill overlay + 3 px border; `⊘` badge | "blocked" + reason |
+| `blocked` | 3 px border + `· blocked` on the status line; `⊘` badge | "blocked" + reason |
 | `claimed` | double ring outside the status outline (2 px ring, 2 px gap) + holder badge | "claimed by agent-x" |
 | `eligible` | corner triangle tab at the top-right of the node; `▷` badge on cards | "eligible" |
 | `reviewable` | second parallel line 3 px inside the top edge; `◐` badge | "reviewable" |
@@ -1015,7 +1015,7 @@ Legend:
     <li><svg class="legend__shape" data-status="backlog" …></svg> backlog</li>
     … one per status …
     <li><svg class="legend__claimed" …></svg> claimed — double ring + holder badge</li>
-    <li><svg class="legend__blocked" …></svg> blocked — hatched</li>
+    <li><svg class="legend__blocked" …></svg> blocked — thick border</li>
     <li><svg class="legend__eligible" …></svg> eligible — corner tab</li>
     <li><svg class="legend__reviewable" …></svg> reviewable — double top edge</li>
     <li class="legend__direction">A → B means B depends on A</li>

@@ -68,14 +68,22 @@ def board_document(
 
 
 def graph_document(
-    conn: sqlite3.Connection, task_id: str | None = None
+    conn: sqlite3.Connection,
+    task_id: str | None = None,
+    *,
+    include_claim_staleness: bool = False,
 ) -> dict[str, Any]:
     """Return the graph document plus the derived flags each node displays.
 
     The nodes and edges are exactly what ``tack graph --format json`` emits;
     the derived readiness flags are added so the browser can distinguish done,
     eligible, in-progress, review, blocked and cancelled nodes without
-    recomputing the graph itself.
+    recomputing the graph itself. ``include_claim_staleness`` is the
+    server-rendered page's opt-in: it adds the read-only
+    ``claim_age_seconds``/``claim_stale`` pair so the page and its outline can
+    mark a stale claim without re-deriving the threshold in the web layer. The
+    JSON API leaves the flag off so ``/api/graph`` stays byte-identical to the
+    CLI document.
     """
     with read_transaction(conn):
         graph = dependencies.export_graph(conn, task_id, fmt="json")
@@ -87,16 +95,18 @@ def graph_document(
     nodes: list[dict[str, Any]] = []
     for node in graph["nodes"]:
         projection = projections.get(str(node["id"]), {})
-        nodes.append(
-            {
-                **node,
-                "dependency_ready": bool(projection.get("dependency_ready", True)),
-                "eligible": bool(projection.get("eligible", False)),
-                "reviewable": bool(projection.get("reviewable", False)),
-                "blocked": bool(projection.get("blocked", False)),
-                "claimed_at": node.get("claimed_at"),
-            }
-        )
+        rendered: dict[str, Any] = {
+            **node,
+            "dependency_ready": bool(projection.get("dependency_ready", True)),
+            "eligible": bool(projection.get("eligible", False)),
+            "reviewable": bool(projection.get("reviewable", False)),
+            "blocked": bool(projection.get("blocked", False)),
+            "claimed_at": node.get("claimed_at"),
+        }
+        if include_claim_staleness:
+            rendered["claim_age_seconds"] = projection.get("claim_age_seconds")
+            rendered["claim_stale"] = bool(projection.get("claim_stale", False))
+        nodes.append(rendered)
     return {
         "schema_version": JSON_SCHEMA_VERSION,
         "nodes": nodes,

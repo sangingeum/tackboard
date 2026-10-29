@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -837,6 +838,71 @@ def test_double_edge_uses_the_reviewable_token() -> None:
     body = css[start : start + 120]
     assert "var(--state-reviewable-fg)" in body
     assert "var(--accent)" not in body
+
+
+def test_assignment_history_names_both_sides() -> None:
+    event = {
+        "event_type": "task.updated",
+        "payload": {
+            "fields": ["assignee"],
+            "previous_assignee": "alice",
+            "assignee": "bob",
+        },
+    }
+    assert web._event_payload_text(event) == "assignee: alice \u2192 bob"
+
+    cleared = {
+        "event_type": "task.updated",
+        "payload": {
+            "fields": ["assignee"],
+            "previous_assignee": "alice",
+            "assignee": None,
+        },
+    }
+    assert web._event_payload_text(cleared) == "assignee: alice \u2192 unassigned"
+
+    legacy = {
+        "event_type": "task.updated",
+        "payload": {"fields": ["assignee"], "previous_assignee": "alice"},
+    }
+    assert web._event_payload_text(legacy) == (
+        "assignee: alice \u2192 (new value not recorded)"
+    )
+
+
+def test_stale_claim_is_marked_on_every_web_surface(
+    server: WebClient, db_file: Path
+) -> None:
+    conn = schema.open_database(db_file)
+    try:
+        task = service.create_task(
+            conn, actor=DEFAULT_ACTOR, title="Stale claim", status="ready"
+        )["task"]
+        claims.claim(conn, task["id"], actor="old-agent")
+        stamp = (datetime.now(UTC) - timedelta(hours=3)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        conn.execute(
+            "UPDATE claims SET claimed_at = ? WHERE task_id = ?",
+            (stamp, task["id"]),
+        )
+    finally:
+        conn.close()
+
+    board = server.request("/board").text
+    assert 'class="claim-stale"' in board
+
+    detail = server.request(f"/task/{task['id']}").text
+    assert "stale claim" in detail
+
+    graph = server.request("/graph").text
+    assert f'data-stale-claims="{task["id"]}"' in graph
+    assert "\u2014 stale" in graph
+
+    # The JSON API keeps the CLI graph node shape: staleness is a page-only
+    # opt-in, never a second threshold in the browser.
+    api = server.request("/api/graph").json()
+    assert all("claim_stale" not in node for node in api["nodes"])
 
 
 def test_graph_cards_are_one_uniform_rectangle() -> None:

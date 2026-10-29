@@ -297,6 +297,7 @@ def test_update_changes_fields_and_increments_the_version_once(
     payload = history.list_events(conn, task["id"])["items"][0]["payload"]
     assert payload["fields"] == ["assignee", "description", "priority", "title"]
     assert payload["previous_assignee"] is None
+    assert payload["assignee"] == "qa"
 
 
 def test_update_can_clear_assignee_and_blocked_reason(
@@ -314,6 +315,9 @@ def test_update_can_clear_assignee_and_blocked_reason(
     )["task"]
     assert cleared["assignee"] is None
     assert cleared["blocked_reason"] is None
+    payload = history.list_events(conn, task["id"])["items"][0]["payload"]
+    assert payload["previous_assignee"] == "qa"
+    assert payload["assignee"] is None
 
 
 def test_update_labels_add_remove_and_replace(

@@ -26,12 +26,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one board-level `plan.applied` event whose payload carries `file`, `tasks`
   and `ids`.
 
+### Changed
+
+- **JSON contract (additive):** a `task.updated` event for an assignment change
+  now carries the new value as `assignee` beside the existing
+  `previous_assignee` (`null` means unassigned). The `fields` list still names
+  `assignee`, `schema_version` stays `1`, and no field is renamed or removed.
+  The web timeline renders the pair as `previous → new`; `tack history` (human
+  and JSON) shows both because the payload carries both.
+- Web view: stale active claims are marked without relying on colour alone.
+  The board card appends `⚠ stale`, the graph holder badge reads `· stale` with
+  a dashed outline, the no-JavaScript outline appends `— stale`, and the task
+  page shows a `⚠ stale claim` chip. The web layer reads the server's derived
+  `claim_stale` flag, so the threshold is the one `tack claims --stale` uses.
+
 ### Fixed
 
 - `tack history --since EVENT_ID` now documents and tests the resume cursor's
   end of feed: a cursor at or past the newest event, and an empty board, both
   return an empty oldest-first feed (exit 0) rather than an error. The event
   feed's poll interval (`0.5 s`) is stated in `README.md` and `tack guide`.
+- The docs no longer claim a 45° hatch fill on blocked graph nodes: the drawn
+  cue is the 3 px border plus `· blocked` on the node's status line, with the
+  `⊘ blocked` chip in the outline. `README.md` and the web design system now
+  describe what the pixels support.
 
 ## [0.6.0] - 2026-10-29
 

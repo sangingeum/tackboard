@@ -1015,6 +1015,24 @@ button:hover,
   font-family: var(--font-mono);
 }
 
+/* A stale claim carries a word and a dashed mark, never colour alone. */
+.claim-stale {
+  padding: 0 var(--space-2);
+  border: 1px dashed var(--state-blocked-line);
+  border-radius: var(--radius-pill);
+  color: var(--state-blocked-fg);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.state-chip[data-state="stale"] {
+  border-style: dashed;
+  border-color: var(--state-blocked-line);
+  background: var(--state-blocked-bg);
+  color: var(--state-blocked-fg);
+}
+
 /* ------------------------------------------------------------------------- */
 /* 8. Live-update control                                                     */
 /* ------------------------------------------------------------------------- */
@@ -1600,6 +1618,11 @@ button:hover,
   fill: var(--bg-raised);
   stroke: var(--state-claimed-line);
   stroke-width: 1;
+}
+
+.node__claim-badge[data-stale="true"] {
+  stroke-dasharray: 3 2;
+  stroke-width: 2;
 }
 
 .node__claim-text {
