@@ -33,6 +33,7 @@ from . import (
     __version__,
     claims,
     config,
+    contracts,
     dependencies,
     history,
     memo,
@@ -781,6 +782,19 @@ def _build_parser() -> _Parser:
     )
     doctor.set_defaults(handler="doctor")
 
+    schema_parser = subparsers.add_parser(
+        "schema",
+        parents=[shared],
+        help="print the JSON Schema for a --json document shape",
+    )
+    schema_parser.add_argument(
+        "document",
+        nargs="?",
+        metavar="DOCUMENT",
+        help="document shape to print; omit it to list every published schema",
+    )
+    schema_parser.set_defaults(handler="schema")
+
     guide = subparsers.add_parser(
         "guide", parents=[shared], help="print the agent-oriented usage summary"
     )
@@ -1473,6 +1487,43 @@ def _run_guide(ctx: _Context, args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_schema(ctx: _Context, args: argparse.Namespace) -> int:
+    """Print the published JSON Schema for one document, or list them all.
+
+    The schemas are data, not a library: this command reads the packaged files
+    and writes them out, so a consumer can validate a document without the
+    core package growing a dependency.
+    """
+    name = args.document
+    if name is None:
+        entries = contracts.schema_entries()
+        if ctx.json:
+            _write_json(
+                {
+                    "schema_version": JSON_SCHEMA_VERSION,
+                    "schemas": [
+                        {
+                            "name": entry.name,
+                            "$id": entry.identifier,
+                            "path": entry.path,
+                        }
+                        for entry in entries
+                    ],
+                }
+            )
+            return 0
+        for entry in entries:
+            _write_line(f"{entry.name:<16} {entry.identifier:<40} {entry.path}")
+        return 0
+
+    document = contracts.load_schema(name)
+    if ctx.json:
+        _write_json(document)
+        return 0
+    _write_line(json.dumps(document, indent=2, ensure_ascii=False))
+    return 0
+
+
 def _run_serve(ctx: _Context, args: argparse.Namespace) -> int:
     """Serve the read-only board (spec 10.3, 11.3).
 
@@ -1872,6 +1923,8 @@ def _dispatch(ctx: _Context, args: argparse.Namespace) -> int:
         return _run_history(ctx, args)
     if handler == "doctor":
         return _run_doctor(ctx, args)
+    if handler == "schema":
+        return _run_schema(ctx, args)
     if handler == "guide":
         return _run_guide(ctx, args)
     if handler == "serve":
