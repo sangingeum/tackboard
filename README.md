@@ -712,7 +712,7 @@ ring, a holder badge on its own row and the claim age.
 
 | Full graph (`nodes=12`) | Active tasks only — "Hide done & cancelled" |
 |:---:|:---:|
-| ![Full dependency graph](images/demo-graph.png) | ![Graph with done nodes hidden — 3 hidden, +N elision markers visible](images/demo-graph-active.png) |
+| ![Full dependency graph](images/demo-graph.png) | ![Graph with done nodes hidden — 4 hidden, +N elision markers visible](images/demo-graph-active.png) |
 
 "Hide done & cancelled" removes completed nodes and counts the elided edges as
 `+N` markers on visible nodes. "Focus claimed" dims non-claimed nodes and edges
@@ -731,23 +731,22 @@ history events.
 |:---:|:---:|
 | ![Task T-000004 IN PROGRESS, claimed by backend-agent](images/demo-task-inprogress.png) | ![Task T-000010 BLOCKED — explicit blocker and two unfinished prerequisites](images/demo-task-blocked.png) |
 
-The interactive graph implements the claimed overlay and the hide-closed
-toggle from the web redesign. A claimed node keeps its status shape and gains
-a double ring and a holder badge; "Highlight claimed" (on by default) shows the
-emphasis, and turning it off hides only the ring and badge — the claim stays in
-the tooltip, the node’s `aria-label`, and the server-rendered outline. “Focus
-claimed” dims non-claimed nodes and edges to 35 % without hiding them. “Hide
-done & cancelled” (off by default) removes `done` and `cancelled` nodes and
-every edge touching them from the canvas and the outline, counts the hidden
-nodes, marks visible nodes whose links were elided with a `+N` marker, and
-leaves the derived `blocked`, `eligible`, `reviewable` and `dependency_ready`
-flags computed from the full graph. The URL parameter `?hide_closed=1` wins
-over the `localStorage` preference (`tackboard.hideClosed`); the default is
-off. `?hide_closed=0` forces the full view. The outline shows `nodes=X of Y ·
-edges=A of B · N hidden` when filtering is on. Every graph action except the
-toolbar-only "Focus claimed" sub-mode has a keyboard equivalent; press `?` for
-the shortcut table. A skip link precedes the top bar, and the canvas is a single
-tab stop with `aria-activedescendant` tracking the active node.
+A claimed node keeps its status shape and gains a double ring and a holder
+badge; "Highlight claimed" (on by default) shows that emphasis, and turning it
+off hides only the ring and badge — the claim stays in the tooltip, the node’s
+`aria-label`, and the server-rendered outline. “Focus claimed” dims non-claimed
+nodes and edges to 35 % without hiding them. “Hide done & cancelled” is off by
+default: the URL parameter `?hide_closed=1` wins over the `localStorage`
+preference (`tackboard.hideClosed`), and `?hide_closed=0` forces the full view.
+With filtering on, the server-rendered outline shows `nodes=X of Y · edges=A of
+B · N hidden` and the canvas marks visible nodes whose links were elided with a
+`+N` marker. Every graph action except the toolbar-only "Focus claimed" sub-mode
+has a keyboard equivalent; press `?` for the shortcut table. A skip link
+precedes the top bar, and the canvas is a single tab stop with
+`aria-activedescendant` tracking the active node. The server binds to loopback
+and answers only `GET` and `HEAD` (anything else gets `405`); it sends
+`Content-Security-Policy: default-src 'self'` and ships no inline script or
+style, no external host and no build step.
 
 ### Stale claims
 
@@ -814,6 +813,29 @@ uvx ruff check src tests    # lint
 uv run mypy src             # types
 uv run pytest --cov         # coverage (the configured floor is in pyproject.toml)
 ```
+
+### Demo board
+
+The five screenshots in the web view section come from one deterministic seed
+board, so they agree with each other and with the current UI. Rebuild it with:
+
+```bash
+uv run python scripts/demo_seed.py --db /tmp/tackboard-demo.sqlite3
+```
+
+The script resets the target database first, then prints the resulting counts;
+the plan file beside it (`scripts/demo_plan.json`) fixes every task id, title and
+edge. Serve the seed with `uv run tack serve --db /tmp/tackboard-demo.sqlite3`,
+then regenerate all five images against that server:
+
+```bash
+uv run python scripts/capture_demo_screenshots.py
+```
+
+The capture script uses headless Chrome at one fixed viewport (1440×1200, device
+scale factor 1) for every shot, and checks each PNG's signature, pixel size and
+byte size before reporting success. Pass `--base-url` when the server runs on a
+different port.
 
 `AGENT.md` is the short orientation brief for agents working in this
 repository; `DESIGN.md` is the architecture document for contributors.
