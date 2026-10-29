@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `tack history --since EVENT_ID` now documents and tests the resume cursor's
+  end of feed: a cursor at or past the newest event, and an empty board, both
+  return an empty oldest-first feed (exit 0) rather than an error. The event
+  feed's poll interval (`0.5 s`) is stated in `README.md` and `tack guide`.
+
 ## [0.6.0] - 2026-10-29
 
 ### Added

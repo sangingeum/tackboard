@@ -1515,6 +1515,38 @@ def test_history_since_is_an_oldest_first_resume_cursor(
         assert _json_document(out)["error"]["code"] == "validation"
 
 
+def test_history_since_beyond_the_newest_event_is_an_empty_feed(
+    run: RunCli, db_file: Path
+) -> None:
+    """A cursor past the end resumes cleanly: an empty feed, not an error."""
+    _create(run, db_file, "alpha")
+    plain = _json_document(run("history", "--json", "--db", str(db_file))[1])
+    newest = max(item["id"] for item in plain["items"])
+
+    code, out, err = run(
+        "history", "--since", str(newest + 1), "--json", "--db", str(db_file)
+    )
+    assert code == 0, err
+    document = _json_document(out)
+    assert document["task_id"] is None
+    assert document["items"] == []
+    assert document["order"] == "asc"
+    assert document["since"] == newest + 1
+
+
+def test_history_since_on_an_empty_board_is_an_empty_feed(
+    run: RunCli, db_file: Path
+) -> None:
+    """No events at all is a valid feed, not a not-found or a validation error."""
+    code, out, err = run("history", "--since", "0", "--json", "--db", str(db_file))
+    assert code == 0, err
+    document = _json_document(out)
+    assert document["task_id"] is None
+    assert document["items"] == []
+    assert document["order"] == "asc"
+    assert document["since"] == 0
+
+
 def test_history_follow_rejects_limit(run: RunCli, db_file: Path) -> None:
     code, out, err = run(
         "history", "--follow", "--limit", "2", "--json", "--db", str(db_file)

@@ -148,6 +148,8 @@ JSON
   descriptions to board, list and next. With --json, errors are printed to
   stdout as {"schema_version":1,"error":{...}} and stderr stays empty unless
   --verbose is given; without --json, errors go to stderr.
+  The one exception: tack history --follow streams NDJSON events (one JSON
+  object per line) and polls every 0.5 s.
 
 Exit codes
   0 success, including no-ops and an empty next

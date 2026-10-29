@@ -523,7 +523,12 @@ error (exit 4), never a silent empty result.
 appear — the only command allowed to emit more than one JSON document. Without
 `--since` it starts at the board's current maximum event id (only new events);
 with `--since` it resumes from the cursor. It polls on a bounded interval and
-exits 0 on SIGINT. `--follow` cannot be combined with `--limit`.
+exits 0 on SIGINT. It polls every 0.5 s: a bounded interval, never a busy loop.
+`--follow` cannot be combined with `--limit`.
+
+`--follow` always emits NDJSON, whether or not `--json` is given: the feed is
+the one documented exception to the "exactly one JSON document on stdout" rule,
+so a consumer piping the stream reads one event object per line either way.
 
 ### Claim fields in graph and task documents
 
@@ -582,6 +587,8 @@ JSON
   descriptions to board, list and next. With --json, errors are printed to
   stdout as {"schema_version":1,"error":{...}} and stderr stays empty unless
   --verbose is given; without --json, errors go to stderr.
+  The one exception: tack history --follow streams NDJSON events (one JSON
+  object per line) and polls every 0.5 s.
 
 Exit codes
   0 success, including no-ops and an empty next
