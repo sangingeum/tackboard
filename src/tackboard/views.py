@@ -82,8 +82,10 @@ def graph_document(
     server-rendered page's opt-in: it adds the read-only
     ``claim_age_seconds``/``claim_stale`` pair so the page and its outline can
     mark a stale claim without re-deriving the threshold in the web layer. The
-    JSON API leaves the flag off so ``/api/graph`` stays byte-identical to the
-    CLI document.
+    JSON API leaves the flag off, so ``/api/graph`` is the CLI graph document
+    with exactly the four derived node flags added: every CLI key is present
+    with the same meaning, and the additions are declared in
+    ``schemas/api_graph.json`` (the HTTP document is a superset, not a copy).
     """
     with read_transaction(conn):
         graph = dependencies.export_graph(conn, task_id, fmt="json")

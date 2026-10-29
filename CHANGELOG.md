@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Published `api_graph` and `api_task` schemas for the two HTTP JSON documents
+  that were previously described only in prose. `/api/graph` is
+  `tack graph --format json` with the four derived readiness flags
+  (`dependency_ready`, `eligible`, `reviewable`, `blocked`) on every node, and
+  `/api/tasks/<id>` is `tack show` plus the active claim, the prerequisite and
+  dependent projections, and the newest 20 history events. Both schemas are
+  closed with `additionalProperties: false`, and `scripts/validate_schemas.py`
+  now validates the served routes from a real `tack serve` process, so an
+  undeclared key on either route fails CI exactly as an undeclared CLI key
+  does. The HTTP documents are supersets of their CLI counterparts, not copies:
+  every CLI key is present with the same meaning, and the keys listed above are
+  the only additions.
 - Tiered agent instructions. `tack guide` stays the one-page core (byte-identical
   to the README "Agent quickstart", now guarded under 6 KiB by a test), and
   `tack guide --topics` / `tack guide --topic NAME` print the reference on
