@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tackboard:schema:doctor",
+  "title": "tackboard doctor document",
+  "schema_version": 1,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "table": {
+            "type": "string"
+          },
+          "rowid": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected": {
+            "type": "integer"
+          },
+          "found": {
+            "type": "integer"
+          },
+          "rev": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "max": {
+            "type": "integer"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "prerequisite_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "age_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "table": {
+            "type": "string"
+          },
+          "rowid": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected": {
+            "type": "integer"
+          },
+          "found": {
+            "type": "integer"
+          },
+          "rev": {
+            "type": "integer"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "max": {
+            "type": "integer"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "prerequisite_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "age_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "ok",
+    "errors",
+    "warnings"
+  ],
+  "additionalProperties": false
+}

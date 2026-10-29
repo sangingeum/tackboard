@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tackboard:schema:memo_diff",
+  "title": "tackboard memo_diff document",
+  "schema_version": 1,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "from": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "to": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "added": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "removed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unified": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "from",
+    "to",
+    "added",
+    "removed",
+    "unified"
+  ],
+  "additionalProperties": false
+}

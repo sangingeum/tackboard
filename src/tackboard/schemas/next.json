@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tackboard:schema:next",
+  "title": "tackboard next document",
+  "schema_version": 1,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:tackboard:schema:task#/$defs/task"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "tasks"
+  ],
+  "additionalProperties": false
+}

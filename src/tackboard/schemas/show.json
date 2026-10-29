@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tackboard:schema:show",
+  "title": "tackboard show document",
+  "schema_version": 1,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "task": {
+      "$ref": "urn:tackboard:schema:task#/$defs/task"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:tackboard:schema:task#/$defs/note"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "task",
+    "notes"
+  ],
+  "additionalProperties": false
+}

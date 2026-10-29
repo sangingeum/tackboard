@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tackboard:schema:history",
+  "title": "tackboard history document",
+  "schema_version": 1,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "task_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:tackboard:schema:task#/$defs/event"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "task_id",
+    "items"
+  ],
+  "additionalProperties": false
+}

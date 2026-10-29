@@ -1,0 +1,394 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tackboard:schema:task",
+  "title": "tackboard shared task projections",
+  "schema_version": 1,
+  "$defs": {
+    "blocker": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "prerequisite_unfinished"
+            },
+            "task_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "task_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "prerequisite_cancelled"
+            },
+            "task_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "task_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "const": "explicit"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "task": {
+      "description": "The task projection. `description` is omitted (not null) on board, list, next and deps documents unless --full is given.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "backlog",
+            "ready",
+            "in_progress",
+            "review",
+            "done",
+            "cancelled"
+          ]
+        },
+        "priority": {
+          "enum": [
+            "low",
+            "normal",
+            "high",
+            "urgent"
+          ]
+        },
+        "assignee": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependency_ready": {
+          "type": "boolean"
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "reviewable": {
+          "type": "boolean"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "blocked_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/blocker"
+          }
+        },
+        "claimed_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "claimed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "claim_age_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "claim_stale": {
+          "type": "boolean"
+        },
+        "rejections": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_rejection_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        },
+        "updated_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "priority",
+        "assignee",
+        "labels",
+        "depends_on",
+        "dependency_ready",
+        "eligible",
+        "reviewable",
+        "blocked",
+        "blocked_reason",
+        "blockers",
+        "claimed_by",
+        "claimed_at",
+        "claim_age_seconds",
+        "claim_stale",
+        "rejections",
+        "last_rejection_reason",
+        "created_at",
+        "updated_at",
+        "completed_at",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "node": {
+      "description": "A reduced task projection: one graph node.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "backlog",
+            "ready",
+            "in_progress",
+            "review",
+            "done",
+            "cancelled"
+          ]
+        },
+        "priority": {
+          "enum": [
+            "low",
+            "normal",
+            "high",
+            "urgent"
+          ]
+        },
+        "assignee": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "claimed_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "claimed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "status",
+        "priority",
+        "assignee",
+        "claimed_by",
+        "claimed_at"
+      ],
+      "additionalProperties": false
+    },
+    "note_ref": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "commit",
+            "url",
+            "path",
+            "task"
+          ]
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "event": {
+      "description": "One append-only history event.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timestamp": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "event_type": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "timestamp",
+        "actor",
+        "event_type",
+        "task_id",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "note": {
+      "description": "A note event: payload is always {text, refs}.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timestamp": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "event_type": {
+          "const": "note"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "refs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/note_ref"
+              }
+            }
+          },
+          "required": [
+            "text",
+            "refs"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "timestamp",
+        "actor",
+        "event_type",
+        "task_id",
+        "payload"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

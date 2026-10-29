@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tackboard:schema:migrate",
+  "title": "tackboard migrate document",
+  "schema_version": 1,
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "database": {
+      "type": "string"
+    },
+    "operation": {
+      "const": "migrate"
+    },
+    "migrated": {
+      "type": "boolean"
+    },
+    "from_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "to_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "backup": {
+      "type": "string"
+    },
+    "database_schema_version": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "schema_version",
+    "ok",
+    "database",
+    "operation",
+    "migrated",
+    "from_version",
+    "to_version",
+    "database_schema_version"
+  ],
+  "additionalProperties": false
+}
