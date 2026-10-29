@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from . import db
+from .config import DEFAULT_STALE_CLAIM_SECONDS
 from .errors import NotFoundError, SchemaError, TackError, ValidationError
 from .models import MAX_MEMO_BYTES, utcnow_iso, utcstamp_iso
 
@@ -418,11 +420,24 @@ def database_name(conn: sqlite3.Connection) -> str:
     return Path(path).name if path else "<unknown>"
 
 
-def doctor(path: Path) -> dict[str, Any]:
-    """Run the spec section 14 integrity checks."""
+def doctor(
+    path: Path, *, stale_after_seconds: int | None = None
+) -> dict[str, Any]:
+    """Run the spec section 14 integrity checks.
+
+    ``stale_after_seconds`` is the stale-claim threshold used for the
+    ``stale_claim`` warning; callers resolve it from configuration and pass it
+    in, so this module stays configuration-free. ``None`` means the documented
+    default (``2h``). A stale claim is a warning, never an error.
+    """
     path = Path(path)
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
+    threshold = (
+        stale_after_seconds
+        if stale_after_seconds is not None
+        else DEFAULT_STALE_CLAIM_SECONDS
+    )
 
     if not path.exists():
         errors.append(
@@ -478,7 +493,7 @@ def doctor(path: Path) -> dict[str, Any]:
         errors.extend(_doctor_cycles(conn))
         if version == SCHEMA_VERSION:
             errors.extend(_doctor_memo(conn))
-        warnings.extend(_doctor_claim_states(conn))
+        warnings.extend(_doctor_claim_states(conn, threshold))
     finally:
         conn.close()
 
@@ -638,8 +653,11 @@ def _doctor_memo(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return findings
 
 
-def _doctor_claim_states(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def _doctor_claim_states(
+    conn: sqlite3.Connection, stale_after_seconds: int
+) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
+    now = utcnow_iso()
 
     rows = conn.execute(
         """
@@ -696,6 +714,32 @@ def _doctor_claim_states(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 ),
                 "task_id": row["task_id"],
                 "prerequisite_id": row["prerequisite_id"],
+            }
+        )
+
+    rows = conn.execute(
+        """
+        SELECT c.task_id AS task_id, c.agent_id AS agent_id, c.claimed_at AS claimed_at
+        FROM claims c JOIN tasks t ON t.id = c.task_id
+        ORDER BY c.claimed_at, c.task_id
+        """
+    ).fetchall()
+    current = datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ")
+    for row in rows:
+        moment = datetime.strptime(row["claimed_at"], "%Y-%m-%dT%H:%M:%SZ")
+        age = max(0, int((current - moment).total_seconds()))
+        if age < stale_after_seconds:
+            continue
+        findings.append(
+            {
+                "code": "stale_claim",
+                "message": (
+                    f"{row['task_id']} is claimed by {row['agent_id']}; the claim "
+                    f"is {age}s old (stale after {stale_after_seconds}s)."
+                ),
+                "task_id": row["task_id"],
+                "agent_id": row["agent_id"],
+                "age_seconds": age,
             }
         )
     return findings

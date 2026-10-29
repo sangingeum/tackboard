@@ -19,6 +19,13 @@ ENV_AGENT = "TACKBOARD_AGENT"
 CONFIG_FILENAME = ".tackboard.toml"
 CONFIG_TABLE = "tackboard"
 
+#: Optional ``[tackboard]`` key naming the default stale-claim threshold. The
+#: same value drives ``claims --stale``, the derived ``claim_stale`` flag and
+#: the ``doctor`` warning, so the three never disagree.
+STALE_CLAIM_KEY = "stale_claim_after"
+DEFAULT_STALE_CLAIM_AFTER = "2h"
+DEFAULT_STALE_CLAIM_SECONDS = 2 * 60 * 60
+
 #: Agent identifiers are advisory labels, but they are still format-checked.
 AGENT_ID_RE = re.compile(r"[A-Za-z0-9._:-]{1,64}\Z")
 
@@ -87,6 +94,32 @@ def resolve_database(
     )
 
 
+def stale_claim_after(start: Path) -> str:
+    """Return the configured stale-claim duration text for ``start``.
+
+    The key lives in the same optional ``[tackboard]`` table as ``db``, so no
+    second configuration surface exists. An absent file or key means the
+    documented default, ``2h``; a present but non-text or empty value is a
+    validation error rather than a silent fallback. Parsing the text is the
+    duration parser's job (``claims.parse_duration``), so this function only
+    reads configuration.
+    """
+    config_path = find_config_file(start)
+    if config_path is None:
+        return DEFAULT_STALE_CLAIM_AFTER
+    config = load_config(config_path)
+    section = config.get(CONFIG_TABLE)
+    value: Any = section.get(STALE_CLAIM_KEY) if isinstance(section, Mapping) else None
+    if value is None:
+        return DEFAULT_STALE_CLAIM_AFTER
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError(
+            f"{CONFIG_TABLE}.{STALE_CLAIM_KEY} in {config_path} must be a "
+            f"duration string such as {DEFAULT_STALE_CLAIM_AFTER!r}."
+        )
+    return value.strip()
+
+
 def validate_agent_id(value: str) -> str:
     """Validate an agent identifier against ``[A-Za-z0-9._:-]{1,64}``."""
     if not AGENT_ID_RE.fullmatch(value):
@@ -111,11 +144,15 @@ __all__ = [
     "AGENT_ID_RE",
     "CONFIG_FILENAME",
     "CONFIG_TABLE",
+    "DEFAULT_STALE_CLAIM_AFTER",
+    "DEFAULT_STALE_CLAIM_SECONDS",
     "ENV_AGENT",
     "ENV_DB",
+    "STALE_CLAIM_KEY",
     "find_config_file",
     "load_config",
     "resolve_actor",
     "resolve_database",
+    "stale_claim_after",
     "validate_agent_id",
 ]

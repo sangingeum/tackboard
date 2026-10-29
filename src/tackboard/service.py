@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import datetime
 from typing import Any
 
 from . import history
@@ -359,13 +360,42 @@ def _force_covers_prerequisites(
     )
 
 
+def _claim_age_seconds(claimed_at: str | None, now: str) -> int | None:
+    """The claim's age in whole seconds against one read's clock, or ``None``."""
+    if claimed_at is None:
+        return None
+    moment = datetime.strptime(claimed_at, "%Y-%m-%dT%H:%M:%SZ")
+    current = datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ")
+    return max(0, int((current - moment).total_seconds()))
+
+
+def _configured_stale_seconds() -> int:
+    """The configured stale-claim threshold in seconds.
+
+    Imported lazily: ``claims`` imports this module for the transition
+    function, so the duration parser cannot be imported at module load time.
+    """
+    from .claims import stale_claim_seconds
+
+    return stale_claim_seconds()
+
+
 def derived_flags(
     prerequisites: Sequence[tuple[str, str]],
     blocked_reason: str | None,
     status: str,
     claim: Claim | None,
+    *,
+    now: str | None = None,
+    stale_after_seconds: int | None = None,
 ) -> dict[str, Any]:
-    """Compute the spec 7.4 derived flags from stored state."""
+    """Compute the spec 7.4 derived flags from stored state.
+
+    ``claim_age_seconds`` and ``claim_stale`` are read-only: they are computed
+    from the stored claim timestamp against one ``now`` per read and never
+    stored. ``stale_after_seconds`` defaults to the configured
+    ``[tackboard] stale_claim_after`` value (``2h`` when unset).
+    """
     dependency_ready = all(state == _DONE for _, state in prerequisites)
     blockers = _blockers(prerequisites, blocked_reason)
     blocked = status not in TERMINAL_STATUSES and bool(blockers)
@@ -381,12 +411,23 @@ def derived_flags(
         and blocked_reason is None
         and dependency_ready
     )
+    moment = now if now is not None else utcnow_iso()
+    threshold = (
+        stale_after_seconds
+        if stale_after_seconds is not None
+        else _configured_stale_seconds()
+    )
+    claim_age_seconds = _claim_age_seconds(
+        claim.claimed_at if claim is not None else None, moment
+    )
     return {
         "dependency_ready": dependency_ready,
         "eligible": eligible,
         "reviewable": reviewable,
         "blocked": blocked,
         "blockers": blockers,
+        "claim_age_seconds": claim_age_seconds,
+        "claim_stale": claim_age_seconds is not None and claim_age_seconds >= threshold,
     }
 
 
@@ -397,8 +438,17 @@ def _project_row(
     claim: Claim | None,
     *,
     full: bool,
+    now: str,
+    stale_after_seconds: int | None = None,
 ) -> dict[str, Any]:
-    flags = derived_flags(prerequisites, row["blocked_reason"], row["status"], claim)
+    flags = derived_flags(
+        prerequisites,
+        row["blocked_reason"],
+        row["status"],
+        claim,
+        now=now,
+        stale_after_seconds=stale_after_seconds,
+    )
     task: dict[str, Any] = {
         "id": row["id"],
         "title": row["title"],
@@ -420,6 +470,8 @@ def _project_row(
             "blockers": flags["blockers"],
             "claimed_by": claim.agent_id if claim is not None else None,
             "claimed_at": claim.claimed_at if claim is not None else None,
+            "claim_age_seconds": flags["claim_age_seconds"],
+            "claim_stale": flags["claim_stale"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "completed_at": row["completed_at"],
@@ -430,8 +482,14 @@ def _project_row(
 
 
 def _project_rows(
-    conn: sqlite3.Connection, rows: Sequence[sqlite3.Row], *, full: bool
+    conn: sqlite3.Connection,
+    rows: Sequence[sqlite3.Row],
+    *,
+    full: bool,
+    now: str | None = None,
 ) -> list[dict[str, Any]]:
+    moment = now if now is not None else utcnow_iso()
+    stale_after_seconds = _configured_stale_seconds()
     task_ids = [str(row["id"]) for row in rows]
     labels = _labels_for(conn, task_ids)
     prerequisites = _prerequisites_for(conn, task_ids)
@@ -443,6 +501,8 @@ def _project_rows(
             prerequisites[str(row["id"])],
             claims.get(str(row["id"])),
             full=full,
+            now=moment,
+            stale_after_seconds=stale_after_seconds,
         )
         for row in rows
     ]

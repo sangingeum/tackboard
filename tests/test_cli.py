@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from tackboard import cli, schema  # noqa: E402
+from tackboard.models import utcnow_iso  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ACTOR = "dev"
@@ -1580,3 +1583,128 @@ def test_console_script_and_module_invocation(db_file: Path) -> None:
     )
     assert module.returncode == 0, module.stderr
     assert module.stdout == cli.GUIDE_TEXT
+
+
+# --------------------------------------------------------------------------- #
+# stale-claim visibility and recovery
+# --------------------------------------------------------------------------- #
+
+
+def _age_claim(db: Path, task_id: str, claimed_at: str) -> None:
+    raw = sqlite3.connect(db)
+    raw.execute(
+        "UPDATE claims SET claimed_at = ? WHERE task_id = ?", (claimed_at, task_id)
+    )
+    raw.commit()
+    raw.close()
+
+
+def _hours_ago(hours: int) -> str:
+    """A UTC timestamp ``hours`` before now, in the stored ISO format."""
+    now = datetime.strptime(utcnow_iso(), "%Y-%m-%dT%H:%M:%SZ")
+    return (now - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_claims_stale_filter_uses_the_config_threshold(
+    run: RunCli, db_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = _create(run, db_file, "held", "--status", "ready")
+    assert run("claim", task["id"], "--agent", "dev", "--db", str(db_file))[0] == 0
+
+    code, out, err = run("claims", "--stale", "--json", "--db", str(db_file))
+    assert code == 0, err
+    assert _json_document(out)["items"] == []  # fresh, so not stale
+
+    _age_claim(db_file, task["id"], _hours_ago(3))
+    code, out, err = run("claims", "--stale", "--json", "--db", str(db_file))
+    assert code == 0, err
+    assert [item["task_id"] for item in _json_document(out)["items"]] == [task["id"]]
+
+    # A longer configured threshold hides it; --older-than overrides per call.
+    (tmp_path / ".tackboard.toml").write_text(
+        '[tackboard]\nstale_claim_after = "10d"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    code, out, err = run("claims", "--stale", "--json", "--db", str(db_file))
+    assert _json_document(out)["items"] == []
+    code, out, err = run(
+        "claims", "--stale", "--older-than", "1s", "--json", "--db", str(db_file)
+    )
+    assert [item["task_id"] for item in _json_document(out)["items"]] == [task["id"]]
+
+
+def test_claims_stale_rejects_an_invalid_configured_duration(
+    run: RunCli, db_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _create(run, db_file, "held", "--status", "ready")
+    assert run("claim", "T-000001", "--agent", "dev", "--db", str(db_file))[0] == 0
+
+    (tmp_path / ".tackboard.toml").write_text(
+        '[tackboard]\nstale_claim_after = "soon"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    code, out, err = run("claims", "--stale", "--json", "--db", str(db_file))
+    assert code == 4
+    document = _json_document(out)
+    assert document["error"]["code"] == "validation"
+    assert "Invalid duration" in document["error"]["message"]
+
+
+def test_doctor_reports_a_stale_claim_without_failing_the_board(
+    run: RunCli, db_file: Path
+) -> None:
+    task = _create(run, db_file, "abandoned", "--status", "ready")
+    assert run("claim", task["id"], "--agent", "dev", "--db", str(db_file))[0] == 0
+    _age_claim(db_file, task["id"], "2020-01-01T00:00:00Z")
+
+    code, out, err = run("doctor", "--json", "--db", str(db_file))
+    assert code == 0, err
+    report = _json_document(out)
+    assert report["ok"] is True
+    assert report["errors"] == []
+    stale = [entry for entry in report["warnings"] if entry["code"] == "stale_claim"]
+    assert [entry["task_id"] for entry in stale] == [task["id"]]
+    assert stale[0]["agent_id"] == "dev"
+    assert stale[0]["age_seconds"] > 7200
+
+    # The derived fields ride along in show --json as well.
+    code, out, err = run("show", task["id"], "--json", "--db", str(db_file))
+    shown = _json_document(out)["task"]
+    assert shown["claim_age_seconds"] >= 7200
+    assert shown["claim_stale"] is True
+
+
+def test_recover_requires_a_reason_and_leaves_an_audited_event(
+    run: RunCli, db_file: Path
+) -> None:
+    task = _create(run, db_file, "dead", "--status", "ready")
+    assert run("claim", task["id"], "--agent", "dev", "--db", str(db_file))[0] == 0
+
+    code, out, err = run("recover", task["id"], "--agent", "qa", "--db", str(db_file))
+    assert code == 2
+    assert "reason" in err
+
+    code, out, err = run(
+        "recover",
+        task["id"],
+        "--agent",
+        "qa",
+        "--reason",
+        "dev went offline",
+        "--json",
+        "--db",
+        str(db_file),
+    )
+    assert code == 0, err
+    result = _json_document(out)
+    assert result["changed"] is True
+    assert result["task"]["claimed_by"] is None
+    assert result["task"]["status"] == "ready"
+
+    code, out, err = run("history", task["id"], "--json", "--db", str(db_file))
+    assert code == 0, err
+    newest = _json_document(out)["items"][0]
+    assert newest["event_type"] == "task.released"
+    assert newest["payload"]["forced"] is True
+    assert newest["payload"]["reason"] == "dev went offline"

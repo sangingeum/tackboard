@@ -330,6 +330,42 @@ def test_doctor_detects_orphan_and_missing_claims(db_path: Path) -> None:
     assert report["ok"] is True  # warnings do not fail the board
 
 
+def test_doctor_warns_about_a_stale_claim_but_not_a_fresh_one(db_path: Path) -> None:
+    conn = schema.open_database(db_path)
+    aged = service.create_task(conn, actor="dev", title="Abandoned")["task"]
+    fresh = service.create_task(conn, actor="dev", title="In hand")["task"]
+    conn.close()
+
+    raw = _raw(db_path)
+    for task in (aged, fresh):
+        raw.execute(
+            "UPDATE tasks SET status = 'in_progress' WHERE id = ?", (task["id"],)
+        )
+    raw.execute(
+        "INSERT INTO claims(task_id, agent_id, claimed_at) VALUES(?, ?, ?)",
+        (aged["id"], "dev", "2020-01-01T00:00:00Z"),
+    )
+    raw.execute(
+        "INSERT INTO claims(task_id, agent_id, claimed_at) VALUES(?, ?, ?)",
+        (fresh["id"], "qa", "2099-01-01T00:00:00Z"),
+    )
+    raw.close()
+
+    report = schema.doctor(db_path)
+    stale = [entry for entry in report["warnings"] if entry["code"] == "stale_claim"]
+    assert [entry["task_id"] for entry in stale] == [aged["id"]]
+    assert stale[0]["agent_id"] == "dev"
+    assert stale[0]["age_seconds"] > 7200
+    assert aged["id"] in stale[0]["message"]
+    assert report["ok"] is True  # a stale claim is a warning, never an error
+
+    # The threshold is a parameter: a large enough one hides the same claim.
+    relaxed = schema.doctor(db_path, stale_after_seconds=10**9)
+    assert not any(
+        entry["code"] == "stale_claim" for entry in relaxed["warnings"]
+    )
+
+
 def test_doctor_detects_a_dependency_cycle(db_path: Path) -> None:
     conn = schema.open_database(db_path)
     first = service.create_task(conn, actor="dev", title="First")["task"]

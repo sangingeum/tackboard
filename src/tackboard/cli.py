@@ -98,6 +98,7 @@ _MUTATION_VERBS: dict[str, str] = {
     "restore": "Restored",
     "claim": "Claimed",
     "release": "Released",
+    "recover": "Recovered",
     "depend.add": "Dependency added to",
     "depend.remove": "Dependency removed from",
 }
@@ -158,6 +159,13 @@ Status and readiness
   nobody holds a claim. --force --reason TEXT is allowed only for the audited
   cases — taking over a claim, an unfinished prerequisite, adding one to active
   work, recovering a lost claim — exhaustive, not a general bypass.
+
+Stale claims
+  tack claims                          active claims, each with its age
+  tack claims --stale                  only claims older than 2h by default
+  tack recover T-000001 --reason TEXT  release a dead claim; audited
+  The default threshold is the optional [tackboard] stale_claim_after key in
+  .tackboard.toml (for example "45m"); --older-than overrides it per call.
 """
 
 
@@ -610,7 +618,31 @@ def _build_parser() -> _Parser:
     claims_parser.add_argument(
         "--older-than", metavar="DURATION", help="only claims older than this, e.g. 2h"
     )
+    claims_parser.add_argument(
+        "--stale",
+        action="store_true",
+        help=(
+            "only stale claims: older than the configured threshold "
+            "(default 2h, .tackboard.toml stale_claim_after)"
+        ),
+    )
     claims_parser.set_defaults(handler="claims")
+
+    recover_parser = subparsers.add_parser(
+        "recover",
+        parents=[shared],
+        help="release a dead claim through the audited --force path",
+    )
+    recover_parser.add_argument("task_id", metavar="TASK_ID")
+    _add_actor(recover_parser)
+    _add_if_version(recover_parser)
+    recover_parser.add_argument(
+        "--reason",
+        metavar="TEXT",
+        required=True,
+        help="why the claim is dead (recorded in the event)",
+    )
+    recover_parser.set_defaults(handler="recover")
 
     next_parser = subparsers.add_parser(
         "next", parents=[shared], help="select the next task for the agent"
@@ -1046,6 +1078,7 @@ def _run_claims(ctx: _Context, args: argparse.Namespace) -> int:
             conn,
             agent=args.agent,
             older_than=getattr(args, "older_than", None),
+            stale=getattr(args, "stale", False),
         )
     if ctx.json:
         _write_json(result)
@@ -1060,6 +1093,19 @@ def _run_claims(ctx: _Context, args: argparse.Namespace) -> int:
             f"({item['age_seconds']}s ago)"
         )
     return 0
+
+
+def _run_recover(ctx: _Context, args: argparse.Namespace) -> int:
+    actor = _actor(args)
+    with _project(args) as conn:
+        result = claims.recover(
+            conn,
+            args.task_id,
+            actor=actor,
+            reason=args.reason,
+            if_version=args.if_version,
+        )
+    return _emit_mutation(ctx, _MUTATION_VERBS["recover"], result)
 
 
 def _run_next(ctx: _Context, args: argparse.Namespace) -> int:
@@ -1188,7 +1234,9 @@ def _run_history(ctx: _Context, args: argparse.Namespace) -> int:
 
 
 def _run_doctor(ctx: _Context, args: argparse.Namespace) -> int:
-    result = schema.doctor(_resolve_db_path(args))
+    result = schema.doctor(
+        _resolve_db_path(args), stale_after_seconds=claims.stale_claim_seconds()
+    )
     if ctx.json:
         _write_json(result)
     else:
@@ -1584,6 +1632,8 @@ def _dispatch(ctx: _Context, args: argparse.Namespace) -> int:
         return _run_note(ctx, args)
     if handler in {"claim", "release"}:
         return _run_claim_command(ctx, args, handler)
+    if handler == "recover":
+        return _run_recover(ctx, args)
     if handler == "claims":
         return _run_claims(ctx, args)
     if handler == "next":

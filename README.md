@@ -535,6 +535,13 @@ Status and readiness
   nobody holds a claim. --force --reason TEXT is allowed only for the audited
   cases — taking over a claim, an unfinished prerequisite, adding one to active
   work, recovering a lost claim — exhaustive, not a general bypass.
+
+Stale claims
+  tack claims                          active claims, each with its age
+  tack claims --stale                  only claims older than 2h by default
+  tack recover T-000001 --reason TEXT  release a dead claim; audited
+  The default threshold is the optional [tackboard] stale_claim_after key in
+  .tackboard.toml (for example "45m"); --older-than overrides it per call.
 ```
 
 ## Web view

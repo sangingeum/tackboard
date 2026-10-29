@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,8 +17,24 @@ from tackboard.errors import (
     UsageError,
     ValidationError,
 )
+from tackboard.models import utcnow_iso
 
 MakeTask = Callable[..., dict[str, Any]]
+
+STAMP = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def _backdate_claim(conn: sqlite3.Connection, task_id: str, claimed_at: str) -> None:
+    """Move a stored claim's timestamp, to age it without waiting."""
+    conn.execute(
+        "UPDATE claims SET claimed_at = ? WHERE task_id = ?", (claimed_at, task_id)
+    )
+
+
+def _ago(**delta: float) -> str:
+    """A UTC timestamp ``delta`` before now, in the stored ISO format."""
+    now = datetime.strptime(utcnow_iso(), STAMP)
+    return (now - timedelta(**delta)).strftime(STAMP)
 
 
 def test_claiming_a_ready_task_starts_it(
@@ -728,3 +746,163 @@ def test_starting_a_claimed_review_task_keeps_the_claim_it_already_holds(
     service.set_status(conn, task["id"], "in_progress", actor="dev")
 
     assert service.get_task(conn, task["id"])["claimed_at"] == held
+
+
+# --------------------------------------------------------------------------- #
+# stale-claim visibility: derived fields, the --stale threshold, recover
+# --------------------------------------------------------------------------- #
+
+
+def test_derived_claim_age_and_staleness_on_claimed_and_unclaimed_tasks(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    held = make_task(title="Held", status="ready")
+    claims.claim(conn, held["id"], actor="dev")
+
+    fresh = service.get_task(conn, held["id"])
+    assert isinstance(fresh["claim_age_seconds"], int)
+    assert fresh["claim_age_seconds"] >= 0
+    assert fresh["claim_stale"] is False
+
+    _backdate_claim(conn, held["id"], "2020-01-01T00:00:00Z")
+    aged = service.get_task(conn, held["id"])
+    assert aged["claim_age_seconds"] > 7200
+    assert aged["claim_stale"] is True
+
+    free = make_task(title="Free")
+    idle = service.get_task(conn, free["id"])
+    assert idle["claimed_by"] is None
+    assert idle["claim_age_seconds"] is None
+    assert idle["claim_stale"] is False
+
+
+def test_one_clock_per_read_ages_every_claim_equally(
+    conn: sqlite3.Connection, make_task: MakeTask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = make_task(title="First", status="ready")
+    second = make_task(title="Second", status="ready")
+    claims.claim(conn, first["id"], actor="dev")
+    claims.claim(conn, second["id"], actor="qa")
+    for task in (first, second):
+        _backdate_claim(conn, task["id"], "2026-01-01T00:00:00Z")
+
+    moments = iter(["2099-01-01T00:00:00Z", "2099-01-01T00:00:01Z"])
+    monkeypatch.setattr(service, "utcnow_iso", lambda: next(moments))
+
+    tasks = service.list_tasks(conn)
+    ages = {task["claim_age_seconds"] for task in tasks if task["claimed_by"]}
+    assert len(ages) == 1
+
+
+def test_stale_claim_filtering_at_the_threshold_boundary(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    at_threshold = make_task(title="At threshold", status="ready")
+    just_below = make_task(title="Just below", status="ready")
+    claims.claim(conn, at_threshold["id"], actor="dev")
+    claims.claim(conn, just_below["id"], actor="qa")
+    _backdate_claim(conn, at_threshold["id"], _ago(seconds=7200))
+    _backdate_claim(conn, just_below["id"], _ago(seconds=7000))
+
+    stale = claims.list_claims(conn, stale=True)
+    assert [item["task_id"] for item in stale["items"]] == [at_threshold["id"]]
+
+    # An explicit --older-than wins over the configured threshold in both
+    # directions: a lower one admits the just-below claim, a higher one hides
+    # the boundary claim.
+    widened = claims.list_claims(conn, older_than="1s", stale=True)
+    assert {item["task_id"] for item in widened["items"]} == {
+        at_threshold["id"],
+        just_below["id"],
+    }
+    narrowed = claims.list_claims(conn, older_than="1d", stale=True)
+    assert narrowed["items"] == []
+
+
+def test_stale_threshold_is_read_from_the_config_key(
+    conn: sqlite3.Connection, make_task: MakeTask, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = make_task(title="Aged", status="ready")
+    claims.claim(conn, task["id"], actor="dev")
+    _backdate_claim(conn, task["id"], _ago(hours=3))
+
+    config = tmp_path / ".tackboard.toml"
+    config.write_text(
+        '[tackboard]\ndb = "project.sqlite3"\nstale_claim_after = "10d"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # Three hours is stale under the 2h default but not under the configured 10d.
+    assert claims.list_claims(conn, older_than="2h")["items"]
+    assert claims.list_claims(conn, stale=True)["items"] == []
+    assert claims.stale_claim_seconds() == 10 * 86400
+
+
+def test_an_invalid_stale_threshold_is_a_validation_error(
+    conn: sqlite3.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / ".tackboard.toml"
+    config.write_text(
+        '[tackboard]\ndb = "project.sqlite3"\nstale_claim_after = "soon"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValidationError) as caught:
+        claims.list_claims(conn, stale=True)
+    assert caught.value.exit_code == 4
+    assert "Invalid duration" in str(caught.value)
+
+
+def test_recover_releases_a_dead_claim_and_audits_the_reason(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    task = make_task(title="Abandoned", status="ready")
+    claims.claim(conn, task["id"], actor="dev")
+
+    result = claims.recover(conn, task["id"], actor="qa", reason="dev went offline")
+    assert result["changed"] is True
+    assert result["task"]["claimed_by"] is None
+    assert result["task"]["status"] == "ready"
+
+    event = history.list_events(conn, task["id"])["items"][0]
+    assert event["event_type"] == "task.released"
+    assert event["payload"]["forced"] is True
+    assert event["payload"]["reason"] == "dev went offline"
+
+
+def test_recover_requires_a_reason_and_adds_no_force_case(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    task = make_task(title="Contested", status="ready")
+    claims.claim(conn, task["id"], actor="dev")
+
+    with pytest.raises(ValidationError):
+        claims.recover(conn, task["id"], actor="qa", reason="   ")
+
+    # A claim the caller already holds is not a force case: the existing
+    # policy refuses it and the claim stays put.
+    with pytest.raises(ValidationError):
+        claims.recover(conn, task["id"], actor="dev", reason="mine to release")
+    assert service.get_task(conn, task["id"])["claimed_by"] == "dev"
+
+    # Nothing to recover on a healthy unclaimed task: an idempotent no-op.
+    free = make_task(title="Free")
+    noop = claims.recover(conn, free["id"], actor="dev", reason="nothing here")
+    assert noop["changed"] is False
+
+
+def test_recover_clears_a_lost_claim_on_in_progress_work(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    task = make_task(title="Orphaned", status="ready")
+    claims.claim(conn, task["id"], actor="dev")
+    conn.execute("DELETE FROM claims WHERE task_id = ?", (task["id"],))
+
+    result = claims.recover(conn, task["id"], actor="qa", reason="claim row was lost")
+    assert result["changed"] is True
+    assert result["task"]["status"] == "ready"
+    event = history.list_events(conn, task["id"])["items"][0]
+    assert event["payload"]["forced"] is True
+    assert event["payload"]["reason"] == "claim row was lost"

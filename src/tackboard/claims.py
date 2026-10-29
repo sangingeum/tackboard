@@ -10,9 +10,10 @@ from __future__ import annotations
 import re
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Final
 
-from .config import validate_agent_id
+from .config import stale_claim_after, validate_agent_id
 from .db import read_transaction, write_transaction
 from .errors import UsageError, ValidationError
 from .models import PRIORITY_RANK, utcnow_iso
@@ -58,10 +59,21 @@ def parse_duration(text: str) -> int:
     return int(amount) * _DURATION_UNITS[unit]
 
 
-def _age_seconds(claimed_at: str) -> int:
+def stale_claim_seconds(start: Path | None = None) -> int:
+    """The default stale-claim threshold in seconds.
+
+    Reads the optional ``[tackboard] stale_claim_after`` key from the nearest
+    ``.tackboard.toml`` (default ``2h``). An unparseable value raises the
+    duration parser's validation error — never a silent fallback.
+    """
+    return parse_duration(stale_claim_after(start if start is not None else Path.cwd()))
+
+
+def _age_seconds(claimed_at: str, now: str | None = None) -> int:
     moment = datetime.strptime(claimed_at, "%Y-%m-%dT%H:%M:%SZ")
-    now = datetime.strptime(utcnow_iso(), "%Y-%m-%dT%H:%M:%SZ")
-    return max(0, int((now - moment).total_seconds()))
+    current = now if now is not None else utcnow_iso()
+    elapsed = datetime.strptime(current, "%Y-%m-%dT%H:%M:%SZ") - moment
+    return max(0, int(elapsed.total_seconds()))
 
 
 def active_claim(conn: sqlite3.Connection, task_id: str) -> dict[str, Any] | None:
@@ -121,16 +133,55 @@ def release(
     )
 
 
+def recover(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    actor: str,
+    reason: str,
+    if_version: int | None = None,
+) -> dict[str, Any]:
+    """Resolve a dead claim by releasing it with an audited reason.
+
+    A thin wrapper over ``release --force --reason``: it maps to the two
+    enumerated force cases that resolve a claim nobody is working — a claim
+    held by another agent, and an ``in_progress`` task that has lost its claim.
+    It adds no transition and no force case of its own; ``apply_transition``
+    still decides whether the forced release applies. A healthy unclaimed task
+    is an idempotent no-op; a claim the caller already holds is refused by the
+    existing force check (plain ``release`` is the command for that).
+    """
+    return release(
+        conn,
+        task_id,
+        actor=actor,
+        force=True,
+        reason=reason,
+        if_version=if_version,
+    )
+
+
 def list_claims(
     conn: sqlite3.Connection,
     *,
     agent: str | None = None,
     older_than: str | None = None,
+    stale: bool = False,
 ) -> dict[str, Any]:
-    """Inspect active claims, optionally by agent or minimum age (spec 8.1)."""
+    """Inspect active claims, optionally by agent or minimum age (spec 8.1).
+
+    ``stale=True`` filters to claims at least as old as the configured
+    ``stale_claim_after`` threshold; an explicit ``older_than`` wins over it.
+    """
     if agent is not None:
         validate_agent_id(agent)
-    threshold = parse_duration(older_than) if older_than is not None else None
+    if older_than is not None:
+        threshold: int | None = parse_duration(older_than)
+    elif stale:
+        threshold = stale_claim_seconds()
+    else:
+        threshold = None
+    now = utcnow_iso()
 
     with read_transaction(conn):
         sql = """
@@ -160,7 +211,7 @@ def list_claims(
 
     items: list[dict[str, Any]] = []
     for row in rows:
-        age = _age_seconds(row["claimed_at"])
+        age = _age_seconds(row["claimed_at"], now)
         if threshold is not None and age < threshold:
             continue
         items.append(
@@ -300,5 +351,7 @@ __all__ = [
     "list_claims",
     "next_task",
     "parse_duration",
+    "recover",
     "release",
+    "stale_claim_seconds",
 ]
