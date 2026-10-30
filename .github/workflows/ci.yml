@@ -36,6 +36,9 @@ jobs:
       - name: JSON Schemas match real CLI output (in process)
         run: uv run python scripts/validate_schemas.py --tack "uv run tack"
 
+      - name: Relative links resolve
+        run: uv run python scripts/check_links.py
+
       - name: Install the console script
         run: uv tool install --force .
 

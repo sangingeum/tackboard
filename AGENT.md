@@ -102,6 +102,7 @@ uv run python scripts/build_docs.py      # regenerate guide.py and README/SKILL 
                                          # after editing docs/guide/ sources
 uv run python scripts/build_docs.py --check   # fail if guide.py or a generated region is stale
 uv run python scripts/sync_guide.py      # compatibility wrapper (same as above)
+uv run python scripts/check_links.py     # fail on a broken relative link
 uv run tack schema --json                # the published JSON Schemas
 uv run python scripts/validate_schemas.py --tack "uv run tack"
                                          # validate real output (dev/CI)
