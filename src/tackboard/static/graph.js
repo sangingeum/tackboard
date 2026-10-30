@@ -520,7 +520,10 @@
         { "class": "node__title", x: 10, y: 36 },
         truncate(
           node.title,
-          Math.floor((NODE_W - TITLE_PAD * 2) / TITLE_CHAR_W)
+          /* One character of margin: measured title glyphs run slightly wider
+           * than the 6.4 px estimate, so the raw quotient can overrun
+           * NODE_W - 20 by a couple of pixels. */
+          Math.floor((NODE_W - TITLE_PAD * 2) / TITLE_CHAR_W) - 1
         )
       ));
       var statusText = STATUS_LABEL[node.status] || node.status;
