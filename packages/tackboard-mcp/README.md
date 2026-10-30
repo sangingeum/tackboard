@@ -74,6 +74,13 @@ client documents stdio servers:
 | `create` | `title`, `description?`, `priority?`, `assignee?`, `labels?`, `depends_on?`, `status?` | the created task document |
 | `board_brief` | — | the counts-only board document |
 
+Every tool declares all four MCP annotation hints as explicit booleans. The two
+read tools (`board_brief`, `show`) are read-only and repeatable; every mutating
+tool writes only the one local board and touches no external system
+(`openWorldHint` false); nothing on this surface deletes data
+(`destructiveHint` false); and `complete` is idempotent while `next_claim`,
+`note`, `release` and `create` are not.
+
 Each tool returns the CLI's JSON document unchanged. Exit codes are not
 translated into a second vocabulary: a failed call raises with the CLI's
 `error.code`, `exit_code` and `details` intact.

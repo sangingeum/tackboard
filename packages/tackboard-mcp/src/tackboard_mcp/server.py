@@ -37,10 +37,10 @@ def _server_class() -> type[MCPServer]:
     is the same, so it supports both rather than pinning a client's toolchain.
     """
     try:
-        from mcp.server.mcpserver import MCPServer
+        from mcp.server.mcpserver import MCPServer as _MCPServer
     except ImportError:  # pragma: no cover - 1.x
-        from mcp.server.fastmcp import FastMCP as MCPServer
-    return MCPServer
+        from mcp.server.fastmcp import FastMCP as _MCPServer  # type: ignore[attr-defined,no-redef]
+    return _MCPServer
 
 
 def build_server(cli: TackCli) -> MCPServer:
@@ -49,34 +49,78 @@ def build_server(cli: TackCli) -> MCPServer:
     Imported lazily: the MCP framework lives only in this package's metadata,
     so a checkout without it can still use the tool layer and its tests.
     """
+    from mcp.types import ToolAnnotations
+
     server = _server_class()("tackboard", instructions=INSTRUCTIONS)
 
-    @server.tool()
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
     def next_claim(stage: str | None = None) -> dict[str, Any]:
         """Claim and return the next eligible task. `stage` may be "review"."""
         return cli.next_claim(stage)
 
-    @server.tool()
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
     def show(task_id: str) -> dict[str, Any]:
         """Read one task in full, including its notes."""
         return cli.show(task_id)
 
-    @server.tool()
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
     def note(task_id: str, text: str, refs: list[str] | None = None) -> dict[str, Any]:
         """Append a handoff note; refs are KIND:VALUE strings (commit/url/path/task)."""
         return cli.note(task_id, text, tuple(refs or ()))
 
-    @server.tool()
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
     def complete(task_id: str) -> dict[str, Any]:
         """Finish a task, unblocking its dependents."""
         return cli.complete(task_id)
 
-    @server.tool()
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
     def release(task_id: str, reason: str | None = None) -> dict[str, Any]:
         """Release a claim; a reason makes it the audited force path."""
         return cli.release(task_id, reason)
 
-    @server.tool()
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
     def create(
         title: str,
         description: str | None = None,
@@ -97,7 +141,14 @@ def build_server(cli: TackCli) -> MCPServer:
             status=status,
         )
 
-    @server.tool()
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
     def board_brief() -> dict[str, Any]:
         """The board's counts only: the cheapest look at what is on the board."""
         return cli.board_brief()
