@@ -32,20 +32,36 @@ below; `DESIGN.md` describes the architecture for contributors, and
 
 ## Install
 
-Install the `tack` command from PyPI:
+Two console commands ship from PyPI. Install whichever you need — or both:
 
 ```bash
-uv tool install tackboard    # install `tack` for your user
-tack --help
-
-uvx tackboard --help         # or run it once without installing
-pip install tackboard        # or with pip
+uv tool install tackboard      # the `tack` CLI
+uv tool install tackboard-mcp  # the MCP adapter for agent runtimes
 ```
+
+`tack --help` prints the CLI's own help. The adapter is an MCP server, so it
+prints no help of its own: you register it with an MCP client (see the
+[MCP adapter](#mcp-adapter)) or point one at it directly.
+
+Both commands install cleanly. `uv tool install` isolates each package and links
+only its own entry points, so `tackboard` gives you `tack` and `tackboard-mcp`
+gives you `tackboard-mcp` — the adapter carries the core as a dependency and
+invokes it as a module, so it works without `tack` on your `PATH`. Run both
+installs if you want both commands available standalone.
 
 `tack` is the console entry point (`tackboard.cli:main`). `python -m tackboard`
 runs the same CLI, so an environment that cannot install scripts can still be
 driven by a module invocation. Python 3.12; the only runtime dependency is the
 standard library.
+
+Without installing at all:
+
+```bash
+uvx tackboard --help         # run the CLI once
+```
+
+For the adapter, `uvx` is not the recommended first look — it starts a stdio
+server and waits for a client — so install it and register it as above.
 
 ### Install from source
 
@@ -829,10 +845,42 @@ claim, a supervisor loop over the event feed, and planner → workers → review
 Each builds its own temporary board, needs no network, and is executed by the
 test suite.
 
+## MCP adapter
+
 An optional [MCP adapter](packages/tackboard-mcp/) is published as its own
 distribution, `tackboard-mcp`, for agent runtimes that call tools instead of
-assembling shell commands. Installing it pulls `tackboard`; it stays outside
-the core, and `tackboard` itself keeps `dependencies = []`.
+assembling shell commands. It stays outside the core: the adapter declares its
+dependencies, and `tackboard` itself keeps `dependencies = []`.
+
+```bash
+uv tool install tackboard-mcp      # or: pip install tackboard-mcp
+```
+
+Installing it pulls `tackboard` and the `mcp` framework, so a single install
+gives you the adapter. It exposes seven tools — `next_claim`, `show`, `note`,
+`complete`, `release`, `create`, `board_brief` — that invoke the CLI with
+`--json` and return its document unchanged. Each declares all four annotation
+hints, so a host can tell read-only from mutating before it calls one.
+
+The adapter is a stdio server, so it prints no help and expects a client. Point
+one at it the way that client documents stdio servers:
+
+```json
+{
+  "mcpServers": {
+    "tackboard": {
+      "command": "tackboard-mcp",
+      "env": {
+        "TACKBOARD_DB": "/path/to/board.sqlite3",
+        "TACKBOARD_AGENT": "assistant"
+      }
+    }
+  }
+}
+```
+
+It reads `TACKBOARD_DB`, `TACKBOARD_AGENT`, and `TACK_CMD`; see the
+[adapter README](packages/tackboard-mcp/) for the full surface and limits.
 
 ## Web view
 
