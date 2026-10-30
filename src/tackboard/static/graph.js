@@ -36,6 +36,11 @@
 
   var NODE_W = 224;
   var NODE_H = 72;
+  /* Title text budget follows the card width: usable width is NODE_W minus
+   * the title's horizontal padding. 6.4 px/char is the established estimate
+   * for the --text-xs font at 0.75rem (app.css). */
+  var TITLE_CHAR_W = 6.4;
+  var TITLE_PAD = 10;
   var GAP_X = 76;
   var GAP_Y = 26;
   var MIN_SCALE = 0.15;
@@ -49,8 +54,10 @@
   var IDLE_NODE_LIMIT = 500;
   var MIN_VISIBLE = 120;
   var TOOLTIP_MARGIN = 8;
-  /* The tooltip's near corner sits exactly at the pointer: no offset. */
-  var TOOLTIP_OFFSET = 0;
+  /* The tooltip's near corner sits 12 user units right of and below the
+   * pointer, so the cursor never covers its upper-left corner. The tooltip's
+   * translate() is in SVG user units and pointInSvg() returns user units. */
+  var TOOLTIP_OFFSET = 12;
   var SELECT_DELAY = 200;
   var DUR_LAYOUT = 240;
   var DUR_SLOW = 400;
@@ -377,22 +384,6 @@
     return parts.join(", ");
   }
 
-  function nodeTitleText(node) {
-    var label = STATUS_LABEL[node.status] || node.status;
-    var text = node.id + " \u2014 " + node.title + " (" + label;
-    if (node.reviewable) { text += ", reviewable"; }
-    if (node.claim_stale) { text += ", stale claim"; }
-    if (node.claimed_by) {
-      text += ", claimed by " + node.claimed_by;
-      if (node.claimed_at) { text += " since " + node.claimed_at; }
-    }
-    var hiddenLinks = hiddenLinkCount[node.id] || 0;
-    if (hiddenLinks) {
-      text += ", " + hiddenLinks + " hidden link" + (hiddenLinks === 1 ? "" : "s");
-    }
-    return text + ")";
-  }
-
   /* ----------------------------------------------------------------------- */
   /* shapes                                                                  */
   /* ----------------------------------------------------------------------- */
@@ -486,8 +477,6 @@
         transform: "translate(" + place.x + "," + place.y + ")",
         "aria-label": nodeLabel(node)
       });
-      group.appendChild(el("title", {}));
-      group.lastChild.textContent = nodeTitleText(node);
 
       group.appendChild(el("rect", {
         "class": "node__hit",
@@ -529,7 +518,10 @@
       group.appendChild(textEl({ "class": "node__id", x: 28, y: 20 }, node.id));
       group.appendChild(textEl(
         { "class": "node__title", x: 10, y: 36 },
-        truncate(node.title, 22)
+        truncate(
+          node.title,
+          Math.floor((NODE_W - TITLE_PAD * 2) / TITLE_CHAR_W)
+        )
       ));
       var statusText = STATUS_LABEL[node.status] || node.status;
       if (node.blocked) { statusText += " \u00b7 blocked"; }
@@ -566,9 +558,6 @@
         );
         var badgeX = NODE_W - badgeWidth - 4;
         var badge = el("g", { "class": "node__claim-badge-group" });
-        badge.appendChild(el("title", {}));
-        badge.lastChild.textContent =
-          "@" + fullHolder + (node.claimed_at ? " since " + node.claimed_at : "");
         badge.appendChild(el("rect", {
           "class": "node__claim-badge",
           "data-stale": node.claim_stale ? "true" : "false",
@@ -626,7 +615,7 @@
     tooltipBg = el("rect", { "class": "tooltip__bg", x: 0, y: 0, width: 1, height: 1, rx: 6 });
     group.appendChild(tooltipBg);
     tooltipRows = [];
-    for (var i = 0; i < 6; i += 1) {
+    for (var i = 0; i < 7; i += 1) {
       var rowClass = i === 0 ? "tooltip__row tooltip__title" : "tooltip__row";
       var row = textEl({ "class": rowClass, x: 10, y: 18 + i * 18 }, "");
       tooltipRows.push(row);
@@ -1412,18 +1401,40 @@
   /* tooltip                                                                 */
   /* ----------------------------------------------------------------------- */
 
+  /* The custom tooltip is the only hover text now that the node group carries
+   * no native <title>. Wrap the title onto up to two lines so a long title is
+   * shown in full; each line stays within the width the background rect can
+   * hold. Truncate only when even two lines cannot carry the title. */
+  var TOOLTIP_LINE_MAX = 48;
+
+  function wrapTitle(value, limit, maxLines) {
+    var lines = [];
+    var remaining = String(value);
+    while (remaining.length > limit && lines.length < maxLines - 1) {
+      var cut = remaining.lastIndexOf(" ", limit);
+      if (cut < Math.floor(limit / 2)) { cut = limit; }
+      lines.push(remaining.slice(0, cut).replace(/\s+$/, ""));
+      remaining = remaining.slice(cut).replace(/^\s+/, "");
+    }
+    if (remaining.length > limit) { remaining = truncate(remaining, limit); }
+    if (remaining) { lines.push(remaining); }
+    return lines;
+  }
+
   function tooltipLines(node) {
     var label = STATUS_LABEL[node.status] || node.status;
-    var lines = [];
-    lines.push(truncate(node.id + " \u2014 " + node.title, 44));
+    var lines = wrapTitle(
+      node.id + " \u2014 " + node.title, TOOLTIP_LINE_MAX, 2
+    );
     lines.push(STATUS_GLYPH[node.status] + " " + label + " \u00b7 " +
       (node.priority || "normal"));
     var blocked = blockedByMap[node.id] || [];
     if (node.assignee) { lines.push("assignee: " + truncate(node.assignee, 40)); }
     if (node.claimed_by) {
       var age = relativeAge(node.claimed_at);
-      lines.push("claimed by " + truncate(node.claimed_by, 24) +
-        (age ? " (" + age + " ago)" : ""));
+      var claimedLine = "claimed by " + truncate(node.claimed_by, 48) +
+        (age ? " (" + age + " ago)" : "");
+      lines.push(truncate(claimedLine, TOOLTIP_LINE_MAX));
       if (node.claimed_at) { lines.push("claimed at " + node.claimed_at); }
     }
     var hiddenLinks = hiddenLinkCount[node.id] || 0;
@@ -1431,7 +1442,7 @@
       lines.push(hiddenLinks + " hidden link" + (hiddenLinks === 1 ? "" : "s"));
     }
     if (blocked.length) { lines.push("blocked by " + truncate(blocked.join(", "), 40)); }
-    return lines.slice(0, 6);
+    return lines.slice(0, 7);
   }
 
   function positionTooltip(px, py) {
