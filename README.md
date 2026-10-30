@@ -1,4 +1,6 @@
-﻿# tackboard
+﻿
+# tackboard
+[![M8ven Score](https://m8ven.ai/badge/mcp/sangingeum/tackboard)](https://m8ven.ai/mcp/sangingeum/tackboard?s=readme)
 
 A small, reliable, project-scoped task board for coordinating multiple AI
 agents — one SQLite database per project, a predictable CLI (`tack`) as the
