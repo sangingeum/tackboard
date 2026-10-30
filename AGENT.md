@@ -48,8 +48,9 @@ tests/             pytest suite, mirrors the module layout
 scripts/           development tools (schema validation, scale benchmark)
 examples/          runnable adoption recipes — worktree per claim, supervisor
                    loop, planner-workers-reviewer, each with its own README
-packages/tackboard-mcp/  optional MCP adapter: a separate package that shells
-                   out to `tack --json`; never a dependency of the core
+packages/tackboard-mcp/  optional MCP adapter: a separate package that invokes
+                   the core CLI (`python -m tackboard --json`, falling back to
+                   `tack`); never a dependency of the core
 ```
 
 `packages/tackboard-mcp` is a member of this repository's `uv` workspace, so

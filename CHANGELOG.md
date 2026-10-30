@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-10-30
+
+### Added
+
+- All seven MCP adapter tools now declare the four annotation hints explicitly —
+  `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` — so a
+  host can warn before invoking one. Read tools are marked read-only and
+  idempotent, `complete` is idempotent, and no tool touches an open world.
+
+### Changed
+
+- This is the first release published to PyPI since 0.7.1: both distributions
+  ship together, `tackboard` 0.8.0 and `tackboard-mcp` 0.8.0. Versions 0.7.2 and
+  0.7.3 were tagged but never reached PyPI, so their entries remain below for the
+  record and their changes are included here.
+- The adapter is versioned in lockstep with the core: `tackboard-mcp` 0.8.0
+  depends on `tackboard>=0.8.0,<0.9`, so one release number identifies a matched
+  pair.
+
 ## [0.7.3] - 2026-10-30
 
 ### Added

@@ -43,7 +43,7 @@ The server reads three environment variables:
 |---|---|
 | `TACKBOARD_DB` | the board file to operate on (same variable the CLI reads) |
 | `TACKBOARD_AGENT` | the actor every mutation is attributed to |
-| `TACK_CMD` | optional command prefix if `tack` is not on `PATH`, e.g. `uv run tack` |
+| `TACK_CMD` | overrides the CLI command prefix; defaults to the installed core module, or `tack` when the core is not importable |
 
 ```bash
 TACKBOARD_DB=~/.local/state/board.sqlite3 TACKBOARD_AGENT=assistant tackboard-mcp
