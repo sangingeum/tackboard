@@ -24,12 +24,16 @@ arguments, instead of a CLI string to compose.
 ## Install
 
 ```bash
-uv pip install ./packages/tackboard-mcp      # or: pip install ./packages/tackboard-mcp
+uv tool install tackboard-mcp      # or: pip install tackboard-mcp
 ```
 
-Requires Python 3.12+ and the `tack` CLI on `PATH` (or `TACK_CMD` set, below).
-The MCP framework is this package's only dependency, and it is declared here —
-never in the core.
+This installs the adapter and pulls `tackboard` with it, so the `tack` CLI
+comes along in the same environment. The MCP framework and the core are this
+package's dependencies, and they are declared here — never in the core.
+
+`TACK_CMD` remains available for unusual environments where the adapter and the
+CLI live in separate environments; set it to the command that invokes `tack`
+(for example `TACK_CMD="uv run tack"`).
 
 ## Configure
 

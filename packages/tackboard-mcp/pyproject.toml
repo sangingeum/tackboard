@@ -5,7 +5,10 @@ description = "Optional MCP adapter for the tackboard CLI — exposes board tool
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-dependencies = ["mcp>=1.2"]
+dependencies = ["tackboard>=0.7.2,<0.8", "mcp>=2.3,<3"]
+
+[tool.uv.sources]
+tackboard = { workspace = true }
 
 [project.scripts]
 tackboard-mcp = "tackboard_mcp.server:main"

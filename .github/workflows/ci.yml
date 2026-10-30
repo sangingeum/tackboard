@@ -22,13 +22,13 @@ jobs:
           version: 0.12.5
 
       - name: Sync dependencies (frozen)
-        run: uv sync --frozen
+        run: uv sync --frozen --all-packages
 
       - name: Lint (ruff)
-        run: uvx ruff check src tests
+        run: uvx ruff check src tests packages/tackboard-mcp
 
       - name: Type check (mypy)
-        run: uv run mypy src
+        run: uv run mypy src packages/tackboard-mcp
 
       - name: Test
         run: uv run pytest -q

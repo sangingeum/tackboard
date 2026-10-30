@@ -16,9 +16,11 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +85,21 @@ def _environment(actor: str | None) -> Iterator[None]:
             os.environ["TACKBOARD_AGENT"] = saved
 
 
+def _default_command() -> tuple[str, ...]:
+    """Prefer the installed core module, falling back to the console script.
+
+    The adapter depends on ``tackboard``, so the core is importable from the
+    same environment in the normal case: running ``sys.executable -m tackboard``
+    avoids depending on ``tack`` being on ``PATH``. When the adapter lives in a
+    different environment from the CLI, ``tackboard`` is not importable and the
+    historical ``tack`` lookup remains the fallback. ``TACK_CMD`` still takes
+    first precedence in ``from_environment``.
+    """
+    if find_spec("tackboard") is not None:
+        return (sys.executable, "-m", "tackboard")
+    return ("tack",)
+
+
 @dataclass(frozen=True, slots=True)
 class TackCli:
     """A configured ``tack`` invocation: command prefix, board and actor.
@@ -103,7 +120,7 @@ class TackCli:
     ) -> TackCli:
         """Build from ``TACK_CMD``, ``TACKBOARD_DB`` and ``TACKBOARD_AGENT``."""
         env = os.environ if environ is None else environ
-        command = tuple(env.get("TACK_CMD", "").split()) or ("tack",)
+        command = tuple(env.get("TACK_CMD", "").split()) or _default_command()
         db_text = env.get("TACKBOARD_DB")
         return cls(
             command=command,

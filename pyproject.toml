@@ -1,6 +1,6 @@
 [project]
 name = "tackboard"
-version = "0.7.2"
+version = "0.7.3"
 description = "Project-scoped task board for coordinating multiple AI agents: CLI-first, SQLite-backed, with a read-only board and dependency-DAG view"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -44,12 +44,6 @@ no_implicit_optional = true
 disallow_untyped_defs = true
 check_untyped_defs = true
 
-[[tool.mypy.overrides]]
-# The optional MCP framework belongs to the adapter package's metadata, so the
-# core checkout does not install it. Its imports are typed by that package.
-module = ["mcp", "mcp.*"]
-ignore_missing_imports = true
-
 [tool.ruff]
 line-length = 96
 
@@ -75,6 +69,9 @@ show_missing = true
 
 [tool.uv]
 package = true
+
+[tool.uv.workspace]
+members = ["packages/tackboard-mcp"]
 
 [build-system]
 requires = ["uv_build>=0.7,<0.13"]

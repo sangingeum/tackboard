@@ -166,7 +166,18 @@ def test_from_environment_reads_the_documented_variables(tmp_path: Path) -> None
     assert cli.db == tmp_path / "b.sqlite3"
 
 
-def test_the_default_command_is_the_console_script() -> None:
+def test_the_default_command_prefers_the_installed_module() -> None:
+    # The adapter depends on ``tackboard``, so in a normal install the core is
+    # importable and the module form avoids relying on ``tack`` being on PATH.
+    assert TackCli.from_environment({}).command == (sys.executable, "-m", "tackboard")
+
+
+def test_the_default_command_falls_back_to_the_console_script(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An adapter installed into a different environment than the CLI cannot
+    # import ``tackboard``; the historical ``tack`` lookup is the fallback.
+    monkeypatch.setattr("tackboard_mcp.tools.find_spec", lambda name: None)
     assert TackCli.from_environment({}).command == ("tack",)
 
 
@@ -243,7 +254,8 @@ def test_the_adapter_adds_no_core_dependency() -> None:
     adapter = (root / "packages" / "tackboard-mcp" / "pyproject.toml").read_text(
         encoding="utf-8"
     )
-    assert 'dependencies = ["mcp' in adapter
+    assert 'dependencies = ["tackboard' in adapter
+    assert '"mcp' in adapter
 
 
 def test_running_the_module_without_the_framework_gives_a_clear_error(

@@ -829,9 +829,10 @@ claim, a supervisor loop over the event feed, and planner → workers → review
 Each builds its own temporary board, needs no network, and is executed by the
 test suite.
 
-An optional [MCP adapter](packages/tackboard-mcp/) lives in its own package for
-agent runtimes that call tools instead of assembling shell commands. It is
-outside the core: `tackboard` itself keeps `dependencies = []`.
+An optional [MCP adapter](packages/tackboard-mcp/) is published as its own
+distribution, `tackboard-mcp`, for agent runtimes that call tools instead of
+assembling shell commands. Installing it pulls `tackboard`; it stays outside
+the core, and `tackboard` itself keeps `dependencies = []`.
 
 ## Web view
 

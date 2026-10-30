@@ -52,6 +52,12 @@ packages/tackboard-mcp/  optional MCP adapter: a separate package that shells
                    out to `tack --json`; never a dependency of the core
 ```
 
+`packages/tackboard-mcp` is a member of this repository's `uv` workspace, so
+`uv lock` and `uv sync --all-packages` resolve both distributions together in
+development. The dependency edge runs adapter → core: the adapter declares
+`tackboard` (and `mcp`) in its own metadata, while the core keeps
+`dependencies = []`.
+
 `schemas/` at the repository root is a symlink to `src/tackboard/schemas`, the
 one physical copy: the schemas must live inside the package so `uv_build`
 ships them in the wheel. `contracts.py` reads them, and `tack schema` prints
@@ -69,6 +75,7 @@ HTTP concerns only — routing, Host validation, headers, escaping.
 
 ```bash
 uv sync                                  # create .venv and install (dev group included)
+uv sync --all-packages                   # same, plus the tackboard-mcp adapter
 uv run pytest -q                         # full test suite
 uv run pytest tests/test_claims.py -q    # one module
 uvx ruff check src tests scripts examples packages/tackboard-mcp

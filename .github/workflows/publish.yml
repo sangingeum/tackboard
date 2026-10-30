@@ -21,8 +21,18 @@ jobs:
       - name: Build sdist and wheel
         run: uv build
 
+      - name: Build the MCP adapter sdist and wheel
+        run: uv build packages/tackboard-mcp --out-dir dist
+
       - name: Check distributions
         run: uvx twine check dist/*
+
+      - name: Stage distributions for ordered publishing
+        run: |
+          set -euo pipefail
+          mkdir -p dist/core dist/adapter
+          mv dist/tackboard-*.whl dist/tackboard-*.tar.gz dist/core/
+          mv dist/tackboard_mcp-*.whl dist/tackboard_mcp-*.tar.gz dist/adapter/
 
       - name: Upload distributions
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -43,5 +53,12 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish to PyPI
+      - name: Publish the core to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/core/
+
+      - name: Publish the MCP adapter to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/adapter/
