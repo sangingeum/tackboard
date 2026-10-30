@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
@@ -21,6 +20,7 @@ from .models import PRIORITY_RANK, utcnow_iso
 from .service import (
     _check_priority,
     _label_key,
+    _last_in_progress_actor,
     _project_rows,
     apply_transition,
 )
@@ -276,28 +276,6 @@ def _candidates(
 def _next_sort_key(task: dict[str, Any]) -> tuple[int, str, int]:
     sequence = int(str(task["id"]).split("-", 1)[1])
     return (-PRIORITY_RANK[str(task["priority"])], str(task["created_at"]), sequence)
-
-
-def _last_in_progress_actor(
-    conn: sqlite3.Connection, task_ids: Sequence[str]
-) -> dict[str, str]:
-    """Map each task to the actor of its most recent in_progress transition.
-
-    Read-only and event-derived: no column stores "the author" of a review
-    item. A task never moved to in_progress is absent from the map.
-    """
-    if not task_ids:
-        return {}
-    placeholders = ", ".join("?" for _ in task_ids)
-    rows = conn.execute(
-        f"SELECT task_id, actor FROM events "
-        f"WHERE event_type IN ('task.status_changed', 'task.claimed', 'task.rejected') "
-        f"AND task_id IN ({placeholders}) "
-        "AND json_extract(payload_json, '$.to') = 'in_progress' "
-        "ORDER BY id ASC",
-        list(task_ids),
-    ).fetchall()
-    return {str(row["task_id"]): str(row["actor"]) for row in rows}
 
 
 def next_task(

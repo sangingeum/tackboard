@@ -29,9 +29,8 @@ Then the roles take turns, and the board decides the order:
 - the **reviewer** calls `next --stage review --claim --different-from-author`,
   so it never reviews a task whose most recent `in_progress` entry was its own;
 - rejecting is `reject <id> --reason "..."`. It moves the task back to
-  `in_progress` **claimed by the reviewer**, so the reviewer releases it and the
-  worker re-claims it (`claim` on a lost claim is the documented recovery path),
-  fixes it and resubmits;
+  `in_progress` and hands the claim back to the worker who last worked it, so
+  the worker fixes it and resubmits without a release or a re-claim;
 - accepting is `complete`, which is what makes the next task eligible.
 
 The script asserts the board ends empty of open work — if the example ever

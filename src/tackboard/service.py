@@ -819,14 +819,23 @@ def apply_transition(
     reason: str | None = None,
     event_type: str | None = None,
     payload_extra: Mapping[str, Any] | None = None,
+    claim_actor: str | None = None,
 ) -> dict[str, Any]:
     """The one transition function (spec 6.2, 8.2).
 
     ``mode="status"`` is the ``status``/lifecycle path, ``mode="claim"`` is
     ``claim``/``next --claim``, ``mode="release"`` is ``release``. Every status
     change in the tool flows through here, so the policy lives in one place.
+
+    ``claim_actor`` names who receives a claim the plan acquires; it defaults
+    to ``actor``. ``reject`` uses it to hand the claim back to the agent who
+    last worked the task while the event stays attributed to the rejecting
+    reviewer. The policy checks still run against ``actor``, so a claim held by
+    a third party is refused exactly as before.
     """
     actor = _actor(actor)
+    if claim_actor is not None:
+        claim_actor = _actor(claim_actor)
     if mode not in {"status", "claim", "release"}:
         raise ValidationError(f"Unknown transition mode {mode!r}.")
     forced_reason = _check_force_reason(force, reason)
@@ -877,7 +886,7 @@ def apply_transition(
             completed_at=completed_at,
         )
         if plan.acquire_claim:
-            _insert_claim(conn, task_id, actor)
+            _insert_claim(conn, task_id, claim_actor or actor)
         if plan.clear_claim:
             _clear_claim(conn, task_id)
 
@@ -1554,6 +1563,58 @@ def add_note(
         return {"changed": True, "event": event}
 
 
+def _last_in_progress_actor(
+    conn: sqlite3.Connection, task_ids: Sequence[str]
+) -> dict[str, str]:
+    """Map each task to the actor who most recently moved it into in_progress.
+
+    Read-only and event-derived: no column stores "the author" of a review
+    item. ``task.rejected`` events are excluded even though their payload says
+    ``to: in_progress``: the event's actor is the rejecting reviewer, while the
+    claim is handed back to the agent who last worked the task. Counting a
+    rejection as an in_progress entry would name the reviewer as the author and
+    hand the next rejection back to that reviewer. A task with no recorded
+    in_progress entry is absent from the map.
+    """
+    if not task_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"SELECT task_id, actor FROM events "
+        f"WHERE event_type IN ('task.status_changed', 'task.claimed') "
+        f"AND task_id IN ({placeholders}) "
+        "AND json_extract(payload_json, '$.to') = 'in_progress' "
+        "ORDER BY id ASC",
+        list(task_ids),
+    ).fetchall()
+    return {str(row["task_id"]): str(row["actor"]) for row in rows}
+
+
+def _reject_claimant(conn: sqlite3.Connection, task_id: str) -> str | None:
+    """Who receives the claim when ``reject`` sends a task back to in_progress.
+
+    Order of preference:
+
+    1. The agent who most recently moved the task into ``in_progress`` (see
+       ``_last_in_progress_actor``; prior rejections do not count).
+    2. The agent who created the task, read from its ``task.created`` event.
+       This covers a task whose in_progress entry predates recorded history.
+    3. ``None``: no events at all, which only happens on a board whose history
+       was hand-edited or predates the event log. ``reject`` then keeps the
+       claim with the rejecting agent so an in_progress task is never left
+       unclaimed and ``tack doctor`` stays clean.
+    """
+    claimant = _last_in_progress_actor(conn, [task_id]).get(task_id)
+    if claimant is not None:
+        return claimant
+    row = conn.execute(
+        "SELECT actor FROM events WHERE task_id = ? AND event_type = 'task.created' "
+        "ORDER BY id ASC LIMIT 1",
+        (task_id,),
+    ).fetchone()
+    return str(row["actor"]) if row is not None else None
+
+
 def reject_task(
     conn: sqlite3.Connection,
     task_id: str,
@@ -1567,7 +1628,26 @@ def reject_task(
     A shortcut over the existing ``review -> in_progress`` transition: it adds
     no transition and no policy. ``--reason`` is mandatory and is stored in the
     ``task.rejected`` event payload; it is **not** a forced transition, so the
-    event carries no ``forced`` key.
+    event carries no ``forced`` key. The payload stays exactly
+    ``{from, to, reason}``.
+
+    The transition enters ``in_progress``, which always acquires a claim. That
+    claim goes back to the agent who most recently moved the task into
+    ``in_progress`` — the author the reviewer is sending it back to — rather
+    than to the rejecting reviewer. The event stays attributed to ``actor``;
+    the claim recipient is visible as ``claimed_by`` and in the ``claims``
+    table. Edge cases:
+
+    * Self-rejection: when the last in_progress actor is the rejecting agent,
+      the claim stays with them (no-op handback).
+    * A claim already held by a third party on the review task: still refused
+      with a claim conflict, exactly as before. ``reject`` is non-forced, so it
+      never takes a claim from another agent; release it first.
+    * ``if_version`` mismatch: raises ``StaleVersionError`` before any change,
+      so status, claim and history are untouched.
+    * No derivation possible: fall back to the creator, then to the rejecting
+      agent (see ``_reject_claimant``), so the invariant that an in_progress
+      task always carries a claim holds.
     """
     actor = _actor(actor)
     clean_reason = _check_reject_reason(reason)
@@ -1578,6 +1658,7 @@ def reject_task(
                 f"Cannot reject {task_id}: its status is {task.status}; "
                 "reject applies only to a task in review."
             )
+        claimant = _reject_claimant(conn, task_id)
         return apply_transition(
             conn,
             task_id,
@@ -1588,6 +1669,7 @@ def reject_task(
             force=False,
             event_type="task.rejected",
             payload_extra={"reason": clean_reason},
+            claim_actor=claimant,
         )
 
 

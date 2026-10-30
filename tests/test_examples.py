@@ -75,7 +75,7 @@ def test_planner_workers_reviewer_runs_the_rejection_round() -> None:
     out = result.stdout
     assert "planner applied 3 tasks" in out
     assert "reviewer rejected" in out
-    assert "worker re-claimed" in out
+    assert "worker fixed" in out
     assert "'done': 3" in out
 
 

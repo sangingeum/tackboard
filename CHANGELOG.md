@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `tack reject` now hands the task's claim back to the agent who most recently
+  moved it into `in_progress`, instead of claiming the returned work for the
+  rejecting reviewer. Rejecting your own work leaves the claim with you, and a
+  third-party claim is still refused until it is released. The `task.rejected`
+  payload is unchanged: `{from, to, reason}`.
+
 ## [0.8.0] - 2026-10-30
 
 ### Added

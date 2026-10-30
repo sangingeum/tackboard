@@ -512,7 +512,7 @@ tack reject T-000123 --reason "tests do not cover the retry path" --agent qa
 
 `reject` sends a task in `review` back to `in_progress`. It is a shortcut over
 that existing transition, not a new one: it goes through the same transition
-function, adds no transition to the table, and changes no policy. `--reason` is
+function, adds no transition to the table, and changes no transition rule. `--reason` is
 **mandatory** and is stored in the event payload; it must not be empty and is
 capped at 1024 characters.
 
@@ -521,8 +521,12 @@ A reject is **not** a forced transition. It records one canonical
 reason}`, with no `forced` key, and `--force` is not accepted on `reject`.
 Rejecting a task that is not in `review` is a validation error (exit 4).
 `reject` inherits the claim policy: rejecting a task claimed by **another**
-agent is refused with a claim conflict, so the reviewer must take over the
-claim or `release --force --reason` it first (there is no supervisor override).
+agent is refused with a claim conflict, so the reviewer must `release --force
+--reason` it first (there is no supervisor override). Once the reject runs, the
+claim goes back to the agent who most recently moved the task into
+`in_progress` — the author — rather than to the rejecting agent. The event is
+still attributed to the reviewer; the task's `claimed_by` names the author.
+Rejecting your own work leaves the claim with you.
 
 The `rejections` count and `last_rejection_reason` are derived from those
 events on every read — nothing is stored, so they cannot drift from history.
@@ -543,7 +547,10 @@ reviewer pool gets someone else's work. It is valid only together with
 runs inside the same `BEGIN IMMEDIATE` select-and-claim transaction as the
 claim, so filtering and claiming stay atomic. The author is derived from
 history — there is no stored author column. Without the flag, selection is
-unchanged.
+unchanged. A `task.rejected` event does not count as an `in_progress` entry for
+this derivation: its actor is the reviewer, while the claim it creates belongs
+to the author. After a rejection the derived author therefore remains the agent
+who did the work.
 
 ## Dependencies
 

@@ -14,8 +14,8 @@ The shape:
 3. **Reviewer** takes review work with ``next --stage review --claim
    --different-from-author``, so it never reviews its own in-progress work.
 4. The reviewer rejects one task with a reason. Rejection moves it back to
-   ``in_progress`` *claimed by the reviewer*, so the reviewer releases it and
-   the worker re-claims it, fixes it, and sends it back to review.
+   ``in_progress`` and hands the claim to the worker who did the work, so the
+   worker just fixes it and sends it back to review — no release or re-claim.
 5. The reviewer accepts the rest, which is what unblocks the next task — the
    workers' loop stops when nothing is eligible.
 
@@ -84,9 +84,6 @@ def review_once(db: Path, reviewer: str, *, reject_first: bool) -> str | None:
     if reject_first:
         tack(db, reviewer, "reject", reviewable["id"], "--reason", "missing tests")
         print(f"  {reviewer} rejected {reviewable['id']}: missing tests")
-        # Rejection claims the task for the reviewer; hand it back.
-        tack(db, reviewer, "release", reviewable["id"])
-        print(f"  {reviewer} released {reviewable['id']} back to the worker")
     else:
         tack(db, reviewer, "complete", reviewable["id"])
         print(f"  {reviewer} accepted {reviewable['id']}")
@@ -111,11 +108,10 @@ def main() -> int:
                 reviewed = review_once(db, "reviewer", reject_first=True)
                 if reviewed is not None:
                     rejected = True
-                    # The worker picks the rejected task back up and resubmits it.
-                    tack(db, "worker", "claim", reviewed)
+                    # Rejection handed the claim to the worker; fix and resubmit.
                     tack(db, "worker", "note", reviewed, "added the missing tests")
                     tack(db, "worker", "status", reviewed, "review")
-                    print(f"  worker re-claimed {reviewed} and resubmitted it")
+                    print(f"  worker fixed {reviewed} and resubmitted it")
                     review_once(db, "reviewer", reject_first=False)
 
             while review_once(db, "reviewer", reject_first=False) is not None:

@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from tackboard import claims, cli, history, schema, service
-from tackboard.errors import ClaimConflictError, ValidationError
+from tackboard.errors import ClaimConflictError, StaleVersionError, ValidationError
 from tackboard.models import MAX_REASON_LENGTH
 
 DEFAULT_ACTOR = "dev"
@@ -71,6 +71,7 @@ def test_reject_returns_review_to_in_progress_with_one_event(
 
     rejected = result["task"]
     assert rejected["status"] == "in_progress"
+    assert rejected["claimed_by"] == DEFAULT_ACTOR
     assert rejected["rejections"] == 1
     assert rejected["last_rejection_reason"] == "missing tests"
 
@@ -183,9 +184,108 @@ def test_reject_under_a_foreign_claim_is_refused_until_the_claim_is_released(
 
     rejected = result["task"]
     assert rejected["status"] == "in_progress"
-    assert rejected["claimed_by"] == reviewer
+    assert rejected["claimed_by"] == author
     assert rejected["rejections"] == 1
     assert rejected["last_rejection_reason"] == "needs work"
+
+
+# --------------------------------------------------------------------------- #
+# handing the claim back to the author
+# --------------------------------------------------------------------------- #
+
+
+def test_reject_hands_the_claim_back_to_the_last_in_progress_actor(
+    conn: Any, make_task: Callable[..., dict[str, Any]]
+) -> None:
+    """The author who last worked the task gets the claim back, not the reviewer."""
+    author = "dev"
+    reviewer = "qa"
+    task = make_task(title="hand back", status="ready", actor=author)
+    claims.claim(conn, task["id"], actor=author)
+    service.set_status(conn, task["id"], "review", actor=author)
+    # Moving to review releases the work claim; the reviewer claims it next.
+    claims.claim(conn, task["id"], actor=reviewer)
+
+    result = service.reject_task(
+        conn, task["id"], actor=reviewer, reason="tests missing"
+    )
+
+    rejected = result["task"]
+    assert rejected["status"] == "in_progress"
+    assert rejected["claimed_by"] == author
+    event = history.list_events(conn, task["id"])["items"][0]
+    assert event["event_type"] == "task.rejected"
+    assert event["actor"] == reviewer
+    assert event["payload"] == {
+        "from": "review",
+        "to": "in_progress",
+        "reason": "tests missing",
+    }
+
+
+def test_a_second_rejection_still_hands_the_claim_to_the_author(
+    conn: Any, make_task: Callable[..., dict[str, Any]]
+) -> None:
+    """A prior rejection event must not name the reviewer as the author."""
+    author = "dev"
+    reviewer = "qa"
+    task = make_task(title="repeat", status="ready", actor=author)
+    claims.claim(conn, task["id"], actor=author)
+    service.set_status(conn, task["id"], "review", actor=author)
+
+    first = service.reject_task(conn, task["id"], actor=reviewer, reason="first")
+    assert first["task"]["claimed_by"] == author
+
+    service.set_status(conn, task["id"], "review", actor=author)
+    second = service.reject_task(conn, task["id"], actor=reviewer, reason="second")
+    assert second["task"]["claimed_by"] == author
+
+
+def test_reject_falls_back_to_the_creator_without_an_in_progress_entry(
+    conn: Any, make_task: Callable[..., dict[str, Any]]
+) -> None:
+    """A review row whose in_progress entry is missing from history."""
+    task = make_task(title="legacy", status="ready", actor="alice")
+    conn.execute("UPDATE tasks SET status = 'review' WHERE id = ?", (task["id"],))
+
+    result = service.reject_task(conn, task["id"], actor="qa", reason="legacy")
+
+    assert result["task"]["status"] == "in_progress"
+    assert result["task"]["claimed_by"] == "alice"
+
+
+def test_reject_keeps_the_claim_with_the_reviewer_when_history_is_empty(
+    conn: Any,
+) -> None:
+    """Last-resort fallback: an in_progress task is never left unclaimed."""
+    now = "2026-10-30T00:00:00Z"
+    conn.execute(
+        "INSERT INTO tasks(id, sequence, title, description, status, priority, "
+        "created_at, updated_at, version) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("T-000099", 99, "hand edited", "", "review", "normal", now, now, 1),
+    )
+
+    result = service.reject_task(conn, "T-000099", actor="qa", reason="legacy")
+
+    assert result["task"]["status"] == "in_progress"
+    assert result["task"]["claimed_by"] == "qa"
+
+
+def test_reject_if_version_conflict_changes_nothing(
+    conn: Any, make_task: Callable[..., dict[str, Any]]
+) -> None:
+    task = _review_task(conn, make_task)
+    version = service.get_task(conn, task["id"])["version"]
+
+    with pytest.raises(StaleVersionError):
+        service.reject_task(
+            conn, task["id"], actor="qa", reason="bad", if_version=version - 1
+        )
+
+    still = service.get_task(conn, task["id"])
+    assert still["status"] == "review"
+    assert still["claimed_by"] is None
+    assert still["rejections"] == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -282,3 +382,63 @@ def test_reject_on_a_non_review_task_is_exit_four(
     error = _document(out)["error"]
     assert error["code"] == "validation"
     assert "review" in error["message"]
+
+
+def test_the_cli_reject_hands_the_claim_back_to_the_author(
+    run: RunCli, db_file: Path
+) -> None:
+    """The plan's sequence: next --claim dev, review dev, reject qa, dev resumes."""
+    code, out, err = run(
+        "create", "acceptance", "--status", "ready", "--agent", "dev",
+        "--db", str(db_file), "--json",
+    )
+    assert code == 0, err
+    task_id = str(_document(out)["task"]["id"])
+
+    code, out, err = run(
+        "next", "--claim", "--agent", "dev", "--db", str(db_file), "--json"
+    )
+    assert code == 0, err
+    assert _document(out)["task"]["id"] == task_id
+
+    code, _, err = run(
+        "status", task_id, "review", "--agent", "dev",
+        "--db", str(db_file), "--json",
+    )
+    assert code == 0, err
+
+    code, out, err = run(
+        "reject", task_id, "--reason", "bad", "--agent", "qa",
+        "--db", str(db_file), "--json",
+    )
+    assert code == 0, err
+    task = _document(out)["task"]
+    assert task["status"] == "in_progress"
+    assert task["claimed_by"] == "dev"
+
+    # The author resumes without a forced claim.
+    code, _, err = run(
+        "note", task_id, "addressed the review", "--agent", "dev",
+        "--db", str(db_file), "--json",
+    )
+    assert code == 0, err
+    code, out, err = run(
+        "complete", task_id, "--agent", "dev", "--db", str(db_file), "--json"
+    )
+    assert code == 0, err
+    assert _document(out)["task"]["status"] == "done"
+
+
+def test_doctor_is_clean_after_a_reject(run: RunCli, db_file: Path) -> None:
+    task_id = _make_review_task(run, db_file)
+    code, _, err = run(
+        "reject", task_id, "--reason", "bad", "--agent", "qa",
+        "--db", str(db_file), "--json",
+    )
+    assert code == 0, err
+
+    report = schema.doctor(db_file)
+    codes = {item["code"] for item in report["warnings"]}
+    assert "in_progress_without_claim" not in codes
+    assert "claim_on_inactive_task" not in codes
+    assert report["ok"] is True
