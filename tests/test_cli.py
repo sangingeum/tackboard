@@ -330,7 +330,7 @@ def test_document_shapes_for_next_doctor_and_show(run: RunCli, db_file: Path) ->
     code, out, err = run("next", "--json", "--agent", DEFAULT_ACTOR, "--db", str(db_file))
     assert code == 0, err
     picked = _json_document(out)
-    assert set(picked) == {"schema_version", "tasks"}
+    assert set(picked) == {"schema_version", "tasks", "stale_claims"}
     assert [task["id"] for task in picked["tasks"]] == ["T-000001"]
 
     code, out, err = run(
@@ -740,7 +740,7 @@ def test_next_reports_an_empty_result_with_exit_zero(run: RunCli, db_file: Path)
 def test_next_claim_pins_its_single_task_document_key_set(
     run: RunCli, db_file: Path
 ) -> None:
-    """`next --claim` is `{schema_version, task}`, not the plain `next` container.
+    """`next --claim` is `{schema_version, task, stale_claims}`, not the plain container.
 
     Pinned for both the empty and the populated case: plain `next` carries
     `tasks`, and `next --claim` never does.
@@ -748,7 +748,7 @@ def test_next_claim_pins_its_single_task_document_key_set(
     code, out, _ = run("next", "--claim", "--json", "--agent", "dev", "--db", str(db_file))
     assert code == 0
     empty = _json_document(out)
-    assert set(empty) == {"schema_version", "task"}
+    assert set(empty) == {"schema_version", "task", "stale_claims"}
     assert empty["task"] is None
 
     _create(run, db_file, "ready work", "--status", "ready")
@@ -756,7 +756,7 @@ def test_next_claim_pins_its_single_task_document_key_set(
     code, out, err = run("next", "--claim", "--json", "--agent", "dev", "--db", str(db_file))
     assert code == 0, err
     populated = _json_document(out)
-    assert set(populated) == {"schema_version", "task"}
+    assert set(populated) == {"schema_version", "task", "stale_claims"}
     assert populated["task"]["status"] == "in_progress"
     assert populated["task"]["claimed_by"] == "dev"
 
@@ -789,7 +789,7 @@ def test_next_reports_every_eligible_task_in_selection_order(
 
     assert code == 0, err
     claimed = _json_document(out)
-    assert set(claimed) == {"schema_version", "task"}
+    assert set(claimed) == {"schema_version", "task", "stale_claims"}
     assert claimed["task"]["title"] == "urgent"
 
 
@@ -901,7 +901,7 @@ def test_next_assignee_filters_by_route(run: RunCli, db_file: Path) -> None:
     )
     assert code == 0, err
     document = _json_document(out)
-    assert set(document) == {"schema_version", "tasks"}
+    assert set(document) == {"schema_version", "tasks", "stale_claims"}
     assert [task["title"] for task in document["tasks"]] == ["routed to alice"]
 
     code, out, err = run(
@@ -953,7 +953,7 @@ def test_next_assignee_claim_records_holder_and_keeps_route(
     )
     assert code == 0, err
     claimed = _json_document(out)
-    assert set(claimed) == {"schema_version", "task"}
+    assert set(claimed) == {"schema_version", "task", "stale_claims"}
     assert claimed["task"]["id"] == task["id"]
     assert claimed["task"]["assignee"] == "alice"
     assert claimed["task"]["claimed_by"] == "bob"

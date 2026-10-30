@@ -8,6 +8,11 @@
     "schema_version": {
       "const": 1
     },
+    "stale_claims": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "active claims at or past the configured stale threshold"
+    },
     "task": {
       "anyOf": [
         {
@@ -21,7 +26,8 @@
   },
   "required": [
     "schema_version",
-    "task"
+    "task",
+    "stale_claims"
   ],
   "additionalProperties": false
 }

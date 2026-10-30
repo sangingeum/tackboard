@@ -77,6 +77,19 @@ def _age_seconds(claimed_at: str, now: str | None = None) -> int:
     return max(0, int(elapsed.total_seconds()))
 
 
+def stale_claim_count(conn: sqlite3.Connection) -> int:
+    """How many active claims are at least the configured threshold old.
+
+    A count, not a list: it is a hint that recovery needs attention, small
+    enough to ride along in every ``next`` document. ``claims --stale`` remains
+    the command that names them.
+    """
+    threshold = stale_claim_seconds()
+    now = utcnow_iso()
+    rows = conn.execute("SELECT claimed_at FROM claims").fetchall()
+    return sum(1 for row in rows if _age_seconds(str(row["claimed_at"]), now) >= threshold)
+
+
 def active_claim(conn: sqlite3.Connection, task_id: str) -> dict[str, Any] | None:
     """Return the active claim on a task, or ``None``."""
     row = conn.execute("SELECT * FROM claims WHERE task_id = ?", (task_id,)).fetchone()
@@ -341,7 +354,7 @@ def next_task(
         with write_transaction(conn):
             candidates = _candidates(conn, **arguments)
             if not candidates:
-                return {"task": None, "tasks": []}
+                return {"task": None, "tasks": [], "stale_claims": stale_claim_count(conn)}
             result = apply_transition(
                 conn,
                 str(candidates[0]["id"]),
@@ -353,11 +366,20 @@ def next_task(
             )
             claimed_id = str(result["task"]["id"])
             candidates = [task for task in candidates if task["id"] != claimed_id]
-            return {"task": result["task"], "tasks": candidates}
+            return {
+                "task": result["task"],
+                "tasks": candidates,
+                "stale_claims": stale_claim_count(conn),
+            }
 
     with read_transaction(conn):
         candidates = _candidates(conn, **arguments)
-    return {"task": candidates[0] if candidates else None, "tasks": candidates}
+        stale_claims = stale_claim_count(conn)
+    return {
+        "task": candidates[0] if candidates else None,
+        "tasks": candidates,
+        "stale_claims": stale_claims,
+    }
 
 
 __all__ = [
@@ -369,5 +391,6 @@ __all__ = [
     "parse_duration",
     "recover",
     "release",
+    "stale_claim_count",
     "stale_claim_seconds",
 ]

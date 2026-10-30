@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `next` and `next --claim` documents carry an additive `stale_claims` count,
+  declared in `schemas/next.json` and `schemas/next_claim.json`, so the normal
+  work loop surfaces claims that need recovery without a separate command.
+
 ### Changed
 
 - `tack reject` now hands the task's claim back to the agent who most recently

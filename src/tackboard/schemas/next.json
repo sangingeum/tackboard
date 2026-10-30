@@ -13,11 +13,17 @@
       "items": {
         "$ref": "urn:tackboard:schema:task#/$defs/task"
       }
+    },
+    "stale_claims": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "active claims at or past the configured stale threshold"
     }
   },
   "required": [
     "schema_version",
-    "tasks"
+    "tasks",
+    "stale_claims"
   ],
   "additionalProperties": false
 }

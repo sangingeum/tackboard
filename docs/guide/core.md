@@ -71,3 +71,5 @@ Stale claims
   tack recover T-000001 --reason TEXT  release a dead claim; audited
   The default threshold is the optional [tackboard] stale_claim_after key in
   .tackboard.toml (for example "45m"); --older-than overrides it per call.
+  Every next document carries stale_claims; when it is above zero, run
+  tack claims --stale and decide before starting new work.

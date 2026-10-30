@@ -1221,10 +1221,20 @@ def _run_next(ctx: _Context, args: argparse.Namespace) -> int:
 
     if ctx.json:
         if args.claim:
-            _write_json({"schema_version": JSON_SCHEMA_VERSION, "task": result["task"]})
+            _write_json(
+                {
+                    "schema_version": JSON_SCHEMA_VERSION,
+                    "task": result["task"],
+                    "stale_claims": result["stale_claims"],
+                }
+            )
         else:
             _write_json(
-                {"schema_version": JSON_SCHEMA_VERSION, "tasks": result["tasks"]}
+                {
+                    "schema_version": JSON_SCHEMA_VERSION,
+                    "tasks": result["tasks"],
+                    "stale_claims": result["stale_claims"],
+                }
             )
         return 0
 

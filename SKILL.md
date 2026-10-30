@@ -139,6 +139,9 @@ This is the whole discipline; the command reference below exists to support it.
 6. **If you cannot finish.** `tack release <id> --json` (or leave the claim
    with a note, if you intend to continue in the same session). A claim held by
    a dead agent is the one thing that stalls a board — see best practice 14.
+7. **Check for stale claims.** Every `next` document carries a `stale_claims`
+   count. When it is above zero, run `tack claims --stale` and decide whether
+   to recover a dead agent's claim before trusting the board's readiness.
 
 <!-- BEGIN GENERATED: commands -->
 ## Command reference
@@ -470,6 +473,9 @@ a reduced subset of it
   the same task projection the candidates use (so without `--full` it omits
   `description`), with `task` equal to `null` when nothing is eligible. It has
   no `tasks` key; read `document["task"]`.
+  Both forms also carry `stale_claims`: the number of active claims at or past
+  the configured stale threshold. It is a hint, not an error; run
+  `tack claims --stale` when it is non-zero.
 - **`init`, `migrate` and `backup` carry the operation's own `ok`, not
   `doctor`'s.** Each emits `{schema_version, ok, database, operation, ...}`.
   Here `ok: true` means *the operation succeeded* — the board was created,

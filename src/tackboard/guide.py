@@ -81,7 +81,9 @@ Stale claims
   tack claims --stale                  only claims older than 2h by default
   tack recover T-000001 --reason TEXT  release a dead claim; audited
   The default threshold is the optional [tackboard] stale_claim_after key in
-  .tackboard.toml (for example "45m"); --older-than overrides it per call."""
+  .tackboard.toml (for example "45m"); --older-than overrides it per call.
+  Every next document carries stale_claims; when it is above zero, run
+  tack claims --stale and decide before starting new work."""
 
 TOPICS: dict[str, str] = {
     'commands': r'''Global options (`--db`, `--json`, `--quiet`, `--verbose`, `--version`,
@@ -296,6 +298,9 @@ a reduced subset of it
   the same task projection the candidates use (so without `--full` it omits
   `description`), with `task` equal to `null` when nothing is eligible. It has
   no `tasks` key; read `document["task"]`.
+  Both forms also carry `stale_claims`: the number of active claims at or past
+  the configured stale threshold. It is a hint, not an error; run
+  `tack claims --stale` when it is non-zero.
 - **`init`, `migrate` and `backup` carry the operation's own `ok`, not
   `doctor`'s.** Each emits `{schema_version, ok, database, operation, ...}`.
   Here `ok: true` means *the operation succeeded* — the board was created,

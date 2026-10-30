@@ -906,3 +906,22 @@ def test_recover_clears_a_lost_claim_on_in_progress_work(
     event = history.list_events(conn, task["id"])["items"][0]
     assert event["payload"]["forced"] is True
     assert event["payload"]["reason"] == "claim row was lost"
+
+
+def test_next_documents_carry_a_stale_claim_count(
+    conn: sqlite3.Connection, make_task: MakeTask
+) -> None:
+    task = make_task(title="Held", status="ready")
+    assert claims.next_task(conn, actor="dev")["stale_claims"] == 0
+
+    claims.next_task(conn, actor="dev", claim=True)
+    conn.execute(
+        "UPDATE claims SET claimed_at = ? WHERE task_id = ?",
+        ("2020-01-01T00:00:00Z", task["id"]),
+    )
+    conn.commit()
+
+    plain = claims.next_task(conn, actor="qa")
+    assert plain["stale_claims"] == 1
+    assert plain["task"] is None
+    assert claims.next_task(conn, actor="qa", claim=True)["stale_claims"] == 1
