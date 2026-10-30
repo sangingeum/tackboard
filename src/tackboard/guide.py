@@ -73,7 +73,8 @@ Status and readiness
   ready, every prerequisite is done, it has no explicit blocked reason, and
   nobody holds a claim. --force --reason TEXT is allowed only for the audited
   cases — taking over a claim, an unfinished prerequisite, adding one to active
-  work, recovering a lost claim — exhaustive, not a general bypass.
+  work, recovering a lost claim, replacing a memo without `--if-rev` —
+  exhaustive, not a general bypass.
 
 Stale claims
   tack claims                          active claims, each with its age
@@ -410,21 +411,26 @@ URL, and `path` a repository-relative path. Field limits and the per-kind
 grammar are in `tack guide --topic documents`.''',
     'reject': r'''**Rejections are derived, never stored.** `tack reject <id> --reason TEXT`
 moves a task from `review` back to `in_progress` through the ordinary
-transition function and appends one `task.rejected` event whose payload is
-`{from:"review", to:"in_progress", reason}`. It is **not** a forced
-transition — there is no `forced` key and `--force` is not accepted. The
-reason is mandatory. `rejections` (integer, `0` when never rejected) and
-`last_rejection_reason` (string or `null`) are counted from those events on
-every read, so they cost no column and cannot drift from history.
+transition function. It is a shortcut over that existing transition, not a new
+one: it goes through the same transition function, adds no transition to the
+table, and changes no transition rule. It appends one `task.rejected` event
+whose payload is `{from:"review", to:"in_progress", reason}`. It is **not** a
+forced transition — there is no `forced` key and `--force` is not accepted.
+The reason is mandatory, must not be empty, and is capped at 1024 characters.
+Rejecting a task that is not in `review` is a validation error (exit 4).
+`rejections` (integer, `0` when never rejected) and `last_rejection_reason`
+(string or `null`) are counted from those events on every read, so they cost
+no column and cannot drift from history.
 
 Rejecting moves the task to `in_progress`, which always carries a claim. The
 claim is handed back to the agent who most recently moved the task into
 `in_progress` — the author — not to the rejecting reviewer; the event stays
 attributed to the reviewer. Rejecting your own work leaves the claim with you.
 A review task already claimed by a third party is still refused with a claim
-conflict, so release it first. `task.rejected` events are not counted as
-`in_progress` entries when deriving the author, so a second rejection still
-goes back to the same author.
+conflict, so the reviewer must take over the claim or `release --force --reason`
+it first (there is no supervisor override). `task.rejected` events are not
+counted as `in_progress` entries when deriving the author, so a second
+rejection still goes back to the same author.
 
 **Reviewer separation is opt-in.** `next --stage review --claim
 --different-from-author` drops candidates whose most recent `in_progress`
@@ -507,7 +513,7 @@ it expects.''',
 
 - taking over or releasing another agent's claim (`claim --force`,
   `release --force`);
-- starting work whose only unfinished blockers are cancelled prerequisites
+- starting work whose only blockers are unfinished or cancelled prerequisites
   (entering `in_progress`);
 - adding a prerequisite that is unfinished to a task already `in_progress` or
   `review` (`depend add --force`);
@@ -652,9 +658,10 @@ both, `tasks` is optional), `deps`, `graph`, `history`, `history_since`,
 11. **`--force` is an audited, exhaustive list, not a general bypass.** It
     requires `--reason`, it is recorded as an event, and it is allowed only for
     the enumerated cases (taking over or releasing another agent's claim,
-    starting work whose only blocker is a cancelled/unfinished prerequisite,
+    starting work whose only blocker is an unfinished or cancelled prerequisite,
     adding an unfinished prerequisite to a task already in progress or review,
-    recovering an `in_progress` task with no claim).
+    recovering an `in_progress` task with no claim, replacing, restoring or
+    clearing a non-empty memo without `--if-rev`).
     If you reach for `--force` and your case is not on that list, the answer is
     a different command, not a bigger hammer.
 12. **Use `blocked_reason` for blockers that are not tasks** (waiting on a

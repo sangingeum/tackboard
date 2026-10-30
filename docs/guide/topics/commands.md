@@ -1,44 +1,7 @@
 Global options (`--db`, `--json`, `--quiet`, `--verbose`, `--version`,
 `--help`) work **before or after** the subcommand.
 
-```text
-tack init [--db PATH]
-tack migrate | tack backup PATH | tack doctor [--json]
-tack schema [DOCUMENT] [--json]
-tack board|list [--status S] [--assignee A] [--label L] [--priority P]
-                [--blocked] [--eligible|--ready] [--limit N]
-                [--sort FIELD] [--reverse] [--full] [--brief] [--count]
-tack show TASK_ID
-tack create TITLE [--description TEXT | --description-file PATH]
-                  [--priority low|normal|high|urgent] [--assignee A]
-                  [--label L ...] [--depends-on TASK_ID ...] [--status STATUS]
-tack update TASK_ID [--title T] [--description TEXT] [--priority P]
-                    [--assignee A|--assignee ""] [--label L|--add-label L|--remove-label L]
-                    [--blocked-reason TEXT|--clear-blocked-reason] [--if-version N]
-tack status TASK_ID STATUS [--force --reason TEXT] [--if-version N]
-tack complete|reopen|cancel|restore TASK_ID [--force --reason TEXT] [--if-version N]
-tack note TASK_ID TEXT [--ref KIND:VALUE ...]
-tack reject TASK_ID --reason TEXT [--if-version N]
-tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
-           | --history | --diff [N [N]] | --restore N | --clear]
-          [--if-rev N] [--reason TEXT] [--force] [--dry-run] [--limit N]
-tack claim TASK_ID [--force --reason TEXT] [--if-version N]
-tack release TASK_ID [--force --reason TEXT] [--if-version N]
-tack claims [--agent A] [--older-than 2h] [--stale]
-tack agents [--json]
-tack recover TASK_ID --reason TEXT [--if-version N]
-tack next [--agent A] [--claim] [--stage work|review] [--label L]
-          [--min-priority P] [--assignee A|--all-assignees] [--full]
-          [--different-from-author] [--force --reason TEXT]
-tack depend add TASK_ID --on PREREQUISITE_ID [--force --reason TEXT] [--if-version N]
-tack depend remove TASK_ID --on PREREQUISITE_ID [--if-version N]
-tack deps TASK_ID | tack dependents TASK_ID
-tack graph [TASK_ID] [--format json|dot]
-tack history [TASK_ID] [--limit N] [--since EVENT_ID] [--follow]
-tack plan apply FILE|- [--dry-run] [--agent A]
-tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
-tack guide
-```
+<!-- COMMAND INVENTORY -->
 
 Every task or memo mutation takes `--agent` or falls back to `TACKBOARD_AGENT`
 (the explicit option wins). Read-only commands (`board`, `list`, `show`,

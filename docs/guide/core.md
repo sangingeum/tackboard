@@ -62,7 +62,8 @@ Status and readiness
   ready, every prerequisite is done, it has no explicit blocked reason, and
   nobody holds a claim. --force --reason TEXT is allowed only for the audited
   cases — taking over a claim, an unfinished prerequisite, adding one to active
-  work, recovering a lost claim — exhaustive, not a general bypass.
+  work, recovering a lost claim, replacing a memo without `--if-rev` —
+  exhaustive, not a general bypass.
 
 Stale claims
   tack claims                          active claims, each with its age

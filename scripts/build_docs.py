@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Generate ``src/tackboard/guide.py`` from the ``docs/guide`` sources.
+"""Generate ``src/tackboard/guide.py`` and the generated regions in ``README.md``
+and ``SKILL.md`` from the ``docs/guide`` sources.
 
 ``docs/guide/`` is the source of truth: ``manifest.toml`` lists the core text
 and the ordered topics, while ``core.md`` and ``topics/<name>.md`` hold the
-prose.  This script renders the Python constant module byte-for-byte, so the
-shipped CLI and the documents cannot drift apart.
+prose.  This script renders the Python constant module byte-for-byte and
+replaces the text between the ``BEGIN GENERATED`` / ``END GENERATED`` marker
+pairs in the two Markdown documents, so the shipped CLI and the documents
+cannot drift apart.
+
+The command inventory is shared: ``docs/guide/topics/commands.inventory.md``
+feeds both the guide's command topic (injected at its marker) and the
+``commands`` region in ``README.md``.
 
 Usage::
 
-    uv run python scripts/build_docs.py           # rewrite src/tackboard/guide.py
-    uv run python scripts/build_docs.py --check   # exit 1 when it is stale
+    uv run python scripts/build_docs.py           # rewrite all three targets
+    uv run python scripts/build_docs.py --check   # exit 1 when any target is stale
 
 Editing guide.py by hand is pointless: the next run overwrites it.
 """
@@ -18,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -25,7 +33,29 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = REPO_ROOT / "docs" / "guide"
 MANIFEST_PATH = DOCS_DIR / "manifest.toml"
-TARGET_PATH = REPO_ROOT / "src" / "tackboard" / "guide.py"
+GUIDE_PATH = REPO_ROOT / "src" / "tackboard" / "guide.py"
+README_PATH = REPO_ROOT / "README.md"
+SKILL_PATH = REPO_ROOT / "SKILL.md"
+
+BEGIN_RE = re.compile(r"^<!-- BEGIN GENERATED: (?P<region>[A-Za-z0-9_.-]+) -->$")
+END_RE = re.compile(r"^<!-- END GENERATED: (?P<region>[A-Za-z0-9_.-]+) -->$")
+
+#: The headings that make up a multi-section topic.  ``documents`` is the only
+#: topic with more than one section, and its source file is the concatenation
+#: of the section bodies in this order.
+DOCUMENTS_HEADINGS = (
+    "## Field limits",
+    "## The JSON contract",
+    "## Document shapes",
+    "## The `counts` object",
+)
+DOCUMENTS_SPLITS = (
+    "Every document carries",
+    "The top-level keys",
+    "`board --json` and `list --json` carry a `counts` object",
+)
+
+INVENTORY_MARKER = "<!-- COMMAND INVENTORY -->"
 
 HEADER = '''\
 """The tiered guide text: one always-loaded core, and reference topics.
@@ -46,6 +76,136 @@ def _read_manifest(path: Path) -> dict:
         return tomllib.load(handle)
 
 
+def _documents_body(docs_dir: Path) -> str:
+    """Rejoin the four ``documents`` sections with their headings."""
+    text = (docs_dir / "topics" / "documents.md").read_text(encoding="utf-8").rstrip("\n")
+    lines = text.splitlines()
+    starts = [0]
+    for marker in DOCUMENTS_SPLITS:
+        try:
+            starts.append(next(i for i, line in enumerate(lines) if marker in line))
+        except StopIteration as exc:
+            raise SystemExit(f"topics/documents.md is missing the {marker!r} section") from exc
+    starts.append(len(lines))
+
+    parts: list[str] = []
+    for heading, start, end in zip(DOCUMENTS_HEADINGS, starts[:-1], starts[1:], strict=False):
+        body = "\n".join(lines[start:end]).strip("\n")
+        parts.append(f"{heading}\n\n{body}")
+    return "\n\n".join(parts)
+
+
+def _commands_block(docs_dir: Path) -> str:
+    """The canonical fenced command inventory shared by README and the guide."""
+    inventory = docs_dir / "topics" / "commands.inventory.md"
+    return inventory.read_text(encoding="utf-8").strip("\n")
+
+
+def _topic_body(docs_dir: Path, topic: dict) -> str:
+    """Read one topic body, injecting the shared inventory for ``commands``."""
+    body = (docs_dir / topic["source"]).read_text(encoding="utf-8").strip("\n")
+    if topic["name"] == "commands":
+        body = body.replace(INVENTORY_MARKER, _commands_block(docs_dir))
+    return body
+
+
+def _skill_region_bodies(manifest: dict, docs_dir: Path) -> dict[str, str]:
+    bodies: dict[str, str] = {}
+    for topic in manifest.get("topic", []):
+        name = topic["name"]
+        if name == "documents":
+            bodies[name] = _documents_body(docs_dir)
+        else:
+            heading = "## " + topic["title"]
+            bodies[name] = heading + "\n\n" + _topic_body(docs_dir, topic)
+    return bodies
+
+
+def _readme_region_bodies(docs_dir: Path) -> dict[str, str]:
+    core = (docs_dir / "core.md").read_text(encoding="utf-8").rstrip("\n")
+    return {
+        "quickstart": "```text\n" + core + "\n```",
+        "commands": _commands_block(docs_dir),
+    }
+
+
+def _replace_regions(text: str, bodies: dict[str, str], path: Path) -> str:
+    """Replace each generated region in *text* with its body, enforcing markers."""
+    lines = text.splitlines()
+    out: list[str] = []
+    seen: set[str] = set()
+    open_region: str | None = None
+    open_at = 0
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        begin = BEGIN_RE.match(line)
+        end = END_RE.match(line)
+        if begin:
+            region = begin.group("region")
+            if open_region is not None:
+                raise SystemExit(
+                    f"{path}: nested generated region {region!r} inside {open_region!r}"
+                )
+            if region in seen:
+                raise SystemExit(f"{path}: duplicate generated region {region!r}")
+            if region not in bodies:
+                raise SystemExit(f"{path}: unknown generated region {region!r}")
+            open_region = region
+            open_at = i
+            out.append(line)
+            i += 1
+            continue
+        if open_region is not None:
+            # Inside a region: the marker opener is already in *out*; find the
+            # matching END and replace the whole interior with the body.
+            j = i
+            while j < len(lines) and not END_RE.match(lines[j]):
+                if BEGIN_RE.match(lines[j]):
+                    raise SystemExit(f"{path}: nested generated region inside {open_region!r}")
+                j += 1
+            if j >= len(lines):
+                raise SystemExit(f"{path}: BEGIN for {open_region!r} has no END")
+            close = END_RE.match(lines[j])
+            assert close is not None
+            if close.group("region") != open_region:
+                raise SystemExit(
+                    f"{path}: END for {close.group('region')!r} does not match "
+                    f"BEGIN for {open_region!r}"
+                )
+            out.extend(bodies[open_region].splitlines())
+            out.append(lines[j])
+            seen.add(open_region)
+            open_region = None
+            i = j + 1
+            continue
+        if end:
+            region = end.group("region")
+            raise SystemExit(f"{path}: END for {region!r} without BEGIN")
+        out.append(line)
+        i += 1
+    if open_region is not None:
+        raise SystemExit(f"{path}: BEGIN for {open_region!r} at line {open_at + 1} has no END")
+    missing = set(bodies) - seen
+    if missing:
+        raise SystemExit(f"{path}: missing generated regions: {sorted(missing)}")
+    rendered = "\n".join(out)
+    if text.endswith("\n"):
+        rendered += "\n"
+    return rendered
+
+
+def _relative(path: Path) -> Path:
+    try:
+        return path.relative_to(REPO_ROOT)
+    except ValueError:
+        return path
+
+
+# ---------------------------------------------------------------------------
+# guide.py
+
+
 def render(docs_dir: Path = DOCS_DIR) -> str:
     """Render the whole ``guide.py`` module from *docs_dir* as text."""
     manifest = _read_manifest(docs_dir / "manifest.toml")
@@ -62,7 +222,7 @@ def render(docs_dir: Path = DOCS_DIR) -> str:
     parts.append("TOPICS: dict[str, str] = {")
     for topic in topics:
         name = topic["name"]
-        body = (docs_dir / topic["source"]).read_text(encoding="utf-8").strip("\n")
+        body = _topic_body(docs_dir, topic)
         if "'''" in body:
             raise SystemExit(f"topic {name!r} contains a triple single quote")
         parts.append(f"    {name!r}: r'''" + body + "''',")
@@ -83,15 +243,8 @@ def render(docs_dir: Path = DOCS_DIR) -> str:
     return "\n".join(parts)
 
 
-def _relative(path: Path) -> Path:
-    try:
-        return path.relative_to(REPO_ROOT)
-    except ValueError:
-        return path
-
-
-def check(target_path: Path = TARGET_PATH, docs_dir: Path = DOCS_DIR) -> int:
-    """Compare the generated text with the checked-in module."""
+def check(target_path: Path = GUIDE_PATH, docs_dir: Path = DOCS_DIR) -> int:
+    """Compare the generated ``guide.py`` text with the checked-in module."""
     text = render(docs_dir)
     current = target_path.read_text(encoding="utf-8") if target_path.exists() else ""
     if current == text:
@@ -113,23 +266,77 @@ def check(target_path: Path = TARGET_PATH, docs_dir: Path = DOCS_DIR) -> int:
     return 1
 
 
+# ---------------------------------------------------------------------------
+# README.md and SKILL.md regions
+
+
+def render_readme(docs_dir: Path = DOCS_DIR, readme_path: Path = README_PATH) -> str:
+    """Render the generated regions in *readme_path* from *docs_dir*."""
+    text = readme_path.read_text(encoding="utf-8")
+    bodies = _readme_region_bodies(docs_dir)
+    return _replace_regions(text, bodies, readme_path)
+
+
+def render_skill(docs_dir: Path = DOCS_DIR, skill_path: Path = SKILL_PATH) -> str:
+    """Render the generated regions in *skill_path* from *docs_dir*."""
+    text = skill_path.read_text(encoding="utf-8")
+    manifest = _read_manifest(docs_dir / "manifest.toml")
+    bodies = _skill_region_bodies(manifest, docs_dir)
+    return _replace_regions(text, bodies, skill_path)
+
+
+def _check_text(path: Path, text: str, label: str) -> bool:
+    current = path.read_text(encoding="utf-8") if path.exists() else ""
+    if current == text:
+        print(f"current: {_relative(path)} matches {label}")
+        return True
+    print(
+        f"stale: {_relative(path)} does not match {label}; run scripts/build_docs.py",
+        file=sys.stderr,
+    )
+    diff = difflib.unified_diff(
+        current.splitlines(keepends=True),
+        text.splitlines(keepends=True),
+        fromfile=str(_relative(path)),
+        tofile=f"{label} (generated)",
+    )
+    sys.stderr.writelines(diff)
+    return False
+
+
+def check_all(
+    docs_dir: Path = DOCS_DIR,
+    guide_path: Path = GUIDE_PATH,
+    readme_path: Path = README_PATH,
+    skill_path: Path = SKILL_PATH,
+) -> int:
+    """Compare all three generated targets; return 1 when any is stale."""
+    ok = _check_text(guide_path, render(docs_dir), "docs/guide")
+    ok = _check_text(readme_path, render_readme(docs_dir, readme_path), "docs/guide") and ok
+    ok = _check_text(skill_path, render_skill(docs_dir, skill_path), "docs/guide") and ok
+    return 0 if ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Generate src/tackboard/guide.py from docs/guide"
+        description="Generate guide.py and the README/SKILL regions from docs/guide"
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="exit 1 when src/tackboard/guide.py is stale",
+        help="exit 1 when guide.py or a Markdown region is stale",
     )
     args = parser.parse_args(argv)
 
     if args.check:
-        return check()
+        return check_all()
 
-    text = render()
-    TARGET_PATH.write_text(text, encoding="utf-8", newline="\n")
-    print(f"wrote {_relative(TARGET_PATH)}")
+    GUIDE_PATH.write_text(render(), encoding="utf-8", newline="\n")
+    print(f"wrote {_relative(GUIDE_PATH)}")
+    README_PATH.write_text(render_readme(), encoding="utf-8", newline="\n")
+    print(f"wrote {_relative(README_PATH)}")
+    SKILL_PATH.write_text(render_skill(), encoding="utf-8", newline="\n")
+    print(f"wrote {_relative(SKILL_PATH)}")
     return 0
 
 

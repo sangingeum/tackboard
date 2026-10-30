@@ -33,9 +33,10 @@
 11. **`--force` is an audited, exhaustive list, not a general bypass.** It
     requires `--reason`, it is recorded as an event, and it is allowed only for
     the enumerated cases (taking over or releasing another agent's claim,
-    starting work whose only blocker is a cancelled/unfinished prerequisite,
+    starting work whose only blocker is an unfinished or cancelled prerequisite,
     adding an unfinished prerequisite to a task already in progress or review,
-    recovering an `in_progress` task with no claim).
+    recovering an `in_progress` task with no claim, replacing, restoring or
+    clearing a non-empty memo without `--if-rev`).
     If you reach for `--force` and your case is not on that list, the answer is
     a different command, not a bigger hammer.
 12. **Use `blocked_reason` for blockers that are not tasks** (waiting on a

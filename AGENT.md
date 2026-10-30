@@ -44,9 +44,12 @@ src/tackboard/
   templates/       server-rendered HTML
   static/          CSS and JavaScript (no inline scripts, no external hosts)
   guide.py         GENERATED: the core guide text and the reference topics,
-                   rendered from docs/guide by scripts/build_docs.py
-docs/guide/        the guide source of truth: manifest.toml, core.md, and
-                   one topics/<name>.md per reference topic
+                   rendered from docs/guide by scripts/build_docs.py; README.md
+                   and SKILL.md also carry generated regions from those sources
+docs/guide/        the guide source of truth: manifest.toml, core.md, one
+                   topics/<name>.md per reference topic, and
+                   topics/commands.inventory.md (the shared command inventory
+                   injected into the commands topic and README's commands region)
 tests/             pytest suite, mirrors the module layout
 scripts/           development tools (schema validation, scale benchmark,
                    docs build)
@@ -95,9 +98,9 @@ uv run python -m tackboard --help        # same CLI, module form
 uv run tack guide                        # the agent-facing usage summary
 uv run tack guide --topics               # the reference topics
 uv run tack guide --topic commands       # one topic, on demand
-uv run python scripts/build_docs.py      # regenerate guide.py after editing
-                                         # docs/guide/ sources
-uv run python scripts/build_docs.py --check   # fail if guide.py is stale
+uv run python scripts/build_docs.py      # regenerate guide.py and README/SKILL regions
+                                         # after editing docs/guide/ sources
+uv run python scripts/build_docs.py --check   # fail if guide.py or a generated region is stale
 uv run python scripts/sync_guide.py      # compatibility wrapper (same as above)
 uv run tack schema --json                # the published JSON Schemas
 uv run python scripts/validate_schemas.py --tack "uv run tack"
@@ -112,7 +115,8 @@ Never install with global `pip` (PEP 668 blocks it); this project uses `uv`.
 The `jsonschema` stubs are not installed in the dev group, so `mypy` over
 `scripts/` and the schema tests reports `import-untyped` until they are; `uv run
 mypy src` is clean either way. The guide and the docs are generated/verified
-from `docs/guide/` — never edit `src/tackboard/guide.py` by hand.
+from `docs/guide/` — never edit `src/tackboard/guide.py` or the generated
+regions in `README.md`/`SKILL.md` by hand.
 
 ## Architecture principles
 

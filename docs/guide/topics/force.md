@@ -4,7 +4,7 @@
 
 - taking over or releasing another agent's claim (`claim --force`,
   `release --force`);
-- starting work whose only unfinished blockers are cancelled prerequisites
+- starting work whose only blockers are unfinished or cancelled prerequisites
   (entering `in_progress`);
 - adding a prerequisite that is unfinished to a task already `in_progress` or
   `review` (`depend add --force`);

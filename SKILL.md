@@ -134,12 +134,13 @@ This is the whole discipline; the command reference below exists to support it.
    unblocks its dependents — it is the moment the board changes shape.
 5. **Review stage.** If your project routes work through `review`, a reviewer
    takes it with `tack next --stage review --claim --json`, then
-   `tack complete <id>` to accept, or `tack status <id> in_progress --json` to
+   `tack complete <id>` to accept, or `tack reject <id> --reason "why"` to
    send it back for rework.
 6. **If you cannot finish.** `tack release <id> --json` (or leave the claim
    with a note, if you intend to continue in the same session). A claim held by
    a dead agent is the one thing that stalls a board — see best practice 14.
 
+<!-- BEGIN GENERATED: commands -->
 ## Command reference
 
 Global options (`--db`, `--json`, `--quiet`, `--verbose`, `--version`,
@@ -239,7 +240,9 @@ to `ready`, and likewise `complete` from `in_progress` — clears them
 (`claimed_by: null`). So a task moved to `in_progress` by `status` is held, not
 free, and a claim is not always an explicit `claim` call. None of those paths
 touches the assignment: `assignee` is written only by a routing command.
+<!-- END GENERATED: commands -->
 
+<!-- BEGIN GENERATED: plans -->
 ## Plans
 
 `tack plan apply FILE` creates a whole dependency DAG in one command. The file
@@ -269,7 +272,9 @@ Applying it returns one JSON document with `count: 3` and one
 `{id, key, title}` element per created task (the keyless element's `key` is
 `null`). Every mutating command needs an actor: pass `--agent ID` or set
 `TACKBOARD_AGENT`.
+<!-- END GENERATED: plans -->
 
+<!-- BEGIN GENERATED: memo -->
 ## The project memo
 
 `tack memo` is the board's own **standing note** — the project's operating
@@ -341,7 +346,9 @@ pre-migrate backup. Nothing auto-migrates. A board that claims schema version 2
 but whose `memo_revisions` table is missing or unusable is refused the same way,
 with error code `memo_table_invalid` and a message naming the version-2 columns
 it expects.
+<!-- END GENERATED: memo -->
 
+<!-- BEGIN GENERATED: documents -->
 ## Field limits
 
 Limits are enforced on write; a violation is exit 4 (`validation`).
@@ -395,34 +402,6 @@ fix is usually to shorten the title and move the full text into
 - Error `details` carry machine-readable keys where they exist (a length
   violation gives `field` / `max` / `unit` / `actual`; a claim conflict gives
   `claimed_by`) — read them instead of parsing the message text.
-
-## JSON Schemas
-
-The schemas are the source of truth for every document below: one JSON Schema
-(draft 2020-12) per shape, in the `schemas` directory of the repository and
-inside the installed package (`tackboard/schemas`).
-
-```bash
-tack schema --json            # every schema: name, $id, repo-relative path
-tack schema show --json       # one schema document, unchanged
-tack schema board --json
-```
-
-`$id`s are URNs (`urn:tackboard:schema:<name>`) — there is no hosted copy at a
-public URL, so a consumer builds a resolver from the listed documents. The task
-projection is defined once, in `schemas/task.json` (`$defs.task`,
-`$defs.node`, `$defs.event`, `$defs.note`, `$defs.blocker`), and every other
-schema references it rather than restating it. Each schema sets
-`additionalProperties: false`: new fields must be declared, which is the
-additive-only rule above in machine-readable form. An unknown document name is
-a usage error (exit 2) that lists the allowed set.
-
-Naming: the schema names are the document shapes — `show`, `next`,
-`next_claim`, `board` (with and without `tasks`; the same schema describes
-both, `tasks` is optional), `deps`, `graph`, `history`, `history_since`,
-`history_follow` (one NDJSON line), `plan_apply`, `claims`, `agents`, `memo`,
-`memo_history`, `memo_diff`, `memo_write`, `doctor`, `task_mutation`, `note`,
-`init`, `migrate`, `backup`, `error`.
 
 ## Document shapes
 
@@ -542,50 +521,6 @@ a reduced subset of it
   must decide about. See the matching pitfall, *Reopening a prerequisite does
   not rewrite anyone's status*.
 
-## Typed note refs
-
-A note event's payload is `{text, refs}`; `refs` is always an array (empty
-`[]` when the note carried none, including notes written before refs existed —
-the stored row is never rewritten). Each entry is `{kind, value}` with `kind`
-one of `commit`, `url`, `path`, `task`. The same array appears in `show`'s
-`notes[]` and in the `note` events of `history`, so a consumer reads one shape.
-Refs are event-only: no table, no column, no migration, and they never count
-toward the 2 KiB note text cap.
-
-`tack note T-000001 "text" --ref commit:1a2b3c4 --ref path:src/parser.py` is how
-an agent hands the next one the evidence instead of a description of it. A ref
-is a pointer, not a claim: `task` must name an existing task on this board,
-`commit` must be a hexadecimal git object id, `url` an absolute `http`/`https`
-URL, and `path` a repository-relative path. Field limits and the per-kind
-grammar are in `tack guide --topic documents`.
-
-## Rejections and reviewer separation
-
-**Rejections are derived, never stored.** `tack reject <id> --reason TEXT`
-moves a task from `review` back to `in_progress` through the ordinary
-transition function and appends one `task.rejected` event whose payload is
-`{from:"review", to:"in_progress", reason}`. It is **not** a forced
-transition — there is no `forced` key and `--force` is not accepted. The
-reason is mandatory. `rejections` (integer, `0` when never rejected) and
-`last_rejection_reason` (string or `null`) are counted from those events on
-every read, so they cost no column and cannot drift from history.
-
-Rejecting moves the task to `in_progress`, which always carries a claim. The
-claim is handed back to the agent who most recently moved the task into
-`in_progress` — the author — not to the rejecting reviewer; the event stays
-attributed to the reviewer. Rejecting your own work leaves the claim with you.
-A review task already claimed by a third party is still refused with a claim
-conflict, so release it first. `task.rejected` events are not counted as
-`in_progress` entries when deriving the author, so a second rejection still
-goes back to the same author.
-
-**Reviewer separation is opt-in.** `next --stage review --claim
---different-from-author` drops candidates whose most recent `in_progress`
-entry was made by the calling agent. It is valid only with `--stage review`
-and `--claim` (otherwise exit 2), runs inside the same `BEGIN IMMEDIATE`
-select-and-claim transaction as the claim, and leaves the default selection
-untouched.
-
 ## The `counts` object
 
 `board --json` and `list --json` carry a `counts` object: `tasks`, one key per
@@ -609,7 +544,92 @@ with any filter applied they are not board totals:
 cheapest way to ask "what does this board look like?"; combining them is a
 usage error. Both accept the same filters as `board`, and their counts are the
 same filtered set.
+<!-- END GENERATED: documents -->
 
+<!-- BEGIN GENERATED: schemas -->
+## JSON Schemas
+
+The schemas are the source of truth for every document below: one JSON Schema
+(draft 2020-12) per shape, in the `schemas` directory of the repository and
+inside the installed package (`tackboard/schemas`).
+
+```bash
+tack schema --json            # every schema: name, $id, repo-relative path
+tack schema show --json       # one schema document, unchanged
+tack schema board --json
+```
+
+`$id`s are URNs (`urn:tackboard:schema:<name>`) — there is no hosted copy at a
+public URL, so a consumer builds a resolver from the listed documents. The task
+projection is defined once, in `schemas/task.json` (`$defs.task`,
+`$defs.node`, `$defs.event`, `$defs.note`, `$defs.blocker`), and every other
+schema references it rather than restating it. Each schema sets
+`additionalProperties: false`: new fields must be declared, which is the
+additive-only rule above in machine-readable form. An unknown document name is
+a usage error (exit 2) that lists the allowed set.
+
+Naming: the schema names are the document shapes — `show`, `next`,
+`next_claim`, `board` (with and without `tasks`; the same schema describes
+both, `tasks` is optional), `deps`, `graph`, `history`, `history_since`,
+`history_follow` (one NDJSON line), `plan_apply`, `claims`, `agents`, `memo`,
+`memo_history`, `memo_diff`, `memo_write`, `doctor`, `task_mutation`, `note`,
+`init`, `migrate`, `backup`, `error`.
+<!-- END GENERATED: schemas -->
+
+<!-- BEGIN GENERATED: refs -->
+## Typed note refs
+
+A note event's payload is `{text, refs}`; `refs` is always an array (empty
+`[]` when the note carried none, including notes written before refs existed —
+the stored row is never rewritten). Each entry is `{kind, value}` with `kind`
+one of `commit`, `url`, `path`, `task`. The same array appears in `show`'s
+`notes[]` and in the `note` events of `history`, so a consumer reads one shape.
+Refs are event-only: no table, no column, no migration, and they never count
+toward the 2 KiB note text cap.
+
+`tack note T-000001 "text" --ref commit:1a2b3c4 --ref path:src/parser.py` is how
+an agent hands the next one the evidence instead of a description of it. A ref
+is a pointer, not a claim: `task` must name an existing task on this board,
+`commit` must be a hexadecimal git object id, `url` an absolute `http`/`https`
+URL, and `path` a repository-relative path. Field limits and the per-kind
+grammar are in `tack guide --topic documents`.
+<!-- END GENERATED: refs -->
+
+<!-- BEGIN GENERATED: reject -->
+## Rejections and reviewer separation
+
+**Rejections are derived, never stored.** `tack reject <id> --reason TEXT`
+moves a task from `review` back to `in_progress` through the ordinary
+transition function. It is a shortcut over that existing transition, not a new
+one: it goes through the same transition function, adds no transition to the
+table, and changes no transition rule. It appends one `task.rejected` event
+whose payload is `{from:"review", to:"in_progress", reason}`. It is **not** a
+forced transition — there is no `forced` key and `--force` is not accepted.
+The reason is mandatory, must not be empty, and is capped at 1024 characters.
+Rejecting a task that is not in `review` is a validation error (exit 4).
+`rejections` (integer, `0` when never rejected) and `last_rejection_reason`
+(string or `null`) are counted from those events on every read, so they cost
+no column and cannot drift from history.
+
+Rejecting moves the task to `in_progress`, which always carries a claim. The
+claim is handed back to the agent who most recently moved the task into
+`in_progress` — the author — not to the rejecting reviewer; the event stays
+attributed to the reviewer. Rejecting your own work leaves the claim with you.
+A review task already claimed by a third party is still refused with a claim
+conflict, so the reviewer must take over the claim or `release --force --reason`
+it first (there is no supervisor override). `task.rejected` events are not
+counted as `in_progress` entries when deriving the author, so a second
+rejection still goes back to the same author.
+
+**Reviewer separation is opt-in.** `next --stage review --claim
+--different-from-author` drops candidates whose most recent `in_progress`
+entry was made by the calling agent. It is valid only with `--stage review`
+and `--claim` (otherwise exit 2), runs inside the same `BEGIN IMMEDIATE`
+select-and-claim transaction as the claim, and leaves the default selection
+untouched.
+<!-- END GENERATED: reject -->
+
+<!-- BEGIN GENERATED: doctor -->
 ## The `doctor` document
 
 `doctor --json` returns
@@ -657,6 +677,7 @@ same filtered set.
 - The `stale_claim` warning is the derived `claim_stale` flag — the same one the
   task projection and `claims --stale` read — against the configured
   `stale_claim_after` threshold.
+<!-- END GENERATED: doctor -->
 
 ## Exit codes
 
@@ -669,7 +690,7 @@ same filtered set.
 | 4 | validation error, invalid transition, or dependency cycle; over the memo cap, a missing or too long `--reason`, invalid UTF-8 |
 | 5 | concurrency conflict: claim held, stale version (`stale_version`), stale memo revision (`stale_rev`) — both carry `details: {expected, current}` — lock timeout (`locked` is the only `retryable: true`) |
 | 6 | database, schema, or migration error (including an unmigrated board), or a `doctor` run that found errors |
-
+<!-- BEGIN GENERATED: force -->
 ## Forcing a transition (`--force`)
 
 `--force` is an audited, exhaustive list, not a general bypass. It requires
@@ -678,7 +699,7 @@ same filtered set.
 
 - taking over or releasing another agent's claim (`claim --force`,
   `release --force`);
-- starting work whose only unfinished blockers are cancelled prerequisites
+- starting work whose only blockers are unfinished or cancelled prerequisites
   (entering `in_progress`);
 - adding a prerequisite that is unfinished to a task already `in_progress` or
   `review` (`depend add --force`);
@@ -693,7 +714,9 @@ override applies only to entering `in_progress`. If your case is not on the
 list, the answer is a different command, not a bigger hammer. `tack recover`
 adds no force case of its own: a claim the caller already holds is refused
 (use plain `release`), and a healthy unclaimed task is an idempotent no-op.
+<!-- END GENERATED: force -->
 
+<!-- BEGIN GENERATED: web -->
 ## Web view
 
 `tack serve` starts a read-only browser view of one board: Kanban columns per
@@ -721,7 +744,9 @@ watch.
 Nothing in the web view mutates: every change goes through the CLI so it lands
 as an audited event. `--allow-remote` and `--allowed-host` exist for a
 deliberate exception; a loopback board never needs them.
+<!-- END GENERATED: web -->
 
+<!-- BEGIN GENERATED: practices -->
 ## Best practices
 
 1. **Claim before you work; never work a task you do not hold.** The claim is
@@ -759,9 +784,10 @@ deliberate exception; a loopback board never needs them.
 11. **`--force` is an audited, exhaustive list, not a general bypass.** It
     requires `--reason`, it is recorded as an event, and it is allowed only for
     the enumerated cases (taking over or releasing another agent's claim,
-    starting work whose only blocker is a cancelled/unfinished prerequisite,
+    starting work whose only blocker is an unfinished or cancelled prerequisite,
     adding an unfinished prerequisite to a task already in progress or review,
-    recovering an `in_progress` task with no claim).
+    recovering an `in_progress` task with no claim, replacing, restoring or
+    clearing a non-empty memo without `--if-rev`).
     If you reach for `--force` and your case is not on that list, the answer is
     a different command, not a bigger hammer.
 12. **Use `blocked_reason` for blockers that are not tasks** (waiting on a
@@ -798,7 +824,9 @@ deliberate exception; a loopback board never needs them.
     line when the premise genuinely changes, and say why in `--reason`.
     Attribution is per revision: `--history` shows who wrote each revision
     and why; `--diff` shows what changed between two revisions.
+<!-- END GENERATED: practices -->
 
+<!-- BEGIN GENERATED: pitfalls -->
 ## Pitfalls (things that look broken but are not)
 
 - **`--edit` refuses without a terminal** (exit 2, naming `--file` and `-`).
@@ -838,7 +866,9 @@ deliberate exception; a loopback board never needs them.
   never make a task look freshly modified in a sort by `updated_at`.
 - **`migrate` and `backup` do not create parent directories** (only `init`
   does), and `backup` refuses to overwrite an existing file.
+<!-- END GENERATED: pitfalls -->
 
+<!-- BEGIN GENERATED: verification -->
 ## Verification
 
 Prove the board works end to end — every step's exit code should be `0`:
@@ -859,3 +889,4 @@ tack doctor --json                                        # ok:true, no warnings
 If `claim` on the dependent succeeds only after the prerequisite is `done`, and
 `doctor` reports a clean board, the readiness, dependency and claim machinery is
 all working.
+<!-- END GENERATED: verification -->

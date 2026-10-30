@@ -152,43 +152,46 @@ boards selected per shell.
 
 ## Commands
 
+<!-- BEGIN GENERATED: commands -->
 ```text
-tack init --db PATH
-tack migrate
-tack backup PATH
-tack board [filters/options]
-tack list [filters/options]
+tack init [--db PATH]
+tack migrate | tack backup PATH | tack doctor [--json]
+tack schema [DOCUMENT] [--json]
+tack board|list [--status S] [--assignee A] [--label L] [--priority P]
+                [--blocked] [--eligible|--ready] [--limit N]
+                [--sort FIELD] [--reverse] [--full] [--brief] [--count]
 tack show TASK_ID
-tack create TITLE [options]
-tack update TASK_ID [options]
-tack status TASK_ID STATUS [mutation options]
-tack complete TASK_ID [mutation options]
-tack reopen TASK_ID [mutation options]
-tack cancel TASK_ID [mutation options]
-tack restore TASK_ID [mutation options]
-tack note TASK_ID TEXT [--ref KIND:VALUE ...] [--agent ID]
-tack reject TASK_ID --reason TEXT [--agent ID] [--if-version N]
+tack create TITLE [--description TEXT | --description-file PATH]
+                  [--priority low|normal|high|urgent] [--assignee A]
+                  [--label L ...] [--depends-on TASK_ID ...] [--status STATUS]
+tack update TASK_ID [--title T] [--description TEXT] [--priority P]
+                    [--assignee A|--assignee ""] [--label L|--add-label L|--remove-label L]
+                    [--blocked-reason TEXT|--clear-blocked-reason] [--if-version N]
+tack status TASK_ID STATUS [--force --reason TEXT] [--if-version N]
+tack complete|reopen|cancel|restore TASK_ID [--force --reason TEXT] [--if-version N]
+tack note TASK_ID TEXT [--ref KIND:VALUE ...]
+tack reject TASK_ID --reason TEXT [--if-version N]
 tack memo [TEXT | --file PATH | - | --edit | --append TEXT | --rev N
            | --history | --diff [N [N]] | --restore N | --clear]
           [--if-rev N] [--reason TEXT] [--force] [--dry-run] [--limit N]
-tack claim TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
-tack release TASK_ID [--agent ID] [--force --reason TEXT] [--if-version N]
-tack claims [--agent ID] [--older-than DURATION]
+tack claim TASK_ID [--force --reason TEXT] [--if-version N]
+tack release TASK_ID [--force --reason TEXT] [--if-version N]
+tack claims [--agent A] [--older-than 2h] [--stale]
 tack agents [--json]
-tack next [--agent ID] [--claim] [--stage work|review] [--different-from-author]
-          [--force --reason TEXT] [--assignee AGENT_ID|--all-assignees] [filters]
-tack depend add TASK_ID --on PREREQUISITE_ID [--agent ID] [--if-version N] [--force --reason TEXT]
-tack depend remove TASK_ID --on PREREQUISITE_ID [--agent ID] [--if-version N]
-tack deps TASK_ID
-tack dependents TASK_ID
+tack recover TASK_ID --reason TEXT [--if-version N]
+tack next [--agent A] [--claim] [--stage work|review] [--label L]
+          [--min-priority P] [--assignee A|--all-assignees] [--full]
+          [--different-from-author] [--force --reason TEXT]
+tack depend add TASK_ID --on PREREQUISITE_ID [--force --reason TEXT] [--if-version N]
+tack depend remove TASK_ID --on PREREQUISITE_ID [--if-version N]
+tack deps TASK_ID | tack dependents TASK_ID
 tack graph [TASK_ID] [--format json|dot]
 tack history [TASK_ID] [--limit N] [--since EVENT_ID] [--follow]
-tack plan apply FILE [--dry-run] [--agent ID]
-tack doctor
-tack schema [DOCUMENT] [--json]
+tack plan apply FILE|- [--dry-run] [--agent A]
 tack serve [--host H] [--port P] [--allow-remote] [--allowed-host HOST ...]
 tack guide
 ```
+<!-- END GENERATED: commands -->
 
 Global options work before or after the subcommand: `--db PATH`, `--json`,
 `--quiet`, `--verbose`, `--version`, `--help`. `--quiet` suppresses
@@ -468,7 +471,8 @@ recorded as a history event carrying the reason:
 2. starting a `ready` task whose only eligibility failure is an unfinished or
    cancelled prerequisite;
 3. adding an unfinished prerequisite to a task already in progress or review;
-4. recovering an `in_progress` task that has lost its claim.
+4. recovering an `in_progress` task that has lost its claim;
+5. replacing, restoring or clearing a non-empty memo without `--if-rev`.
 
 It is not a general bypass. Modifying a task claimed by another agent still
 fails with exit 5 — take the claim over with `claim --force --reason` or clear
@@ -521,10 +525,11 @@ A reject is **not** a forced transition. It records one canonical
 reason}`, with no `forced` key, and `--force` is not accepted on `reject`.
 Rejecting a task that is not in `review` is a validation error (exit 4).
 `reject` inherits the claim policy: rejecting a task claimed by **another**
-agent is refused with a claim conflict, so the reviewer must `release --force
---reason` it first (there is no supervisor override). Once the reject runs, the
-claim goes back to the agent who most recently moved the task into
-`in_progress` — the author — rather than to the rejecting agent. The event is
+agent is refused with a claim conflict, so the reviewer must take over the
+claim or `release --force --reason` it first (there is no supervisor override).
+Once the reject runs, the claim goes back to the agent who most recently moved
+the task into `in_progress` — the author — rather than to the rejecting agent.
+The event is
 still attributed to the reviewer; the task's `claimed_by` names the author.
 Rejecting your own work leaves the claim with you.
 
@@ -756,6 +761,7 @@ from history on every read.
 The text below is the output of `tack guide`. Paste it into an agent's
 instructions.
 
+<!-- BEGIN GENERATED: quickstart -->
 ```text
 tack — a project-scoped task board for coordinating agents
 
@@ -821,7 +827,8 @@ Status and readiness
   ready, every prerequisite is done, it has no explicit blocked reason, and
   nobody holds a claim. --force --reason TEXT is allowed only for the audited
   cases — taking over a claim, an unfinished prerequisite, adding one to active
-  work, recovering a lost claim — exhaustive, not a general bypass.
+  work, recovering a lost claim, replacing a memo without `--if-rev` —
+  exhaustive, not a general bypass.
 
 Stale claims
   tack claims                          active claims, each with its age
@@ -830,6 +837,7 @@ Stale claims
   The default threshold is the optional [tackboard] stale_claim_after key in
   .tackboard.toml (for example "45m"); --older-than overrides it per call.
 ```
+<!-- END GENERATED: quickstart -->
 
 ### Reference, on demand
 
@@ -1089,7 +1097,7 @@ generates, seeds or captures them. The earlier `scripts/demo_seed.py`,
 `scripts/demo_plan.json` and `scripts/capture_demo_screenshots.py` were removed
 for that reason — regenerating from a seed silently overwrote the curated
 images. Build a scratch board for exploration with the ordinary commands
-(`tack add`, `tack dep add`, `tack next --claim`) and delete its database
+(`tack create`, `tack depend add`, `tack next --claim`) and delete its database
 afterwards; do not write over `images/`.
 
 `AGENT.md` is the short orientation brief for agents working in this
