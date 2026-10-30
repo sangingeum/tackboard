@@ -1,11 +1,11 @@
 [project]
 name = "tackboard-mcp"
-version = "0.8.0"
+version = "0.9.0"
 description = "Optional MCP adapter for the tackboard CLI — exposes board tools to MCP clients"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-dependencies = ["tackboard>=0.8.0,<0.9", "mcp>=2.3,<3"]
+dependencies = ["tackboard>=0.9.0,<0.10", "mcp>=2.3,<3"]
 
 [tool.uv.sources]
 tackboard = { workspace = true }

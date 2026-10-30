@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-10-30
 
 ### Added
 
@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The guide's source of truth now lives in `docs/guide/`. `scripts/build_docs.py`
+  renders `src/tackboard/guide.py` and the generated regions of `README.md` and
+  `SKILL.md`, and `--check` fails CI when any of them drifts. The README
+  command block and the guide's commands topic share one inventory.
 - The always-loaded guide now says that exit 5 must be read through the JSON
   `retryable` flag: `locked` is retryable, while `claim_conflict`,
   `stale_version` and `stale_rev` are not.
