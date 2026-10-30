@@ -1,7 +1,7 @@
 """MCP binding tests — skipped unless the optional framework is installed.
 
 The tool layer is covered without the framework (``test_tools.py``). These tests
-prove the binding itself: that the seven tools register, and — when the
+prove the binding itself: that the twelve tools register, and — when the
 framework is present — that a real MCP client can handshake over stdio and call
 them. In a checkout without ``mcp`` they skip rather than fail; the report
 states which of the two was actually exercised.
@@ -39,12 +39,17 @@ CORE_SRC = Path(__file__).resolve().parents[3] / "src"
 
 EXPECTED_TOOLS = {
     "board_brief",
+    "claim",
     "complete",
     "create",
+    "list",
+    "memo_read",
     "next_claim",
     "note",
+    "reject",
     "release",
     "show",
+    "status",
 }
 
 EXPECTED_ANNOTATIONS: dict[str, dict[str, bool]] = {
@@ -85,6 +90,36 @@ EXPECTED_ANNOTATIONS: dict[str, dict[str, bool]] = {
         "openWorldHint": False,
     },
     "create": {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+    "memo_read": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "list": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "claim": {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "status": {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+    "reject": {
         "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": False,

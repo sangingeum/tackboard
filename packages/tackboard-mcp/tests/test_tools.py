@@ -181,6 +181,68 @@ def test_the_default_command_falls_back_to_the_console_script(
     assert TackCli.from_environment({}).command == ("tack",)
 
 
+def test_memo_read_and_revision(cli: TackCli, transport: FakeTransport) -> None:
+    cli.memo_read()
+    assert transport.last_argv[:2] == ["tack", "memo"]
+    cli.memo_read(3)
+    assert transport.last_argv[:4] == ["tack", "memo", "--rev", "3"]
+
+
+def test_list_tasks_maps_every_filter(cli: TackCli, transport: FakeTransport) -> None:
+    cli.list_tasks(
+        status="ready",
+        assignee="worker",
+        label="core",
+        priority="high",
+        blocked=True,
+        eligible=True,
+        limit=5,
+        full=True,
+    )
+    argv = transport.last_argv
+    assert argv[:2] == ["tack", "list"]
+    for flag, value in (
+        ("--status", "ready"),
+        ("--assignee", "worker"),
+        ("--label", "core"),
+        ("--priority", "high"),
+        ("--limit", "5"),
+    ):
+        assert argv[argv.index(flag) + 1] == value
+    assert "--blocked" in argv and "--eligible" in argv and "--full" in argv
+
+
+def test_claim_plain_and_forced(cli: TackCli, transport: FakeTransport) -> None:
+    cli.claim("T-000001")
+    assert transport.last_argv[:3] == ["tack", "claim", "T-000001"]
+    assert "--force" not in transport.last_argv
+
+    cli.claim("T-000001", force=True, reason="dead agent")
+    argv = transport.last_argv
+    assert "--force" in argv and argv[argv.index("--reason") + 1] == "dead agent"
+
+    with pytest.raises(ValueError, match="non-empty reason"):
+        cli.claim("T-000001", force=True)
+    with pytest.raises(ValueError, match="requires force"):
+        cli.claim("T-000001", reason="unused")
+
+
+def test_reject_maps_reason_and_version(cli: TackCli, transport: FakeTransport) -> None:
+    cli.reject("T-000001", "needs tests", 4)
+    argv = transport.last_argv
+    assert argv[:5] == ["tack", "reject", "T-000001", "--reason", "needs tests"]
+    assert argv[argv.index("--if-version") + 1] == "4"
+
+
+def test_status_requires_a_force_reason(cli: TackCli, transport: FakeTransport) -> None:
+    cli.status("T-000001", "review")
+    assert transport.last_argv[:4] == ["tack", "status", "T-000001", "review"]
+    with pytest.raises(ValueError, match="non-empty reason"):
+        cli.status("T-000001", "done", force=True)
+    with pytest.raises(ValueError, match="requires force"):
+        cli.status("T-000001", "done", reason="unused")
+
+
 # --------------------------------------------------------------------------- #
 # the real CLI, on a scratch board
 # --------------------------------------------------------------------------- #
@@ -244,6 +306,37 @@ def test_the_cli_itself_reports_a_missing_board(live_cli: TackCli) -> None:
     with pytest.raises(TackCommandError) as raised:
         live_cli.board_brief()
     assert raised.value.returncode == 3
+
+
+def test_the_review_loop_with_reject_and_handback(tmp_path: Path) -> None:
+    """An MCP-only agent can read the memo, work, submit, be rejected and resume."""
+    author = TackCli(
+        command=(sys.executable, "-m", "tackboard"),
+        db=tmp_path / "loop.sqlite3",
+        actor="author",
+    )
+    author.run("init")
+    assert author.memo_read()["rev"] == 0
+
+    task_id = author.create("Review loop", status="ready")["task"]["id"]
+    assert author.claim(task_id)["task"]["claimed_by"] == "author"
+    author.note(task_id, "ready for review")
+    assert author.status(task_id, "review")["task"]["status"] == "review"
+
+    reviewer = TackCli(
+        command=(sys.executable, "-m", "tackboard"),
+        db=author.db,
+        actor="reviewer",
+    )
+    taken = reviewer.next_claim(stage="review")
+    assert taken["task"]["id"] == task_id
+    rejected = reviewer.reject(task_id, "needs tests")
+    assert rejected["task"]["status"] == "in_progress"
+    assert rejected["task"]["claimed_by"] == "author"
+
+    author.note(task_id, "tests added")
+    assert author.complete(task_id)["task"]["status"] == "done"
+    assert [t["id"] for t in author.list_tasks(status="done")["tasks"]] == [task_id]
 
 
 def test_the_adapter_adds_no_core_dependency() -> None:

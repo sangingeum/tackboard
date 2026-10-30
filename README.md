@@ -874,9 +874,10 @@ uv tool install tackboard-mcp      # or: pip install tackboard-mcp
 ```
 
 Installing it pulls `tackboard` and the `mcp` framework, so a single install
-gives you the adapter. It exposes seven tools — `next_claim`, `show`, `note`,
-`complete`, `release`, `create`, `board_brief` — that invoke the CLI with
-`--json` and return its document unchanged. Each declares all four annotation
+gives you the adapter. It exposes twelve tools — `memo_read`, `next_claim`,
+`claim`, `status`, `reject`, `list`, `show`, `note`, `complete`, `release`,
+`create`, `board_brief` — that invoke the CLI with `--json` and return its
+document unchanged. Each declares all four annotation
 hints, so a host can tell read-only from mutating before it calls one.
 
 The adapter is a stdio server, so it prints no help and expects a client. Point

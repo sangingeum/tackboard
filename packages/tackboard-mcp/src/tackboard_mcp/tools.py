@@ -216,5 +216,85 @@ class TackCli:
         """The counts-only board document: the cheapest look at a board."""
         return self.run("board", "--brief")
 
+    def memo_read(self, rev: int | None = None) -> Document:
+        """Read the project memo; ``rev`` selects one stored revision."""
+        argv: list[str] = ["memo"]
+        if rev is not None:
+            argv.extend(["--rev", str(rev)])
+        return self.run(*argv)
+
+    def list_tasks(
+        self,
+        *,
+        status: str | None = None,
+        assignee: str | None = None,
+        label: str | None = None,
+        priority: str | None = None,
+        blocked: bool = False,
+        eligible: bool = False,
+        limit: int | None = None,
+        full: bool = False,
+    ) -> Document:
+        """List tasks with the CLI's filters; descriptions only with ``full``."""
+        argv: list[str] = ["list"]
+        if status is not None:
+            argv.extend(["--status", status])
+        if assignee is not None:
+            argv.extend(["--assignee", assignee])
+        if label is not None:
+            argv.extend(["--label", label])
+        if priority is not None:
+            argv.extend(["--priority", priority])
+        if blocked:
+            argv.append("--blocked")
+        if eligible:
+            argv.append("--eligible")
+        if limit is not None:
+            argv.extend(["--limit", str(limit)])
+        if full:
+            argv.append("--full")
+        return self.run(*argv)
+
+    def claim(
+        self, task_id: str, *, force: bool = False, reason: str | None = None
+    ) -> Document:
+        """Claim one task; ``force`` requires an audited non-empty reason."""
+        if reason is not None and not force:
+            raise ValueError("a claim reason requires force=True")
+        if force and not (reason and reason.strip()):
+            raise ValueError("force=True requires a non-empty reason")
+        argv: list[str] = ["claim", task_id]
+        if force and reason is not None:
+            argv.extend(["--force", "--reason", reason])
+        return self.run(*argv)
+
+    def reject(self, task_id: str, reason: str, if_version: int | None = None) -> Document:
+        """Send a review task back to in_progress; the reason is mandatory."""
+        argv: list[str] = ["reject", task_id, "--reason", reason]
+        if if_version is not None:
+            argv.extend(["--if-version", str(if_version)])
+        return self.run(*argv)
+
+    def status(
+        self,
+        task_id: str,
+        status: str,
+        *,
+        force: bool = False,
+        reason: str | None = None,
+        if_version: int | None = None,
+    ) -> Document:
+        """Move a task to another status; ``force`` requires a reason."""
+        argv: list[str] = ["status", task_id, status]
+        if force:
+            if not (reason and reason.strip()):
+                raise ValueError("force=True requires a non-empty reason")
+            argv.extend(["--force", "--reason", reason])
+        elif reason is not None:
+            raise ValueError("a status reason requires force=True")
+        if if_version is not None:
+            argv.extend(["--if-version", str(if_version)])
+        return self.run(*argv)
+
 
 __all__ = ["Document", "Runner", "TackCli", "TackCommandError"]

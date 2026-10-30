@@ -20,10 +20,12 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, the framework is optional
 INSTRUCTIONS = """\
 This server exposes one project's tackboard through the `tack` CLI.
 
-Read the board before acting: board_brief for counts, then next_claim to take
-work atomically. A claim is a promise to every other agent — complete the task
-when the work is done, and leave a note with evidence (commit ids, paths, urls)
-at every handoff. `show` returns the full task including notes. `release`
+Read the memo with memo_read, then the board with board_brief and list; take
+work with next_claim or claim. A claim is a promise to every other agent —
+complete the task when the work is done, and leave a note with evidence (commit
+ids, paths, urls) at every handoff. `show` returns the full task including
+notes. Reviewers submit with status(task_id, "review"), then reject with a
+mandatory reason to send work back; the claim returns to the author. `release`
 without a reason gives up a claim you hold; with a reason it is the audited
 force path, so use it only to recover a dead agent's claim.
 """
@@ -152,6 +154,93 @@ def build_server(cli: TackCli) -> MCPServer:
     def board_brief() -> dict[str, Any]:
         """The board's counts only: the cheapest look at what is on the board."""
         return cli.board_brief()
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
+    def memo_read(rev: int | None = None) -> dict[str, Any]:
+        """Read the project memo before starting; `rev` selects one revision."""
+        return cli.memo_read(rev)
+
+    @server.tool(
+        name="list",
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
+    )
+    def list_tasks(
+        status: str | None = None,
+        assignee: str | None = None,
+        label: str | None = None,
+        priority: str | None = None,
+        blocked: bool = False,
+        eligible: bool = False,
+        limit: int | None = None,
+        full: bool = False,
+    ) -> dict[str, Any]:
+        """List tasks with the CLI's filters; descriptions only with `full`."""
+        return cli.list_tasks(
+            status=status,
+            assignee=assignee,
+            label=label,
+            priority=priority,
+            blocked=blocked,
+            eligible=eligible,
+            limit=limit,
+            full=full,
+        )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
+    def claim(task_id: str, force: bool = False, reason: str | None = None) -> dict[str, Any]:
+        """Claim one task; `force` requires an audited non-empty reason."""
+        return cli.claim(task_id, force=force, reason=reason)
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    def status(
+        task_id: str,
+        status: str,
+        force: bool = False,
+        reason: str | None = None,
+        if_version: int | None = None,
+    ) -> dict[str, Any]:
+        """Move a task to another status; `force` requires a reason."""
+        return cli.status(
+            task_id, status, force=force, reason=reason, if_version=if_version
+        )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    def reject(task_id: str, reason: str, if_version: int | None = None) -> dict[str, Any]:
+        """Send a review task back to in_progress; the reason is mandatory."""
+        return cli.reject(task_id, reason, if_version)
 
     return server
 

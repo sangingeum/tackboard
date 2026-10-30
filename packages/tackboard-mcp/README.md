@@ -18,7 +18,7 @@ see a claim, a transition or a validation rule that differs from the board. A
 non-zero exit is raised as an error whose payload is the CLI's own error
 document (`{"schema_version":1,"error":{...}}`).
 
-What it adds is discovery and a typed surface: seven named tools with described
+What it adds is discovery and a typed surface: twelve named tools with described
 arguments, instead of a CLI string to compose.
 
 ## Install
@@ -70,7 +70,12 @@ client documents stdio servers:
 
 | Tool | Arguments | Returns |
 |---|---|---|
+| `memo_read` | `rev?` | the memo document, current or one stored revision |
 | `next_claim` | `stage?` (`work`/`review`) | the `next --claim` document; `task` is `null` when nothing is eligible |
+| `claim` | `task_id`, `force?`, `reason?` | the mutation document; `force` requires a non-empty reason |
+| `status` | `task_id`, `status`, `force?`, `reason?`, `if_version?` | the mutation document |
+| `reject` | `task_id`, `reason`, `if_version?` | the mutation document; the claim returns to the author |
+| `list` | `status?`, `assignee?`, `label?`, `priority?`, `blocked?`, `eligible?`, `limit?`, `full?` | the `list` document; descriptions only with `full` |
 | `show` | `task_id` | the `show` document: the task and its notes |
 | `note` | `task_id`, `text`, `refs?` (`KIND:VALUE`) | the `note` document with the appended event |
 | `complete` | `task_id` | the mutation document; completing unblocks dependents |
@@ -78,12 +83,12 @@ client documents stdio servers:
 | `create` | `title`, `description?`, `priority?`, `assignee?`, `labels?`, `depends_on?`, `status?` | the created task document |
 | `board_brief` | — | the counts-only board document |
 
-Every tool declares all four MCP annotation hints as explicit booleans. The two
-read tools (`board_brief`, `show`) are read-only and repeatable; every mutating
-tool writes only the one local board and touches no external system
-(`openWorldHint` false); nothing on this surface deletes data
-(`destructiveHint` false); and `complete` is idempotent while `next_claim`,
-`note`, `release` and `create` are not.
+Every tool declares all four MCP annotation hints as explicit booleans. The
+four read tools (`memo_read`, `list`, `show`, `board_brief`) are read-only and
+repeatable; every mutating tool writes only the one local board and touches no
+external system (`openWorldHint` false); nothing on this surface deletes data
+(`destructiveHint` false); and `complete` and `claim` are idempotent while
+`next_claim`, `status`, `reject`, `note`, `release` and `create` are not.
 
 Each tool returns the CLI's JSON document unchanged. Exit codes are not
 translated into a second vocabulary: a failed call raises with the CLI's
@@ -105,5 +110,7 @@ framework.
 
 - One board per process: the database is fixed at start-up.
 - The web view and the schema commands are not exposed; they are not tool-shaped.
-- `--force` is reachable only through `release`'s `reason`, deliberately: the
-  other force cases are operator decisions, not assistant ones.
+- `--force` is reachable only through `release`, `claim` and `status`, each
+  requiring a non-empty `reason`; the remaining force cases stay operator
+  decisions. `reopen`, `depend_add`, `memo_append` and `claims` are deliberately
+  not exposed — fall back to the CLI for those.
