@@ -1,0 +1,69 @@
+[core]
+source = "core.md"
+budget_bytes = 6144
+budget_lines = 100
+
+[[topic]]
+name = "commands"
+title = "Command reference"
+source = "topics/commands.md"
+
+[[topic]]
+name = "documents"
+title = "Field limits"
+source = "topics/documents.md"
+
+[[topic]]
+name = "plans"
+title = "Plans"
+source = "topics/plans.md"
+
+[[topic]]
+name = "refs"
+title = "Typed note refs"
+source = "topics/refs.md"
+
+[[topic]]
+name = "reject"
+title = "Rejections and reviewer separation"
+source = "topics/reject.md"
+
+[[topic]]
+name = "memo"
+title = "The project memo"
+source = "topics/memo.md"
+
+[[topic]]
+name = "force"
+title = "Forcing a transition (`--force`)"
+source = "topics/force.md"
+
+[[topic]]
+name = "doctor"
+title = "The `doctor` document"
+source = "topics/doctor.md"
+
+[[topic]]
+name = "web"
+title = "Web view"
+source = "topics/web.md"
+
+[[topic]]
+name = "schemas"
+title = "JSON Schemas"
+source = "topics/schemas.md"
+
+[[topic]]
+name = "practices"
+title = "Best practices"
+source = "topics/practices.md"
+
+[[topic]]
+name = "pitfalls"
+title = "Pitfalls (things that look broken but are not)"
+source = "topics/pitfalls.md"
+
+[[topic]]
+name = "verification"
+title = "Verification"
+source = "topics/verification.md"

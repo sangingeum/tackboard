@@ -21,7 +21,7 @@ for entry in (str(SRC), str(SCRIPTS)):
     if entry not in sys.path:
         sys.path.insert(0, entry)
 
-import sync_guide  # noqa: E402
+import build_docs  # noqa: E402
 
 from tackboard import cli, guide  # noqa: E402
 
@@ -119,10 +119,10 @@ def test_the_core_stays_within_its_byte_budget() -> None:
 
 
 def test_the_generated_module_matches_the_documents() -> None:
-    """guide.py is generated from README.md and SKILL.md; it must be current."""
-    expected = sync_guide.build_text()
+    """guide.py is generated from docs/guide; it must be current."""
+    expected = build_docs.render()
     actual = (SRC / "tackboard" / "guide.py").read_text(encoding="utf-8")
-    assert actual == expected, "run `uv run python scripts/sync_guide.py`"
+    assert actual == expected, "run `uv run python scripts/build_docs.py`"
 
 
 def test_skill_documents_every_topic() -> None:
