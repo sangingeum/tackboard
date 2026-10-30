@@ -49,6 +49,9 @@
   var IDLE_NODE_LIMIT = 500;
   var MIN_VISIBLE = 120;
   var TOOLTIP_MARGIN = 8;
+  /* The tooltip's near corner sits this far from the pointer: close enough to
+   * read as "at the cursor", far enough that the pointer never covers it. */
+  var TOOLTIP_OFFSET = 6;
   var SELECT_DELAY = 200;
   var DUR_LAYOUT = 240;
   var DUR_SLOW = 400;
@@ -209,9 +212,48 @@
     return Math.floor(days / 30) + "mo";
   }
 
-  function clipHolder(value) {
+  function clipTo(value, limit) {
     var text = String(value === null || value === undefined ? "" : value);
-    return text.length > 12 ? text.slice(0, 12) + "\u2026" : text;
+    if (limit < 1) { return ""; }
+    return text.length > limit ? text.slice(0, limit - 1) + "\u2026" : text;
+  }
+
+  /* The claim badge is drawn inside the card, so its label has to fit the card:
+   * a long holder name plus an age plus the stale word is wider than a
+   * fixed-width badge, and the overflow used to spill past the badge's right
+   * edge. Candidates run from most to least detailed and the first one that
+   * fits wins — the age is dropped before the stale word, because staleness is
+   * the signal that must never be cut. The full holder stays in the badge's
+   * <title>, the outline and the tooltip. */
+  var BADGE_PAD = 10;
+  var BADGE_LIMIT = NODE_W - 12;
+  var BADGE_CHAR_W = 6.6;
+
+  function claimBadgeLabel(holder, age, staleText) {
+    var budget = Math.floor((BADGE_LIMIT - BADGE_PAD) / BADGE_CHAR_W);
+    var ageText = age ? " \u00b7 " + age : "";
+    /* The age may be dropped to make room; the stale word may not. A stale
+     * label therefore never considers a suffix without it. */
+    var candidates = [];
+    if (staleText) {
+      if (ageText) { candidates.push(ageText + staleText); }
+      candidates.push(staleText);
+    } else {
+      if (ageText) { candidates.push(ageText); }
+      candidates.push("");
+    }
+    for (var i = 0; i < candidates.length; i += 1) {
+      var suffix = candidates[i];
+      var name = clipTo(holder, budget - suffix.length - 1);
+      var label = "@" + name + suffix;
+      /* Prefer a name long enough to stay recognisable; when the holder was
+       * short enough not to be clipped, any length is fine. */
+      if (label.length <= budget && (name === holder || name.length >= 4)) {
+        return label;
+      }
+    }
+    var tail = staleText || "";
+    return clipTo("@" + holder, Math.max(1, budget - tail.length)) + tail;
   }
 
   function announce(message) {
@@ -517,11 +559,12 @@
 
       if (node.claimed_by) {
         var fullHolder = String(node.claimed_by);
-        var holder = clipHolder(fullHolder);
         var age = relativeAge(node.claimed_at);
         var staleText = node.claim_stale ? " \u00b7 stale" : "";
-        var badgeText = "@" + holder + (age ? " \u00b7 " + age : "") + staleText;
-        var badgeWidth = Math.min(NODE_W - 20, Math.max(52, badgeText.length * 6.6 + 10));
+        var badgeText = claimBadgeLabel(fullHolder, age, staleText);
+        var badgeWidth = Math.min(
+          BADGE_LIMIT, Math.max(52, badgeText.length * BADGE_CHAR_W + BADGE_PAD)
+        );
         var badgeX = NODE_W - badgeWidth - 4;
         var badge = el("g", { "class": "node__claim-badge-group" });
         badge.appendChild(el("title", {}));
@@ -554,12 +597,14 @@
 
       if (node.reviewable) {
         /* Design: "second parallel line 3 px inside the top edge". The card is
-         * a full rectangle, so the top edge is y=0 and the marker sits at y=3. */
+         * a full rectangle, so the top edge is y=0 and the marker sits at y=3.
+         * The ends stop short of the rounded corners and use round caps, so the
+         * marker reads as a deliberate overlay rather than a stray stroke. */
         group.appendChild(el("line", {
           "class": "node__double-edge",
-          x1: 14,
+          x1: 16,
           y1: 3,
-          x2: NODE_W - 14,
+          x2: NODE_W - 16,
           y2: 3,
           "aria-hidden": "true"
         }));
@@ -879,11 +924,32 @@
   /* ----------------------------------------------------------------------- */
 
   function pointInCanvas(event) {
-    if (!canvasRect) { canvasRect = canvas.getBoundingClientRect(); }
+    /* Re-read the rect on every event: the canvas scrolls and reflows (a long
+     * page above it, the toolbar wrapping, the sidebar collapsing), so a cached
+     * rect goes stale and drag/zoom coordinates inherit the scroll offset. */
+    canvasRect = canvas.getBoundingClientRect();
     return {
       x: event.clientX - canvasRect.left,
       y: event.clientY - canvasRect.top
     };
+  }
+
+  /* The tooltip is a child of the SVG and its translate() is in the SVG's user
+   * units, while the pointer arrives in CSS pixels. Those two only agree when
+   * the SVG's on-screen box has the same size as its viewBox. When the box is
+   * taller than the viewBox — a tall canvas column, a wrapped toolbar — the
+   * drawing is letterboxed and scaled, so CSS pixels put the tooltip below and
+   * right of the cursor by the letterbox plus the scale error. The screen CTM
+   * already folds in scroll, scale and letterbox, so its inverse is the whole
+   * conversion. Camera maths (pan, pinch, zoom) keeps using CSS pixels. */
+  function pointInSvg(event) {
+    var ctm = svg && svg.getScreenCTM ? svg.getScreenCTM() : null;
+    if (!ctm) { return pointInCanvas(event); }
+    var point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    var mapped = point.matrixTransform(ctm.inverse());
+    return { x: mapped.x, y: mapped.y };
   }
 
   function endDrag(event) {
@@ -929,7 +995,7 @@
       panning = true;
       canvas.setAttribute("data-panning", "true");
       try { svg.setPointerCapture(event.pointerId); } catch (e) { /* capture unsupported */ }
-      lastPointer = point;
+      lastPointer = pointInSvg(event);
     });
 
     svg.addEventListener("pointermove", function (event) {
@@ -966,7 +1032,7 @@
         }
         drag.lastX = event.clientX;
         drag.lastY = event.clientY;
-        lastPointer = pointInCanvas(event);
+        lastPointer = pointInSvg(event);
         view.tx += dx;
         view.ty += dy;
         userOwnsCamera = true;
@@ -975,7 +1041,7 @@
         event.preventDefault();
         return;
       }
-      lastPointer = pointInCanvas(event);
+      lastPointer = pointInSvg(event);
       if (tooltipVisible) { positionTooltip(lastPointer.x, lastPointer.y); }
     });
 
@@ -1376,11 +1442,18 @@
     lines.forEach(function (line) { longest = Math.max(longest, line.length); });
     var width = Math.min(352, Math.max(120, longest * 6.4 + 20));
     var height = 12 + lines.length * 18;
-    var x = px + 14;
-    var y = py + 12;
-    if (x + width > W - TOOLTIP_MARGIN) { x = px - width - 14; }
+    /* px/py and the tooltip's transform are in SVG user units. The edge checks
+     * must use the same space, so read the viewBox size — W/H are CSS pixels
+     * and differ from user units whenever the canvas box is taller than the
+     * viewBox (the same letterbox that moved the tooltip). */
+    var box = svg && svg.viewBox && svg.viewBox.baseVal;
+    var boxW = box && box.width ? box.width : W;
+    var boxH = box && box.height ? box.height : H;
+    var x = px + TOOLTIP_OFFSET;
+    var y = py + TOOLTIP_OFFSET;
+    if (x + width > boxW - TOOLTIP_MARGIN) { x = px - width - TOOLTIP_OFFSET; }
     if (x < TOOLTIP_MARGIN) { x = TOOLTIP_MARGIN; }
-    if (y + height > H - TOOLTIP_MARGIN) { y = py - height - 12; }
+    if (y + height > boxH - TOOLTIP_MARGIN) { y = py - height - TOOLTIP_OFFSET; }
     if (y < TOOLTIP_MARGIN) { y = TOOLTIP_MARGIN; }
     tooltip.setAttribute("transform", "translate(" + x + "," + y + ")");
   }

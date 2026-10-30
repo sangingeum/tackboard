@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The graph view's hover tooltip appeared south-east of the pointer instead of
+  at it. The pointer arrives in CSS pixels while the tooltip's position is
+  applied in the SVG's user units; whenever the canvas box is taller than the
+  viewBox — a tall column, a wrapped toolbar — the two spaces diverge by the
+  letterbox offset. The pointer is now mapped through the SVG's screen CTM, so
+  the measured gap from the cursor stays a constant 6 px whether the page is
+  scrolled or not (previously 6.7 px across and 78.1 px down). The tooltip's
+  edge checks read the viewBox size for the same reason.
+- A claimed task's badge clipped its text so the `stale` marker fell outside
+  the badge. The label now budgets against the badge's own width and drops the
+  age suffix before the stale word, so `stale` stays inside the badge.
+
+### Changed
+
+- The review-state line above a reviewable task now runs inset from the card's
+  corners with round caps, so it reads as a deliberate marker rather than a
+  stray edge.
+
 ### Removed
 
 - The demo-seed and screenshot-capture tooling: `scripts/demo_seed.py`,

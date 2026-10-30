@@ -900,6 +900,8 @@ def test_double_edge_sits_inside_the_top_edge() -> None:
     assert 'el("line"' in body
     assert "y1: 3" in body
     assert "y2: 3" in body
+    assert "x1: 16" in body
+    assert "x2: NODE_W - 16" in body
     assert "NODE_H - 2" not in body
 
 
@@ -909,9 +911,10 @@ def test_double_edge_uses_the_reviewable_token() -> None:
         encoding="utf-8"
     )
     start = css.index(".node__double-edge")
-    body = css[start : start + 120]
+    body = css[start : start + 180]
     assert "var(--state-reviewable-fg)" in body
     assert "var(--accent)" not in body
+    assert "stroke-linecap: round" in body
 
 
 def test_graph_js_wires_the_stale_claim_badge() -> None:

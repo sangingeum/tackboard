@@ -1638,6 +1638,7 @@ button:hover,
   fill: none;
   stroke: var(--state-reviewable-fg);
   stroke-width: 2;
+  stroke-linecap: round;
 }
 
 .node[data-hover="true"] .node__shape {
