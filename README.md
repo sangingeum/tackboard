@@ -820,6 +820,8 @@ Exit codes
     combination, or no actor      agent, stale version, lock timeout
   3 task, project, or database  6 database, schema, or migration error
     not found / not configured
+  Exit 5 is not one thing: under --json read error.retryable. locked is
+  retryable; claim_conflict, stale_version and stale_rev are not.
 
 Status and readiness
   Statuses: backlog, ready, in_progress, review, done, cancelled.

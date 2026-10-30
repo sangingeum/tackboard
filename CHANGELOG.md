@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The always-loaded guide now says that exit 5 must be read through the JSON
+  `retryable` flag: `locked` is retryable, while `claim_conflict`,
+  `stale_version` and `stale_rev` are not.
+
 - `tack reject` now hands the task's claim back to the agent who most recently
   moved it into `in_progress`, instead of claiming the returned work for the
   rejecting reviewer. Rejecting your own work leaves the claim with you, and a
