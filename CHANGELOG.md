@@ -4,10 +4,14 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.2] - 2026-10-30
 
 ### Fixed
 
+- A long task title in the graph hover tooltip was cut off after two
+  lines. The title now wraps onto up to six lines of 48 characters, so the
+  full name is readable on hover; only a title longer than 288 characters is
+  truncated.
 - The graph view's hover tooltip appeared south-east of the pointer instead of
   at it. The pointer arrives in CSS pixels while the tooltip's position is
   applied in the SVG's user units; whenever the canvas box is taller than the

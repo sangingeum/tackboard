@@ -618,7 +618,7 @@
     tooltipBg = el("rect", { "class": "tooltip__bg", x: 0, y: 0, width: 1, height: 1, rx: 6 });
     group.appendChild(tooltipBg);
     tooltipRows = [];
-    for (var i = 0; i < 7; i += 1) {
+    for (var i = 0; i < TOOLTIP_MAX_LINES; i += 1) {
       var rowClass = i === 0 ? "tooltip__row tooltip__title" : "tooltip__row";
       var row = textEl({ "class": rowClass, x: 10, y: 18 + i * 18 }, "");
       tooltipRows.push(row);
@@ -1405,10 +1405,12 @@
   /* ----------------------------------------------------------------------- */
 
   /* The custom tooltip is the only hover text now that the node group carries
-   * no native <title>. Wrap the title onto up to two lines so a long title is
+   * no native <title>. Wrap the title onto up to six lines so a long title is
    * shown in full; each line stays within the width the background rect can
-   * hold. Truncate only when even two lines cannot carry the title. */
+   * hold. Truncate only when even six lines cannot carry the title. */
   var TOOLTIP_LINE_MAX = 48;
+  var TOOLTIP_TITLE_LINES = 6;
+  var TOOLTIP_MAX_LINES = 12;
 
   function wrapTitle(value, limit, maxLines) {
     var lines = [];
@@ -1427,7 +1429,7 @@
   function tooltipLines(node) {
     var label = STATUS_LABEL[node.status] || node.status;
     var lines = wrapTitle(
-      node.id + " \u2014 " + node.title, TOOLTIP_LINE_MAX, 2
+      node.id + " \u2014 " + node.title, TOOLTIP_LINE_MAX, TOOLTIP_TITLE_LINES
     );
     lines.push(STATUS_GLYPH[node.status] + " " + label + " \u00b7 " +
       (node.priority || "normal"));
@@ -1445,7 +1447,7 @@
       lines.push(hiddenLinks + " hidden link" + (hiddenLinks === 1 ? "" : "s"));
     }
     if (blocked.length) { lines.push("blocked by " + truncate(blocked.join(", "), 40)); }
-    return lines.slice(0, 7);
+    return lines.slice(0, TOOLTIP_MAX_LINES);
   }
 
   function positionTooltip(px, py) {
