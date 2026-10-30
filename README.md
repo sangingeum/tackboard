@@ -1025,26 +1025,14 @@ contention ceiling", for the caveats and the full table.
 
 ### Demo board
 
-The five screenshots in the web view section come from one deterministic seed
-board, so they agree with each other and with the current UI. Rebuild it with:
-
-```bash
-uv run python scripts/demo_seed.py --db /tmp/tackboard-demo.sqlite3
-```
-
-The script resets the target database first, then prints the resulting counts;
-the plan file beside it (`scripts/demo_plan.json`) fixes every task id, title and
-edge. Serve the seed with `uv run tack serve --db /tmp/tackboard-demo.sqlite3`,
-then regenerate all five images against that server:
-
-```bash
-uv run python scripts/capture_demo_screenshots.py
-```
-
-The capture script uses headless Chrome at one fixed viewport (1440×1200, device
-scale factor 1) for every shot, and checks each PNG's signature, pixel size and
-byte size before reporting success. Pass `--base-url` when the server runs on a
-different port.
+The five screenshots in the web view section are curated by the maintainer:
+they are edited and replaced by hand, and no script in this repository
+generates, seeds or captures them. The earlier `scripts/demo_seed.py`,
+`scripts/demo_plan.json` and `scripts/capture_demo_screenshots.py` were removed
+for that reason — regenerating from a seed silently overwrote the curated
+images. Build a scratch board for exploration with the ordinary commands
+(`tack add`, `tack dep add`, `tack next --claim`) and delete its database
+afterwards; do not write over `images/`.
 
 `AGENT.md` is the short orientation brief for agents working in this
 repository; `DESIGN.md` is the architecture document for contributors.

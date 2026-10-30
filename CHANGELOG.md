@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- The demo-seed and screenshot-capture tooling: `scripts/demo_seed.py`,
+  `scripts/demo_plan.json`, `scripts/capture_demo_screenshots.py` and
+  `tests/test_demo_seed.py`. The README's web-view screenshots are curated by
+  the maintainer and replaced by hand, so a script that reseeded a board and
+  overwrote `images/` was a standing hazard rather than a convenience. The
+  README's "Demo board" section now states this and points at the ordinary CLI
+  commands for building a scratch board.
+
 ## [0.7.1] - 2026-10-30
 
 ### Fixed
