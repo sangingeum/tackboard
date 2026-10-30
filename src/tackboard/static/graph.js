@@ -34,7 +34,7 @@
   var minimapViewRect = null;
   var taskId = root.getAttribute("data-task") || "";
 
-  var NODE_W = 176;
+  var NODE_W = 224;
   var NODE_H = 72;
   var GAP_X = 76;
   var GAP_Y = 26;
@@ -49,9 +49,8 @@
   var IDLE_NODE_LIMIT = 500;
   var MIN_VISIBLE = 120;
   var TOOLTIP_MARGIN = 8;
-  /* The tooltip's near corner sits this far from the pointer: close enough to
-   * read as "at the cursor", far enough that the pointer never covers it. */
-  var TOOLTIP_OFFSET = 6;
+  /* The tooltip's near corner sits exactly at the pointer: no offset. */
+  var TOOLTIP_OFFSET = 0;
   var SELECT_DELAY = 200;
   var DUR_LAYOUT = 240;
   var DUR_SLOW = 400;
