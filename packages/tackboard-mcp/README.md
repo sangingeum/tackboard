@@ -94,7 +94,7 @@ client documents stdio servers:
 | `create` | `title`, `description?`, `priority?`, `assignee?`, `labels?`, `depends_on?`, `status?` | the created task document |
 | `board_brief` | — | the counts-only board document |
 | `board_info` | — | the adapter's `board_info` document: the active board, its path, whether it exists, and warnings |
-| `board_create` | `path` (absolute) | the `tack init` document; creates the board but does not attach it |
+| `board_create` | `path` (absolute) | the `tack init` document; creates the board but does not attach it — call `board_attach` with the same path to use it |
 | `board_attach` | `path` (absolute, existing) | the adapter's `board_attach` document; every later call uses the new board |
 
 `board_create` and `board_attach` are administrative and disabled unless the
@@ -102,7 +102,8 @@ server was started with `--allow-board-admin` or `TACKBOARD_MCP_ALLOW_ADMIN=1`.
 Both accept absolute paths only; a relative path is refused with a
 `board_path_invalid` document. `board_create` delegates to `tack init --db
 PATH --json`, so missing parent directories are created, and it does **not**
-change the active board. `board_attach` validates the target with `tack doctor`
+change the active board: call `board_attach` with the same path next.
+`board_attach` validates the target with `tack doctor`
 and reads its project label before swapping, so a failed validation leaves the
 old board active. `tack doctor` opens the target read-write and may create
 `-wal`/`-shm` files beside it.

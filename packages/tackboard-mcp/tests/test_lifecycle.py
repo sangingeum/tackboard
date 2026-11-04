@@ -417,6 +417,7 @@ def test_every_tool_surfaces_the_cli_error_when_no_board_is_configured(
     assert "No project database configured" in text
     assert "board_create" in text
     assert "board_attach" in text
+    assert "then board_attach" in text
     assert _error_code(caught.value) == "not_found"
 
 

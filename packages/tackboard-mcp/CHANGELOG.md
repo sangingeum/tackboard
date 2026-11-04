@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The `not_found` hint now spells out the two-step: `board_create` does not
+  attach the board it creates, so the next call is `board_attach` with the same
+  path. `board_create`'s docstring and the README say the same.
+
 ## [0.10.0] - 2026-11-04
 
 ### Added

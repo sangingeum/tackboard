@@ -123,8 +123,9 @@ def _raise_cli_error(exc: TackCommandError) -> NoReturn:
     text = f"{message}\n{_document_text(document)}"
     if error.get("code") == "not_found":
         text += (
-            "\nNo board is attached. Call board_info to inspect the session, "
-            "then board_create or board_attach."
+            "\nNo board is attached. Call board_info to inspect the session; "
+            "if the board file exists, call board_attach with its path, "
+            "otherwise call board_create and then board_attach."
         )
     _fail(text)
 
@@ -273,7 +274,8 @@ def board_create(session: BoardSession, path: str) -> dict[str, Any]:
     """Create a board at an absolute path; the active board is unchanged.
 
     Delegates to ``tack init --db PATH --json`` and returns that document
-    unchanged. Missing parent directories are created by the CLI.
+    unchanged. Missing parent directories are created by the CLI. The new
+    board is not attached: call ``board_attach`` with the same path to use it.
     """
     _require_admin(session)
     target = _require_absolute(path, "board_create")
@@ -556,7 +558,7 @@ def build_server(session: BoardSession) -> MCPServer:
         ),
     )
     def board_create_tool(path: str) -> dict[str, Any]:
-        """Create a board at an absolute path; the active board is unchanged."""
+        """Create a board at an absolute path; call board_attach to use it."""
         return board_create(session, path)
 
     @server.tool(
