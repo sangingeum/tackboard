@@ -127,7 +127,8 @@ translated into a second vocabulary: a failed call raises with the CLI's
 `error.code`, `exit_code` and `details` intact. When the CLI reports
 `not_found` (no board), the error text carries the CLI's actionable message and
 the full document, plus a one-line hint naming `board_create` and
-`board_attach` — never a generic "Error executing tool".
+`board_attach`. The framework prefixes its `Error executing tool <name>` label
+to that text; the label is never the whole message.
 
 ## Tests
 

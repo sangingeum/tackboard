@@ -227,3 +227,42 @@ def test_every_tool_declares_all_four_hints(scratch_board: Path) -> None:
             assert hint in payload, f"{name} is missing {hint}"
             actual = payload[hint]
             assert actual is value, f"{name}.{hint} is {actual!r}, expected {value!r}"
+
+
+def test_a_real_client_sees_the_cli_error_when_no_board_is_configured(
+    tmp_path: Path,
+) -> None:
+    """The framework path: a no-board call carries the CLI's message, not a crash."""
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join([str(ADAPTER_SRC), str(CORE_SRC)])
+    env.pop("TACKBOARD_DB", None)
+    env.pop("TACKBOARD_MCP_ALLOW_ADMIN", None)
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "tackboard_mcp.server"],
+        env=env,
+        cwd=str(tmp_path),
+    )
+
+    async def exercise() -> dict[str, Any]:
+        async with (
+            stdio_client(params) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            return {
+                name: await session.call_tool(name, {})
+                for name in ("board_brief", "list", "memo_read")
+            }
+
+    results = asyncio.run(exercise())
+    for name, result in results.items():
+        assert result.is_error is True, f"{name} did not report an error"
+        text = result.content[0].text
+        assert "No project database configured" in text, f"{name}: {text}"
+        assert "board_create" in text, f"{name}: {text}"
+        assert "board_attach" in text, f"{name}: {text}"
+        assert text.strip() != f"Error executing tool {name}", f"{name}: {text}"

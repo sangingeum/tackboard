@@ -7,6 +7,7 @@ they skip when it is absent, like the binding tests.
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 import sys
 from pathlib import Path
@@ -372,3 +373,70 @@ def test_attach_in_discovery_mode_flips_the_source(tmp_path: Path) -> None:
     assert session.cli.db == target
     assert session.source == "attach"
     assert board_info(session)["source"] == "attach"
+
+
+# --------------------------------------------------------------------------- #
+# the no-board error path, for every pre-existing tool
+# --------------------------------------------------------------------------- #
+
+#: One valid argument set per tool, so each body reaches the CLI and fails there.
+NO_BOARD_CALLS: dict[str, dict[str, Any]] = {
+    "board_brief": {},
+    "memo_read": {},
+    "next_claim": {},
+    "claim": {"task_id": "T-000001"},
+    "status": {"task_id": "T-000001", "status": "ready"},
+    "reject": {"task_id": "T-000001", "reason": "not ready"},
+    "list": {},
+    "show": {"task_id": "T-000001"},
+    "note": {"task_id": "T-000001", "text": "handoff"},
+    "complete": {"task_id": "T-000001"},
+    "release": {"task_id": "T-000001"},
+    "create": {"title": "A task"},
+}
+
+
+def _no_board_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """A server with no board configured and no discovery file in reach."""
+    monkeypatch.chdir(tmp_path)
+    return server.build_server(BoardSession(cli=_cli(None), source="discovery"))
+
+
+@pytest.mark.parametrize("tool,arguments", sorted(NO_BOARD_CALLS.items()))
+def test_every_tool_surfaces_the_cli_error_when_no_board_is_configured(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
+) -> None:
+    built = _no_board_server(tmp_path, monkeypatch)
+    with pytest.raises(ToolError) as caught:
+        asyncio.run(built.call_tool(tool, arguments))
+    text = str(caught.value)
+    assert text.strip() != f"Error executing tool {tool}"
+    assert "No project database configured" in text
+    assert "board_create" in text
+    assert "board_attach" in text
+    assert _error_code(caught.value) == "not_found"
+
+
+def _failing_runner(argv: Any, stdin: Any) -> tuple[int, str, str]:
+    """A CLI that fails without printing a JSON document."""
+    return 1, "", "boom"
+
+
+@pytest.mark.parametrize("tool,arguments", sorted(NO_BOARD_CALLS.items()))
+def test_every_tool_falls_back_to_the_command_error_without_a_document(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    cli = TackCli(command=("tack",), db=None, runner=_failing_runner)
+    built = server.build_server(BoardSession(cli=cli, source="discovery"))
+    with pytest.raises(ToolError) as caught:
+        asyncio.run(built.call_tool(tool, arguments))
+    text = str(caught.value)
+    assert "tack exited 1" in text
+    assert text.strip() != f"Error executing tool {tool}"

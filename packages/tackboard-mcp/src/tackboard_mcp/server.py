@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
@@ -127,6 +127,19 @@ def _raise_cli_error(exc: TackCommandError) -> NoReturn:
             "then board_create or board_attach."
         )
     _fail(text)
+
+
+def _call_cli(operation: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Run one CLI operation, surfacing its error document to the client.
+
+    Every tool body goes through here: a ``TackCommandError`` becomes the
+    framework's ``ToolError`` carrying the CLI's own message and document, so
+    the client never sees the generic ``Error executing tool <name>``.
+    """
+    try:
+        return operation()
+    except TackCommandError as exc:
+        _raise_cli_error(exc)
 
 
 def _require_admin(session: BoardSession) -> None:
@@ -337,7 +350,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def next_claim(stage: str | None = None) -> dict[str, Any]:
         """Claim and return the next eligible task. `stage` may be "review"."""
-        return session.cli.next_claim(stage)
+        return _call_cli(lambda: session.cli.next_claim(stage))
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -349,7 +362,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def show(task_id: str) -> dict[str, Any]:
         """Read one task in full, including its notes."""
-        return session.cli.show(task_id)
+        return _call_cli(lambda: session.cli.show(task_id))
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -361,7 +374,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def note(task_id: str, text: str, refs: list[str] | None = None) -> dict[str, Any]:
         """Append a handoff note; refs are KIND:VALUE strings (commit/url/path/task)."""
-        return session.cli.note(task_id, text, tuple(refs or ()))
+        return _call_cli(lambda: session.cli.note(task_id, text, tuple(refs or ())))
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -373,7 +386,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def complete(task_id: str) -> dict[str, Any]:
         """Finish a task, unblocking its dependents."""
-        return session.cli.complete(task_id)
+        return _call_cli(lambda: session.cli.complete(task_id))
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -385,7 +398,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def release(task_id: str, reason: str | None = None) -> dict[str, Any]:
         """Release a claim; a reason makes it the audited force path."""
-        return session.cli.release(task_id, reason)
+        return _call_cli(lambda: session.cli.release(task_id, reason))
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -405,14 +418,16 @@ def build_server(session: BoardSession) -> MCPServer:
         status: str | None = None,
     ) -> dict[str, Any]:
         """Create a task, optionally with labels, assignment and prerequisite ids."""
-        return session.cli.create(
-            title,
-            description=description,
-            priority=priority,
-            assignee=assignee,
-            labels=tuple(labels or ()),
-            depends_on=tuple(depends_on or ()),
-            status=status,
+        return _call_cli(
+            lambda: session.cli.create(
+                title,
+                description=description,
+                priority=priority,
+                assignee=assignee,
+                labels=tuple(labels or ()),
+                depends_on=tuple(depends_on or ()),
+                status=status,
+            )
         )
 
     @server.tool(
@@ -425,7 +440,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def board_brief() -> dict[str, Any]:
         """The board's counts only: the cheapest look at what is on the board."""
-        return session.cli.board_brief()
+        return _call_cli(session.cli.board_brief)
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -437,7 +452,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def memo_read(rev: int | None = None) -> dict[str, Any]:
         """Read the project memo before starting; `rev` selects one revision."""
-        return session.cli.memo_read(rev)
+        return _call_cli(lambda: session.cli.memo_read(rev))
 
     @server.tool(
         name="list",
@@ -459,15 +474,17 @@ def build_server(session: BoardSession) -> MCPServer:
         full: bool = False,
     ) -> dict[str, Any]:
         """List tasks with the CLI's filters; descriptions only with `full`."""
-        return session.cli.list_tasks(
-            status=status,
-            assignee=assignee,
-            label=label,
-            priority=priority,
-            blocked=blocked,
-            eligible=eligible,
-            limit=limit,
-            full=full,
+        return _call_cli(
+            lambda: session.cli.list_tasks(
+                status=status,
+                assignee=assignee,
+                label=label,
+                priority=priority,
+                blocked=blocked,
+                eligible=eligible,
+                limit=limit,
+                full=full,
+            )
         )
 
     @server.tool(
@@ -480,7 +497,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def claim(task_id: str, force: bool = False, reason: str | None = None) -> dict[str, Any]:
         """Claim one task; `force` requires an audited non-empty reason."""
-        return session.cli.claim(task_id, force=force, reason=reason)
+        return _call_cli(lambda: session.cli.claim(task_id, force=force, reason=reason))
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -498,8 +515,10 @@ def build_server(session: BoardSession) -> MCPServer:
         if_version: int | None = None,
     ) -> dict[str, Any]:
         """Move a task to another status; `force` requires a reason."""
-        return session.cli.status(
-            task_id, status, force=force, reason=reason, if_version=if_version
+        return _call_cli(
+            lambda: session.cli.status(
+                task_id, status, force=force, reason=reason, if_version=if_version
+            )
         )
 
     @server.tool(
@@ -512,7 +531,7 @@ def build_server(session: BoardSession) -> MCPServer:
     )
     def reject(task_id: str, reason: str, if_version: int | None = None) -> dict[str, Any]:
         """Send a review task back to in_progress; the reason is mandatory."""
-        return session.cli.reject(task_id, reason, if_version)
+        return _call_cli(lambda: session.cli.reject(task_id, reason, if_version))
 
     @server.tool(
         name="board_info",
