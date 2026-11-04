@@ -331,9 +331,11 @@ def test_api_documents_are_supersets_of_the_cli_documents(
 ) -> None:
     """Each HTTP document carries every CLI key unchanged, and only its declared additions."""
     cli_board = json.loads(run("board", "--db", str(db_file), "--json")[1])
-    assert _freeze_claim_ages(server.request("/api/board").json()) == (
-        _freeze_claim_ages(cli_board)
-    )
+    # The CLI names the file it read; the web view deliberately does not.
+    assert cli_board.pop("database") == str(db_file)
+    served_board = server.request("/api/board").json()
+    assert "database" not in served_board
+    assert _freeze_claim_ages(served_board) == _freeze_claim_ages(cli_board)
 
     cli_graph = json.loads(
         run("graph", "--format", "json", "--db", str(db_file), "--json")[1]

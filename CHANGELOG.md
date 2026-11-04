@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-11-04
+
+### Added
+
+- `tack board --json` and `tack board --brief|--count --json` now carry an
+  additive `database` field: the absolute path of the board file the command
+  read. It is declared in `schemas/board.json` and emitted by the CLI only;
+  `/api/board` keeps its existing shape and does not publish the path.
+
 ## [0.9.0] - 2026-10-30
 
 ### Added

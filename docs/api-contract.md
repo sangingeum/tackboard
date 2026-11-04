@@ -52,9 +52,10 @@ column.
 
 CLI counterpart: `tack board --json` (also `tack list --json`).
 
-Relationship: **equal**. The HTTP body is the CLI document with no trailing
-newline. Top-level keys: `schema_version`, `project`, `counts`, `tasks`; each
-task is the full task projection.
+Relationship: **subset**. The HTTP body is the CLI document with no trailing
+newline, minus the CLI-only `database` key (the absolute board path, which the
+web view does not publish). Top-level keys: `schema_version`, `project`,
+`counts`, `tasks`; each task is the full task projection.
 
 The query surface is narrower than the CLI's: `status`, `assignee`, `priority`,
 `label`, `blocked` and `eligible` are accepted, while `--limit`, `--sort`,

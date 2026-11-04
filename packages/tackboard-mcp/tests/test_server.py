@@ -1,7 +1,7 @@
 """MCP binding tests — skipped unless the optional framework is installed.
 
 The tool layer is covered without the framework (``test_tools.py``). These tests
-prove the binding itself: that the twelve tools register, and — when the
+prove the binding itself: that the fifteen tools register, and — when the
 framework is present — that a real MCP client can handshake over stdio and call
 them. In a checkout without ``mcp`` they skip rather than fail; the report
 states which of the two was actually exercised.
@@ -31,14 +31,17 @@ import pytest
 
 mcp = pytest.importorskip("mcp", reason="the optional MCP framework is not installed")
 
-from tackboard_mcp.server import build_server  # noqa: E402
+from tackboard_mcp.server import BoardSession, build_server  # noqa: E402
 from tackboard_mcp.tools import TackCli  # noqa: E402
 
 ADAPTER_SRC = Path(__file__).resolve().parents[1] / "src"
 CORE_SRC = Path(__file__).resolve().parents[3] / "src"
 
 EXPECTED_TOOLS = {
+    "board_attach",
     "board_brief",
+    "board_create",
+    "board_info",
     "claim",
     "complete",
     "create",
@@ -53,6 +56,24 @@ EXPECTED_TOOLS = {
 }
 
 EXPECTED_ANNOTATIONS: dict[str, dict[str, bool]] = {
+    "board_info": {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "board_create": {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+    "board_attach": {
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
     "board_brief": {
         "readOnlyHint": True,
         "destructiveHint": False,
@@ -138,7 +159,7 @@ def scratch_board(tmp_path: Path) -> Path:
 
 def test_the_seven_tools_register(scratch_board: Path) -> None:
     cli = TackCli(command=(sys.executable, "-m", "tackboard"), db=scratch_board, actor="a")
-    server = build_server(cli)
+    server = build_server(BoardSession(cli=cli, source="env"))
     assert hasattr(server, "run"), "the built server exposes the framework's run loop"
 
 

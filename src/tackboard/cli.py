@@ -930,6 +930,9 @@ def _run_listing(ctx: _Context, args: argparse.Namespace, *, grouped: bool) -> i
             reverse=args.reverse,
             full=args.full,
         )
+        # Captured inside the block: the connection is closed before the
+        # documents below are emitted.
+        database = schema.database_path(conn)
     tasks = document["tasks"]
     counts = document["counts"]
     project = document["project"]
@@ -940,6 +943,7 @@ def _run_listing(ctx: _Context, args: argparse.Namespace, *, grouped: bool) -> i
                 {
                     "schema_version": JSON_SCHEMA_VERSION,
                     "project": project,
+                    "database": database,
                     "counts": counts,
                 }
             )
@@ -955,6 +959,7 @@ def _run_listing(ctx: _Context, args: argparse.Namespace, *, grouped: bool) -> i
             {
                 "schema_version": JSON_SCHEMA_VERSION,
                 "project": project,
+                "database": database,
                 "counts": counts,
                 "tasks": tasks,
             }

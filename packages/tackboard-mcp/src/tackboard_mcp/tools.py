@@ -216,6 +216,14 @@ class TackCli:
         """The counts-only board document: the cheapest look at a board."""
         return self.run("board", "--brief")
 
+    def init(self) -> Document:
+        """Create the board at ``db``; the CLI creates missing parents."""
+        return self.run("init")
+
+    def doctor(self) -> Document:
+        """Validate the board at ``db``; a bad board exits non-zero."""
+        return self.run("doctor")
+
     def memo_read(self, rev: int | None = None) -> Document:
         """Read the project memo; ``rev`` selects one stored revision."""
         argv: list[str] = ["memo"]

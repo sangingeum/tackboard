@@ -241,6 +241,17 @@ def test_filters_and_sort_run_through_board_and_list(run: RunCli, db_file: Path)
     assert [task["title"] for task in limited["tasks"]] == ["urgent one"]
 
 
+def test_board_documents_carry_the_database_path(run: RunCli, db_file: Path) -> None:
+    """Both CLI board documents name the file they read; /api/board does not."""
+    code, out, _ = run("board", "--brief", "--json", "--db", str(db_file))
+    assert code == 0
+    assert _json_document(out)["database"] == str(db_file)
+
+    code, out, _ = run("board", "--json", "--db", str(db_file))
+    assert code == 0
+    assert _json_document(out)["database"] == str(db_file)
+
+
 def test_board_groups_by_status_and_truncates_terminal_groups(
     run: RunCli, db_file: Path
 ) -> None:

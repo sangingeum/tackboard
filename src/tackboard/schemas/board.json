@@ -11,6 +11,10 @@
     "project": {
       "type": "string"
     },
+    "database": {
+      "type": "string",
+      "description": "Absolute path of the board file; emitted by the CLI, not by /api/board."
+    },
     "counts": {
       "type": "object",
       "properties": {

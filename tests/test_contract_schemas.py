@@ -246,11 +246,14 @@ def test_show_board_history_and_error_documents_match_their_schemas(
     assert code == 0, err
     board = _document(out)
     _assert_valid("board", board)
+    assert board["database"] == str(db_path)
     assert "description" not in board["tasks"][0]
 
     code, out, err = run("board", "--count", "--db", str(db_path), "--json")
     assert code == 0, err
-    _assert_valid("board", _document(out))
+    brief = _document(out)
+    _assert_valid("board", brief)
+    assert brief["database"] == str(db_path)
 
     code, out, err = run("history", "--db", str(db_path), "--json")
     assert code == 0, err
