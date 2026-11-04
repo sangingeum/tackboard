@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-11-04
+
+### Changed
+
+- No core changes. The version carries the MCP adapter's 0.10.1 fix: the
+  no-board hint now spells out `board_create` then `board_attach`.
+
 ## [0.10.0] - 2026-11-04
 
 ### Added

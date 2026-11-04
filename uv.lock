@@ -1003,7 +1003,7 @@ wheels = [
 
 [[package]]
 name = "tackboard"
-version = "0.10.0"
+version = "0.10.1"
 source = { editable = "." }
 
 [package.dev-dependencies]
@@ -1032,7 +1032,7 @@ dev = [
 
 [[package]]
 name = "tackboard-mcp"
-version = "0.10.0"
+version = "0.10.1"
 source = { editable = "packages/tackboard-mcp" }
 dependencies = [
     { name = "mcp" },
