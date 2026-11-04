@@ -1250,3 +1250,116 @@ def _row_counts(path: Path) -> dict[str, int]:
         }
     finally:
         raw.close()
+
+
+# --------------------------------------------------------------------------- #
+# regression: truncated stdout capture (issue #19)
+# --------------------------------------------------------------------------- #
+
+TRUNCATION_MARKER = (
+    "... [OUTPUT TRUNCATED - 392 chars omitted out of 50,322 total] ..."
+)
+
+
+def test_replace_rejects_a_truncation_marker(run: RunCli, db_path: Path) -> None:
+    """A replace whose text carries the truncation marker is refused."""
+    _write(run, db_path, "memo", "valid text", "--reason", "first")
+    code, document = _write(
+        run,
+        db_path,
+        "memo",
+        f"start {TRUNCATION_MARKER} end",
+        "--reason",
+        "truncated",
+        "--if-rev",
+        "1",
+    )
+    assert code == 4
+    assert document["error"]["code"] == "validation"
+    assert "truncation marker" in document["error"]["message"]
+    assert document["error"]["details"]["field"] == "memo"
+    _code, head = _cli(run, db_path, "memo")
+    assert head["rev"] == 1
+    assert head["text"] == "valid text"
+
+
+def test_append_rejects_a_truncation_marker(run: RunCli, db_path: Path) -> None:
+    """An append whose text carries the truncation marker is refused."""
+    _write(run, db_path, "memo", "valid text", "--reason", "first")
+    code, document = _write(
+        run,
+        db_path,
+        "memo",
+        "--append",
+        f"start {TRUNCATION_MARKER} end",
+    )
+    assert code == 4
+    assert document["error"]["code"] == "validation"
+    assert "truncation marker" in document["error"]["message"]
+    _code, head = _cli(run, db_path, "memo")
+    assert head["rev"] == 1
+    assert head["text"] == "valid text"
+
+
+def test_a_near_miss_marker_is_accepted(run: RunCli, db_path: Path) -> None:
+    """Text that looks like the marker but is not the exact shape is allowed."""
+    near_miss = "... [OUTPUT TRUNCATED - no numbers here] ..."
+    code, document = _write(run, db_path, "memo", near_miss, "--reason", "first")
+    assert code == 0
+    assert document["memo"]["rev"] == 1
+    _code, head = _cli(run, db_path, "memo")
+    assert head["text"] == near_miss
+
+
+def test_memo_read_with_json_output_writes_the_file(
+    run: RunCli, db_path: Path, tmp_path: Path
+) -> None:
+    """--output PATH --json writes the document to a file and stdout stays empty."""
+    _write(run, db_path, "memo", "hello memo", "--reason", "first")
+    output = tmp_path / "memo.json"
+    code, out, err = run("memo", "--db", str(db_path), "--json", "--output", str(output))
+    assert code == 0
+    assert out == ""
+    assert err == ""
+    text = output.read_text(encoding="utf-8")
+    assert text.endswith("\n")
+    document = json.loads(text)
+    assert document["text"] == "hello memo"
+    assert document["rev"] == 1
+    assert document["schema_version"] == 1
+
+
+def test_memo_read_with_text_output_matches_stdout(
+    run: RunCli, db_path: Path, tmp_path: Path
+) -> None:
+    """--output PATH without --json writes the same rendering as stdout."""
+    _write(run, db_path, "memo", "hello memo", "--reason", "first")
+    _code, stdout, _err = run("memo", "--db", str(db_path))
+    output = tmp_path / "memo.txt"
+    code, out, err = run("memo", "--db", str(db_path), "--output", str(output))
+    assert code == 0
+    assert out == ""
+    assert err == ""
+    assert output.read_text(encoding="utf-8") == stdout
+
+
+def test_output_with_a_write_mode_exits_two_and_writes_no_file(
+    run: RunCli, db_path: Path, tmp_path: Path
+) -> None:
+    """--output on a write mode is a usage error and creates no file."""
+    _write(run, db_path, "memo", "hello memo", "--reason", "first")
+    output = tmp_path / "should_not_exist.txt"
+    code, _out, err = run(
+        "memo",
+        "replacement",
+        "--db",
+        str(db_path),
+        "--reason",
+        "r",
+        "--output",
+        str(output),
+    )
+    assert code == 2
+    assert "--output" in err
+    assert "write mode" in err
+    assert not output.exists()

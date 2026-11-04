@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import contextlib
 import difflib
+import re
 import sqlite3
 from collections.abc import Iterator
 from typing import Any
@@ -59,6 +60,13 @@ NO_MEMO_REV = 0
 #: A memo longer than this is collapsed by default in the web view rather than
 #: truncated silently.
 COLLAPSE_BYTES = 4 * 1024
+
+#: The marker a truncated stdout capture leaves behind. A caller whose capture
+#: truncates near 50 KB gets a document whose middle is replaced by this literal
+#: marker; writing that text back would store the marker as memo content.
+TRUNCATION_MARKER_RE = re.compile(
+    r"\.\.\. \[OUTPUT TRUNCATED - [\d,]+ chars omitted out of [\d,]+ total\] \.\.\."
+)
 
 _REASON_REQUIRED = (
     "A whole-document memo write needs --reason with the explanation to record."
@@ -91,6 +99,17 @@ def _check_memo_text(text: str) -> str:
                 "max": MAX_MEMO_BYTES,
                 "unit": "bytes",
                 "actual": size,
+            },
+        )
+    match = TRUNCATION_MARKER_RE.search(text)
+    if match is not None:
+        raise ValidationError(
+            "Memo text contains a truncation marker from a captured command "
+            "output. Re-read the memo with 'tack memo --json --output PATH' "
+            "and write that file back.",
+            details={
+                "field": "memo",
+                "marker": match.group(0),
             },
         )
     return text

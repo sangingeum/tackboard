@@ -793,6 +793,11 @@ def _build_parser() -> _Parser:
     memo_parser.add_argument("--append", dest="append_text", metavar="TEXT")
     memo_parser.add_argument("--rev", type=int, metavar="N", help="read revision N")
     memo_parser.add_argument(
+        "--output",
+        metavar="PATH",
+        help="write the read document to PATH instead of stdout",
+    )
+    memo_parser.add_argument(
         "--history", action="store_true", help="list the revisions, newest first"
     )
     memo_parser.add_argument(
@@ -1737,6 +1742,27 @@ def _run_memo_diff(ctx: _Context, args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_memo_read_with_output(
+    ctx: _Context, args: argparse.Namespace, emit_fn: Any
+) -> int:
+    """Run a read emitter, writing to args.output when set."""
+    output = getattr(args, "output", None)
+    if output is None:
+        return emit_fn()
+    output_path = Path(output)
+    try:
+        with (
+            open(output_path, "w", encoding="utf-8") as handle,
+            contextlib.redirect_stdout(handle),
+        ):
+            return emit_fn()
+    except OSError as exc:
+        raise InternalError(
+            f"Could not write memo output to {output_path}: {exc}",
+            details={"path": str(output_path)},
+        ) from exc
+
+
 def _run_memo(ctx: _Context, args: argparse.Namespace) -> int:
     """Read or write the board-level memo (one mode per call)."""
     if args.edit:
@@ -1758,10 +1784,24 @@ def _run_memo(ctx: _Context, args: argparse.Namespace) -> int:
     if not args.history and args.limit is not None:
         raise UsageError("--limit applies only to 'tack memo --history'.")
 
+    if args.output is not None:
+        if modes and not read_mode:
+            raise UsageError(
+                "--output applies only to a memo read; it cannot be used with a "
+                "write mode."
+            )
+        if args.history or args.diff is not None:
+            raise UsageError(
+                "--output applies only to the default memo read and '--rev N'; "
+                "it cannot be used with --history or --diff."
+            )
+
     if args.rev is not None:
         with _project(args) as conn:
             document = views.memo_document(conn, args.rev)
-        return _emit_memo_read(ctx, document)
+        return _run_memo_read_with_output(
+            ctx, args, lambda: _emit_memo_read(ctx, document)
+        )
     if args.history:
         with _project(args) as conn:
             history_document: dict[str, Any] = {
@@ -1774,7 +1814,9 @@ def _run_memo(ctx: _Context, args: argparse.Namespace) -> int:
     if not modes:
         with _project(args) as conn:
             document = views.memo_document(conn)
-        return _emit_memo_read(ctx, document)
+        return _run_memo_read_with_output(
+            ctx, args, lambda: _emit_memo_read(ctx, document)
+        )
 
     dry_run = bool(args.dry_run)
     if dry_run:

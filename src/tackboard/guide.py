@@ -499,6 +499,29 @@ tack memo --file big.md --reason "draft" --dry-run --json
 # -> {"schema_version":1,"dry_run":true,"changed":true,"memo":{...},"max":65536,"bytes":...,"remaining":...}
 ```
 
+**Reading a large memo.** A memo near the 64 KiB cap is a large JSON string on
+stdout. A caller whose capture truncates would receive a document whose middle
+is replaced by a marker like
+`... [OUTPUT TRUNCATED - 392 chars omitted out of 50,322 total] ...`, and
+writing that text back would store the marker as memo content. To read safely,
+write the document to a file instead of capturing it:
+
+```bash
+tack memo --json --output /tmp/memo.json    # head revision to a file
+tack memo --rev 3 --output /tmp/memo.txt    # one revision, human-readable text
+```
+
+`--output PATH` applies only to the default read and `--rev N`; on a write mode
+it is a usage error (exit 2). The file is UTF-8, and stdout stays empty. With
+`--json` the file is the JSON document plus one trailing newline; without it,
+the file is the same human-readable text the command prints.
+
+Because a truncated capture is indistinguishable from real content, a write
+whose text carries the truncation marker is refused with a validation error
+(exit 4). Re-read with `tack memo --json --output PATH` and write that file
+back. The check covers replace and append, and restore or clear inherit it if
+the stored text is already corrupt.
+
 **Attribution is per revision** — the author and timestamp live on the revision,
 never inline in the text. `--history` shows who wrote each revision and why;
 `--diff` shows what changed between two revisions. Neither attributes
